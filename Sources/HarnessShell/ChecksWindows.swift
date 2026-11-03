@@ -1,9 +1,9 @@
 import AppKit
 import Carbon.HIToolbox
-import KadrajCapture
-import KadrajCore
-import KadrajDesign
-@testable import KadrajShell
+import CornermarkCapture
+import CornermarkCore
+import CornermarkDesign
+@testable import CornermarkShell
 
 @MainActor
 func checkSettingsWindow() async throws {
@@ -35,7 +35,7 @@ func checkSettingsWindow() async throws {
     check((findView("general.folder", in: pane(0)) as? NSTextField)?.stringValue == picked.path, "folder label shows the path")
     check(click("general.resetFolder", in: pane(0)) && c.settings.value.saveFolder == nil
           && (findView("general.folder", in: pane(0)) as? NSTextField)?.stringValue == w.env.defaultSaveFolder.path, "Use Desktop resets to the default folder")
-    check(collectText(pane(0)).contains { $0.contains("Kadraj YYYY-MM-DD at HH.MM.SS.png") }, "pane documents the file name pattern")
+    check(collectText(pane(0)).contains { $0.contains("Cornermark YYYY-MM-DD at HH.MM.SS.png") }, "pane documents the file name pattern")
 
     check(click("general.launchAtLogin", in: pane(0)) && w.login.isEnabled && c.settings.value.launchAtLogin, "launch at login registers the login item")
     check(click("general.launchAtLogin", in: pane(0)) && !w.login.isEnabled && !c.settings.value.launchAtLogin, "and unregisters it")
@@ -314,7 +314,7 @@ private func checkSettingsLayout(_ w: World, _ sw: SettingsWindowController) thr
           "the save folder path is caption-styled and truncates in the middle")
     check(findView("general.chooseFolder", in: general.view) is Button && (findView("general.resetFolder", in: general.view) as? Button)?.variant == .ghost,
           "Choose is a Button and Use Desktop a ghost Button")
-    check((findView("general.launchAtLogin", in: general.view) as? Checkbox)?.title == "" && (findView("general.launchAtLogin", in: general.view) as? Checkbox)?.accessibilityLabel() == "Launch Kadraj at login",
+    check((findView("general.launchAtLogin", in: general.view) as? Checkbox)?.title == "" && (findView("general.launchAtLogin", in: general.view) as? Checkbox)?.accessibilityLabel() == "Launch Cornermark at login",
           "settings checkboxes are design-system Checkboxes with no title and an accessibility label")
     let popup = findView("general.format", in: general.view) as? NSPopUpButton
     check(popup?.controlSize == .small && popup?.font == DS.Text.label.font, "popups are small and use the label style")
@@ -356,15 +356,15 @@ func checkSmallWindows() async throws {
     view.layoutSubtreeIfNeeded()
     check(pw.backgroundColor == DS.Color.bgWindow && view.frame.width == 520, "permission: bgWindow, 520 wide")
     let open = findView("permission.open", in: view) as? Button, quit = findView("permission.quit", in: view) as? Button
-    check(open?.variant == .primary && open?.keyEquivalent == "\r" && quit?.variant == .ghost && quit?.title == "Quit Kadraj",
-          "permission: Open System Settings is primary on Return, Quit Kadraj is ghost")
+    check(open?.variant == .primary && open?.keyEquivalent == "\r" && quit?.variant == .ghost && quit?.title == "Quit Cornermark",
+          "permission: Open System Settings is primary on Return, Quit Cornermark is ghost")
     if let open, let quit {
         let a = open.convert(open.bounds, to: view), b = quit.convert(quit.bounds, to: view)
         check(abs(a.maxX - (view.bounds.width - DS.Space.s24)) <= 0.5 && abs(a.minX - b.maxX - DS.Space.s8) <= 0.5, "permission: the buttons are right-aligned on the s24 padding, s8 apart", detail: "\(a) \(b)")
         check(abs(a.minY - DS.Space.s24) <= 0.5, "permission: the buttons sit s24 above the bottom edge", detail: "\(a.minY)")
     }
     func fields(_ v: NSView) -> [NSTextField] { (v as? NSTextField).map { [$0] } ?? v.subviews.flatMap(fields) }
-    let title = fields(view).first { $0.stringValue.hasPrefix("Kadraj needs permission") }
+    let title = fields(view).first { $0.stringValue.hasPrefix("Cornermark needs permission") }
     check(title?.font == DS.Text.title.font && title?.textColor == DS.Color.textPrimary, "permission: the title is DS title style")
     let intro = fields(view).first { $0.stringValue.hasPrefix("macOS blocks") }
     check(intro?.font == DS.Text.body.font && intro?.textColor == DS.Color.textSecondary, "permission: the intro is body in textSecondary")

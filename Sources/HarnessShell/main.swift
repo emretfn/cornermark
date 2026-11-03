@@ -12,7 +12,7 @@ DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
 }
 
 Task { @MainActor in
-    let standardKeysBefore = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("kadraj") })
+    let standardKeysBefore = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("cornermark") })
     print("screens: \(NSScreen.screens.count), activation policy prohibited: \(NSApp.activationPolicy() == .prohibited)")
     check(NSApp.activationPolicy() == .prohibited, "activation policy is .prohibited")
     do {
@@ -40,8 +40,8 @@ Task { @MainActor in
         check(false, "harness threw", detail: "\(error)")
     }
     section("isolation")
-    let standardKeysAfter = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("kadraj") })
-    check(standardKeysBefore == standardKeysAfter, "standard UserDefaults gained no kadraj keys")
+    let standardKeysAfter = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("cornermark") })
+    check(standardKeysBefore == standardKeysAfter, "standard UserDefaults gained no cornermark keys")
     check(nothingOnScreen(), "at the end no window was ever visible and the app never became active")
     check(NSApp.activationPolicy() == .prohibited, "activation policy still .prohibited")
     let c = Checks.shared

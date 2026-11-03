@@ -1,5 +1,5 @@
 import AppKit
-@testable import KadrajDesign
+@testable import CornermarkDesign
 
 setvbuf(stdout, nil, _IOLBF, 0)
 let app = NSApplication.shared

@@ -1,5 +1,5 @@
 import AppKit
-import KadrajCapture
+import CornermarkCapture
 
 let scratch = "build/harness/capture/"
 let multiScratch = "build/harness/multi/"
@@ -104,7 +104,7 @@ enum Fixtures {
 
         ctx.setFillColor(CGColor(gray: 0.93, alpha: 0.96))
         ctx.fill(CGRect(x: 0, y: CGFloat(h) - 24 * s, width: CGFloat(w), height: 24 * s))
-        text(ctx, "Kadraj  File  Edit  View", at: CGPoint(x: 12 * s, y: CGFloat(h) - 18 * s), size: 12 * s, color: .black)
+        text(ctx, "Cornermark  File  Edit  View", at: CGPoint(x: 12 * s, y: CGFloat(h) - 18 * s), size: 12 * s, color: .black)
 
         for win in windows.reversed() where win.frame.intersects(frame) {
             let r = CGRect(x: (win.frame.minX - frame.minX) * s, y: (win.frame.minY - frame.minY) * s,

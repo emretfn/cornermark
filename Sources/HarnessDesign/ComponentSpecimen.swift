@@ -1,5 +1,5 @@
 import AppKit
-@testable import KadrajDesign
+@testable import CornermarkDesign
 
 private typealias C = DS.Color
 

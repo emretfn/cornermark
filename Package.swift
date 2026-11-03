@@ -2,19 +2,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "Kadraj",
+    name: "Cornermark",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "KadrajCore", swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "KadrajDesign", swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "KadrajCapture", dependencies: ["KadrajCore", "KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "KadrajEditor", dependencies: ["KadrajCore", "KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "KadrajShell", dependencies: ["KadrajCore", "KadrajCapture", "KadrajEditor", "KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .executableTarget(name: "Kadraj", dependencies: ["KadrajShell"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .executableTarget(name: "HarnessCapture", dependencies: ["KadrajCapture"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .executableTarget(name: "HarnessDesign", dependencies: ["KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .executableTarget(name: "HarnessEditor", dependencies: ["KadrajEditor"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .executableTarget(name: "HarnessShell", dependencies: ["KadrajShell"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .testTarget(name: "KadrajCoreTests", dependencies: ["KadrajCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CornermarkCore", swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CornermarkDesign", swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CornermarkCapture", dependencies: ["CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CornermarkEditor", dependencies: ["CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CornermarkShell", dependencies: ["CornermarkCore", "CornermarkCapture", "CornermarkEditor", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "Cornermark", dependencies: ["CornermarkShell"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "HarnessCapture", dependencies: ["CornermarkCapture"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "HarnessDesign", dependencies: ["CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "HarnessEditor", dependencies: ["CornermarkEditor"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "HarnessShell", dependencies: ["CornermarkShell"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "HarnessReadme", dependencies: ["CornermarkShell", "CornermarkCapture", "CornermarkEditor", "CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "CornermarkCoreTests", dependencies: ["CornermarkCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

@@ -1,7 +1,7 @@
 import AppKit
-import KadrajCore
-import KadrajDesign
-import KadrajEditor
+import CornermarkCore
+import CornermarkDesign
+import CornermarkEditor
 
 func click(_ view: NSView?) { (view as? NSControl)?.performClick(nil) }
 
@@ -70,7 +70,7 @@ func checkBackgroundPanel() {
     nameField?.stringValue = "Soft"
     click(c.view(identifier: "bg.presetSave"))
     check("saving a preset adds an apply button", c.view(identifier: "bg.preset.apply.Soft") != nil)
-    check("presets persist in UserDefaults", defaults.data(forKey: "kadraj.presets.background") != nil)
+    check("presets persist in UserDefaults", defaults.data(forKey: "cornermark.presets.background") != nil)
     click(c.view(identifier: "bg.none"))
     check("None removes the background", rig.doc.background == nil)
     click(c.view(identifier: "bg.preset.apply.Soft"))
@@ -110,7 +110,7 @@ func checkPropertyBar() {
     }
 
     click(c.view(identifier: "prop.favorite"))
-    check("star button saves the colour to the favourites palette", defaults.data(forKey: "kadraj.palette.favorites") != nil && c.allViews(identifier: "prop.favoriteChip").count == 1)
+    check("star button saves the colour to the favourites palette", defaults.data(forKey: "cornermark.palette.favorites") != nil && c.allViews(identifier: "prop.favoriteChip").count == 1)
     let second = makeRig(zoom: nil)
     second.driver.tapKey("a")
     relayout(second)
@@ -127,7 +127,7 @@ func checkPropertyBar() {
           rgbaClose(rig.last!.stroke.color, RGBA(0.118, 0.533, 0.941)) && rig.last!.stroke.width == 14, "\(rig.last!.stroke)")
     let popup = c.view(identifier: "prop.presets") as? NSPopUpButton
     check("presets menu lists the saved preset", popup?.itemTitles.contains("Callout") == true, "\(popup?.itemTitles ?? [])")
-    check("style presets persist in UserDefaults", defaults.data(forKey: "kadraj.presets.style") != nil)
+    check("style presets persist in UserDefaults", defaults.data(forKey: "cornermark.presets.style") != nil)
 
     d.tapKey("v")
     d.click(d.windowPoint(source: CGPoint(x: 500, y: 150)))

@@ -1,8 +1,8 @@
 import AppKit
-import KadrajCore
-import KadrajDesign
-import KadrajEditor
-@testable import KadrajShell
+import CornermarkCore
+import CornermarkDesign
+import CornermarkEditor
+@testable import CornermarkShell
 
 @MainActor
 func seedHistory(_ w: World) -> [CaptureRecord] {

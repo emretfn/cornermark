@@ -1,5 +1,5 @@
 import AppKit
-@testable import KadrajDesign
+@testable import CornermarkDesign
 
 private func lch(_ color: NSColor, _ appearance: NSAppearance.Name) -> LCH {
     var out: LCH = (0, 0, 0)

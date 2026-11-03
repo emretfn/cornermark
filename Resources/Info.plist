@@ -3,12 +3,12 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>Kadraj</string>
-    <key>CFBundleIconFile</key><string>Kadraj</string>
+    <key>CFBundleExecutable</key><string>Cornermark</string>
+    <key>CFBundleIconFile</key><string>Cornermark</string>
     <key>CFBundleIdentifier</key><string>__BUNDLE_ID__</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Kadraj</string>
-    <key>CFBundleDisplayName</key><string>Kadraj</string>
+    <key>CFBundleName</key><string>Cornermark</string>
+    <key>CFBundleDisplayName</key><string>Cornermark</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>__VERSION__</string>
     <key>CFBundleVersion</key><string>__BUILD__</string>
@@ -17,14 +17,14 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Kadraj needs to record your screen to take screenshots. Nothing leaves this Mac.</string>
+    <string>Cornermark needs to record your screen to take screenshots. Nothing leaves this Mac.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLName</key><string>__BUNDLE_ID__.url</string>
             <key>CFBundleTypeRole</key><string>Viewer</string>
             <key>CFBundleURLSchemes</key>
-            <array><string>kadraj</string></array>
+            <array><string>cornermark</string></array>
         </dict>
     </array>
     <key>CFBundleDocumentTypes</key>

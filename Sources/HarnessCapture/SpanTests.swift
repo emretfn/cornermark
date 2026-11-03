@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCapture
-import KadrajCore
+import CornermarkCapture
+import CornermarkCore
 
 /// Every pixel of a spanning capture, predicted from the cell display it came from. Pixels cut from a display
 /// finer than the canvas are resampled, so only those within 3 source pixels of a cell edge are skipped.
@@ -216,7 +216,7 @@ func runSpanTests() async {
     /// The panel hosting the toolbar, and the toolbar pill in that panel's coordinates.
     func toolbarHost() -> (NSWindow, CGRect)? {
         let hosts = a.overlayWindows.compactMap { w -> (NSWindow, CGRect)? in
-            guard var v = findView("kadraj.toolbar.capture", in: w.contentView), let root = w.contentView else { return nil }
+            guard var v = findView("cornermark.toolbar.capture", in: w.contentView), let root = w.contentView else { return nil }
             while let up = v.superview, up !== root { v = up }
             return (w, v.frame.insetBy(dx: 32, dy: 32))
         }

@@ -1,5 +1,5 @@
 import AppKit
-import KadrajDesign
+import CornermarkDesign
 
 /// Immediate-mode helpers for the specimen. Every call assumes a flipped context, so y grows downward.
 enum Draw {

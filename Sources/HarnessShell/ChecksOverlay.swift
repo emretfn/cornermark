@@ -1,7 +1,7 @@
 import AppKit
-import KadrajCapture
-import KadrajCore
-@testable import KadrajShell
+import CornermarkCapture
+import CornermarkCore
+@testable import CornermarkShell
 
 @MainActor
 func addCard(_ w: World, _ label: String, _ r: Double = 0.2) -> QuickAccessCard {

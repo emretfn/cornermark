@@ -1,0 +1,3 @@
+import CornermarkShell
+
+CornermarkApp.run()

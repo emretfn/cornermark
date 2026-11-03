@@ -1,5 +1,5 @@
 import AppKit
-import KadrajDesign
+import CornermarkDesign
 
 private typealias C = DS.Color
 
@@ -41,7 +41,7 @@ final class Sheet {
     // MARK: Page furniture
 
     private func header() {
-        Draw.text("Kadraj design tokens", DS.Text.title, C.textPrimary, at: CGPoint(x: left, y: y))
+        Draw.text("Cornermark design tokens", DS.Text.title, C.textPrimary, at: CGPoint(x: left, y: y))
         y += 26 + DS.Space.s4
         let mode = appearance == .darkAqua ? "dark" : "light"
         Draw.text("Accent \(accent)  ·  \(mode) appearance  ·  rendered by HarnessDesign from the public DS tokens", DS.Text.body, C.textSecondary,
@@ -317,7 +317,7 @@ final class Sheet {
         Draw.fill(Draw.rounded(panel, DS.Radius.xl), C.bgCanvas)
         Draw.stroke(Draw.rounded(panel, DS.Radius.xl), C.border)
 
-        let specs: [(String, KadrajDesign.Elevation, String, [String])] = [
+        let specs: [(String, CornermarkDesign.Elevation, String, [String])] = [
             ("raised", DS.Elevation.raised, "Menus, small cards", ["contact  y1 b2  12%", "ambient  y2 b6  10%", "highlight  none"]),
             ("hud", DS.Elevation.hud, "Capture bar, HUD", ["contact  y1 b3  30%", "ambient  y8 b24  35%", "highlight  white 10%"]),
             ("floating", DS.Elevation.floating, "Quick Access card, pins", ["contact  y2 b4  25%", "ambient  y12 b32  40%", "highlight  white 12%"]),

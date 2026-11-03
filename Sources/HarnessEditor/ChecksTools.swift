@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCore
-import KadrajEditor
+import CornermarkCore
+import CornermarkEditor
 
 func rectOf(_ a: CGPoint, _ b: CGPoint) -> CGRect {
     CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))

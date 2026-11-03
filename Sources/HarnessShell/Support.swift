@@ -1,9 +1,9 @@
 import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
-import KadrajCapture
-import KadrajCore
-@testable import KadrajShell
+import CornermarkCapture
+import CornermarkCore
+@testable import CornermarkShell
 
 let scratch = "build/harness/shell/"
 
@@ -77,8 +77,8 @@ enum Fixture {
     /// Top-left coordinates inside the fixture display.
     static let textBox = CGRect(x: 100, y: 100, width: 700, height: 220)
     static let qrBox = CGRect(x: 900, y: 100, width: 260, height: 260)
-    static let textLines = ["Hello Kadraj OCR", "Second line 12345", "Third line done"]
-    static let qrPayload = "https://example.com/kadraj?ref=qr-42"
+    static let textLines = ["Hello Cornermark OCR", "Second line 12345", "Third line done"]
+    static let qrPayload = "https://example.com/cornermark?ref=qr-42"
 
     /// Global AppKit points for a top-left box on the fixture display.
     static func global(_ box: CGRect, grow: CGFloat = 0) -> CGRect {
@@ -210,9 +210,9 @@ final class World {
     var saveDir: URL { root.appendingPathComponent("saved", isDirectory: true) }
 
     init(after: AfterCapture = [.showOverlay], hotKeys: Bool = false) throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("KadrajHarness-\(UUID().uuidString)", isDirectory: true)
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        suite = "local.emretufan.kadraj.harness.\(UUID().uuidString)"
+        suite = "local.emretufan.cornermark.harness.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         pasteboard = NSPasteboard(name: NSPasteboard.Name(suite))
         display = Pix.fixtureDisplay()

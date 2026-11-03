@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCore
-import KadrajEditor
+import CornermarkCore
+import CornermarkEditor
 
 var failures = 0
 var passes = 0

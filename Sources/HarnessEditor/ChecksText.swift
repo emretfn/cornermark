@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCore
-import KadrajEditor
+import CornermarkCore
+import CornermarkEditor
 
 func textAnnotation(_ a: Annotation?) -> (origin: CGPoint, string: String, size: Double, style: TextStylePreset)? {
     if case .text(let o, let s, let size, let st)? = a?.kind { return (o, s, size, st) }

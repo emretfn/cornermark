@@ -1,8 +1,8 @@
 import AppKit
 import Carbon.HIToolbox
-import KadrajCapture
-import KadrajCore
-@testable import KadrajShell
+import CornermarkCapture
+import CornermarkCore
+@testable import CornermarkShell
 
 @MainActor
 func checkActionTable() async throws {
@@ -74,13 +74,13 @@ func checkURLScheme() async throws {
     defer { w.cleanup() }
     func parse(_ s: String) -> Result<AppAction, URLCommandError> { URLCommand.parse(URL(string: s)!, timerSeconds: 5) }
     let expect: [(String, AppAction)] = [
-        ("kadraj://capture-area", .capture(.area)), ("kadraj://capture-window", .capture(.window)),
-        ("kadraj://capture-fullscreen", .capture(.fullscreen)), ("kadraj://all-in-one", .capture(.allInOne)),
-        ("kadraj://previous-area", .capture(.previousArea)), ("kadraj://scrolling", .capture(.scrolling)),
-        ("kadraj://ocr", .captureOCR), ("kadraj://history", .openHistory), ("kadraj://settings", .openSettings),
-        ("kadraj:///capture-area", .capture(.area)), ("KADRAJ://Capture-Area", .capture(.area)),
-        ("kadraj://timer?seconds=7", .capture(.timed(seconds: 7))), ("kadraj://timer", .capture(.timed(seconds: 5))),
-        ("kadraj://timer?seconds=999", .capture(.timed(seconds: 60))),
+        ("cornermark://capture-area", .capture(.area)), ("cornermark://capture-window", .capture(.window)),
+        ("cornermark://capture-fullscreen", .capture(.fullscreen)), ("cornermark://all-in-one", .capture(.allInOne)),
+        ("cornermark://previous-area", .capture(.previousArea)), ("cornermark://scrolling", .capture(.scrolling)),
+        ("cornermark://ocr", .captureOCR), ("cornermark://history", .openHistory), ("cornermark://settings", .openSettings),
+        ("cornermark:///capture-area", .capture(.area)), ("CORNERMARK://Capture-Area", .capture(.area)),
+        ("cornermark://timer?seconds=7", .capture(.timed(seconds: 7))), ("cornermark://timer", .capture(.timed(seconds: 5))),
+        ("cornermark://timer?seconds=999", .capture(.timed(seconds: 60))),
     ]
     for (s, action) in expect {
         check((try? parse(s).get()) == action, "accepts \(s)", detail: "\(parse(s))")
@@ -89,34 +89,34 @@ func checkURLScheme() async throws {
     let png = w.root.appendingPathComponent("valid image.png")
     try AssetStore.pngData(from: Pix.flat(40, 30, r: 0.2, g: 0.5, b: 0.8))!.write(to: png)
     let encoded = png.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-    check((try? parse("kadraj://open?path=\(encoded)").get()) == .openFile(png.standardizedFileURL.resolvingSymlinksInPath()),
-          "accepts open?path= for an existing image file (percent-encoded path)", detail: "\(parse("kadraj://open?path=\(encoded)"))")
+    check((try? parse("cornermark://open?path=\(encoded)").get()) == .openFile(png.standardizedFileURL.resolvingSymlinksInPath()),
+          "accepts open?path= for an existing image file (percent-encoded path)", detail: "\(parse("cornermark://open?path=\(encoded)"))")
 
     let text = w.root.appendingPathComponent("notes.txt")
     try "hello".write(to: text, atomically: true, encoding: .utf8)
     let rejects: [(String, URLCommandError)] = [
-        ("kadraj://bogus", .unknownPath("bogus")), ("kadraj://quit", .unknownPath("quit")), ("kadraj://", .missingPath),
-        ("kadraj://open", .missingPath), ("kadraj://open?path=", .missingPath), ("https://example.com/capture-area", .wrongScheme),
+        ("cornermark://bogus", .unknownPath("bogus")), ("cornermark://quit", .unknownPath("quit")), ("cornermark://", .missingPath),
+        ("cornermark://open", .missingPath), ("cornermark://open?path=", .missingPath), ("https://example.com/capture-area", .wrongScheme),
     ]
     for (s, err) in rejects {
         if case .failure(let e) = parse(s) { check(e == err, "rejects \(s) as \(err)", detail: "\(e)") } else { check(false, "rejects \(s)") }
     }
     for path in ["/definitely/not/here.png", text.path, w.root.path, "relative/path.png", "../etc/passwd"] {
         let q = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-        if case .failure(.invalidFile) = parse("kadraj://open?path=\(q)") { check(true, "open rejects \(path)") } else { check(false, "open rejects \(path)") }
+        if case .failure(.invalidFile) = parse("cornermark://open?path=\(q)") { check(true, "open rejects \(path)") } else { check(false, "open rejects \(path)") }
     }
 
     let before = w.store.list().count
-    check(w.coordinator.handle(url: URL(string: "kadraj://bogus")!) == false, "handle(url:) ignores an unknown path")
-    check(w.coordinator.handle(url: URL(string: "kadraj://open")!) == false, "handle(url:) ignores open without path")
-    check(w.coordinator.handle(url: URL(string: "kadraj://capture-fullscreen")!), "handle(url:) performs a known path")
-    check(await waitUntil { w.store.list().count == before + 1 }, "kadraj://capture-fullscreen captured through the fixture source")
+    check(w.coordinator.handle(url: URL(string: "cornermark://bogus")!) == false, "handle(url:) ignores an unknown path")
+    check(w.coordinator.handle(url: URL(string: "cornermark://open")!) == false, "handle(url:) ignores open without path")
+    check(w.coordinator.handle(url: URL(string: "cornermark://capture-fullscreen")!), "handle(url:) performs a known path")
+    check(await waitUntil { w.store.list().count == before + 1 }, "cornermark://capture-fullscreen captured through the fixture source")
 }
 
 @MainActor
 func checkSettingsModel() async throws {
     section("settings model")
-    let suite = "local.emretufan.kadraj.harness.settings.\(UUID().uuidString)"
+    let suite = "local.emretufan.cornermark.harness.settings.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
 
@@ -145,7 +145,7 @@ func checkSettingsModel() async throws {
 
     store.update { $0 = custom }
     check(SettingsStore(defaults: defaults).value == custom, "a second store on the same defaults reads the saved value")
-    check(defaults.data(forKey: SettingsStore.key) != nil && defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("kadraj.") }.count == 1,
+    check(defaults.data(forKey: SettingsStore.key) != nil && defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("cornermark.") }.count == 1,
           "settings persist as exactly one value under one key")
 
     let partial = try JSONDecoder().decode(Settings.self, from: Data(#"{"timerSeconds": 9, "unknownFutureKey": 1}"#.utf8))
@@ -223,16 +223,16 @@ func checkHotKeys() async throws {
 func checkImageOutput() async throws {
     section("file naming and output")
     let date = Fixture.timestamp(2026, 11, 3, 14, 5, 9)
-    check(ImageOutput.fileName(for: date, format: .png) == "Kadraj 2026-11-03 at 14.05.09.png", "file name follows Kadraj YYYY-MM-DD at HH.MM.SS.png",
+    check(ImageOutput.fileName(for: date, format: .png) == "Cornermark 2026-11-03 at 14.05.09.png", "file name follows Cornermark YYYY-MM-DD at HH.MM.SS.png",
           detail: ImageOutput.fileName(for: date, format: .png))
-    check(ImageOutput.fileName(for: Fixture.timestamp(2026, 1, 2, 3, 4, 5), format: .jpeg) == "Kadraj 2026-01-02 at 03.04.05.jpg", "single digits are zero padded, JPEG uses .jpg")
+    check(ImageOutput.fileName(for: Fixture.timestamp(2026, 1, 2, 3, 4, 5), format: .jpeg) == "Cornermark 2026-01-02 at 03.04.05.jpg", "single digits are zero padded, JPEG uses .jpg")
 
     let w = try World(after: [])
     defer { w.cleanup() }
     let img = Pix.flat(120, 80, r: 0.9, g: 0.4, b: 0.1)
     let a = try ImageOutput.save(img, format: .png, folder: w.saveDir, date: date)
     let b = try ImageOutput.save(img, format: .png, folder: w.saveDir, date: date)
-    check(a.lastPathComponent == "Kadraj 2026-11-03 at 14.05.09.png" && b.lastPathComponent == "Kadraj 2026-11-03 at 14.05.09 2.png",
+    check(a.lastPathComponent == "Cornermark 2026-11-03 at 14.05.09.png" && b.lastPathComponent == "Cornermark 2026-11-03 at 14.05.09 2.png",
           "a second save in the same second gets a numeric suffix instead of overwriting", detail: b.lastPathComponent)
     check(Pix.decode(a).map { $0.width == 120 && $0.height == 80 } == true, "saved PNG decodes at the original size")
     let j = try ImageOutput.save(img, format: .jpeg, folder: w.saveDir, date: date)

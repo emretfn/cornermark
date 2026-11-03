@@ -1,6 +1,6 @@
 import CoreGraphics
-import KadrajCapture
-import KadrajCore
+import CornermarkCapture
+import CornermarkCore
 
 let d1 = DisplayGeometry(id: 1, frame: CGRect(x: 0, y: 0, width: 600, height: 400), scale: 1)
 let d2 = DisplayGeometry(id: 2, frame: CGRect(x: 600, y: 0, width: 400, height: 300), scale: 2)

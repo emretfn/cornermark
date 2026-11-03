@@ -1,5 +1,5 @@
 import AppKit
-import KadrajDesign
+import CornermarkDesign
 
 private final class ElevationView: NSView {
     let flip: Bool

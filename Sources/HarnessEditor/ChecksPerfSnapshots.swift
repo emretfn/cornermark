@@ -1,7 +1,7 @@
 import AppKit
-import KadrajCore
-import KadrajDesign
-import KadrajEditor
+import CornermarkCore
+import CornermarkDesign
+import CornermarkEditor
 
 func ms(_ block: () -> Void) -> Double {
     let t = DispatchTime.now().uptimeNanoseconds

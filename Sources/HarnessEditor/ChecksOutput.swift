@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCore
-import KadrajEditor
+import CornermarkCore
+import CornermarkEditor
 
 func samePixels(_ a: CGImage, _ b: CGImage) -> Bool { a.width == b.width && a.height == b.height && pixels(a) == pixels(b) }
 
@@ -21,7 +21,7 @@ func makeBusyRig(callbacks: EditorCallbacks = EditorCallbacks(), pasteboard: NSP
     d.tapKey("h"); d.drag(source: CGPoint(x: 130, y: 500), to: CGPoint(x: 560, y: 505))
     d.tapKey("b"); d.drag(source: CGPoint(x: 700, y: 640), to: CGPoint(x: 900, y: 700))
     d.tapKey("t"); d.click(d.windowPoint(source: CGPoint(x: 600, y: 90)))
-    d.type("Kadraj editor")
+    d.type("Cornermark editor")
     d.escape()
     return rig
 }
@@ -30,7 +30,7 @@ func checkOutputs() {
     section("Render, export, project, copy")
     var saved: (Document, AssetStore)?
     var copied = 0
-    let pb = NSPasteboard(name: NSPasteboard.Name("kadraj.harness.copy"))
+    let pb = NSPasteboard(name: NSPasteboard.Name("cornermark.harness.copy"))
     let rig = makeBusyRig(callbacks: EditorCallbacks(onSaveProject: { saved = ($0, $1) }, onCopied: { copied += 1 }), pasteboard: pb)
     let c = rig.controller
     var bg = BackgroundStyle()
@@ -43,7 +43,7 @@ func checkOutputs() {
     let rendered = c.renderedImage()
     let direct = Renderer.render(rig.doc, assets: rig.assets)
     check("renderedImage equals Renderer.render pixel for pixel", samePixels(rendered, direct))
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kadraj-harness-\(UUID().uuidString)", isDirectory: true)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cornermark-harness-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let pngURL = dir.appendingPathComponent("out.png")
     try? c.exportImage(to: pngURL)
@@ -92,7 +92,7 @@ func checkOutputs() {
     check("Cmd+C puts the rendered image on the pasteboard", clip.map { samePixels($0, c.renderedImage()) } ?? false)
     check("Cmd+C reports onCopied", copied == 1)
 
-    let projectURL = dir.appendingPathComponent("test.kadraj", isDirectory: true)
+    let projectURL = dir.appendingPathComponent("test.cornermark", isDirectory: true)
     try? c.saveProject(to: projectURL)
     check("saving a project calls onSaveProject with the document", saved?.0 == rig.doc)
     if let (doc2, assets2) = try? ProjectFile.read(from: projectURL) {
@@ -116,7 +116,7 @@ func checkOutputs() {
     check("a drop keeps the editor open behind the receiving app", window.isVisible)
     window.orderOut(nil)
     window.orderFront(nil)
-    let dragged = NSPasteboard(name: NSPasteboard.Name("kadraj.harness.escapedDrag"))
+    let dragged = NSPasteboard(name: NSPasteboard.Name("cornermark.harness.escapedDrag"))
     dragged.clearContents()
     if let drag { dragged.writeObjects([drag as NSURL]) }
     check("Esc during a drag makes every target refuse the image", c.pressEscapeDuringDrag(carrying: dragged))
@@ -137,7 +137,7 @@ func checkDrop() {
     section("Dropped images")
     let rig = makeRig(zoom: 0.6)
     let d = rig.driver, c = rig.controller
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kadraj-drop-\(UUID().uuidString)", isDirectory: true)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cornermark-drop-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let ctx = CGContext(data: nil, width: 200, height: 120, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -145,7 +145,7 @@ func checkDrop() {
     ctx.fill(CGRect(x: 0, y: 0, width: 200, height: 120))
     let url = dir.appendingPathComponent("dropped.png")
     try? AssetStore.pngData(from: ctx.makeImage()!)?.write(to: url)
-    let pb = NSPasteboard(name: NSPasteboard.Name("kadraj.harness.drop"))
+    let pb = NSPasteboard(name: NSPasteboard.Name("cornermark.harness.drop"))
     pb.clearContents()
     pb.writeObjects([url as NSURL])
 

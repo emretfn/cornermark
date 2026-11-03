@@ -1,8 +1,8 @@
-# Kadraj tasarım sistemi
+# Cornermark tasarım sistemi
 
-Kadraj, fotoğraf makinesindeki vizör karesinin adını taşır. Arayüz de vizör gibi davranır: içerik öndedir, kabuk geri çekilir, renk yalnızca odak anlarında görünür.
+Cornermark, adını seçim karesinin köşe işaretlerinden alır. Arayüz bir vizör gibi davranır: içerik öndedir, kabuk geri çekilir, renk yalnızca odak anlarında görünür.
 
-Kaynak kod `Sources/KadrajDesign` içindedir. Kontrast ve tutarlılık denetimleri `swift run HarnessDesign` ile çalışır ve örnek sayfayı aynı komut üretir.
+Kaynak kod `Sources/CornermarkDesign` içindedir. Kontrast ve tutarlılık denetimleri `swift run HarnessDesign` ile çalışır ve örnek sayfayı aynı komut üretir.
 
 ## İlkeler
 
@@ -11,11 +11,17 @@ Kaynak kod `Sources/KadrajDesign` içindedir. Kontrast ve tutarlılık denetimle
 3. **Yerel davranış, özel görünüm.** Sistem fontu, klavye odak halkası, azaltılmış hareket, saydamlık ve artırılmış kontrast ayarları korunur.
 4. **Sık yapılan iş anında olur.** Kısayolla açılan yakalama katmanı animasyon almaz. Hareket yalnızca seyrek anlara ve basma geri bildirimine aittir.
 
+## Uygulama simgesi
+
+Grafit zemin üzerinde limon rengi bir vizör: dört köşe. Çizgiler `accentSolid` tonundadır, bu yüzden simge arayüzdeki tek vurguyla aynı rengi taşır. Simgede harf yoktur.
+
+`scripts/make-icon.swift` simgeyi her boyut için ayrı çizer. 48 pikselin altında çizgiler kalınlaşır. İnce açık kenar, zeminin koyu duvar kâğıdında kaybolmasını önler. Menü çubuğu simgesi aynı şekli taşıyan `viewfinder` SF Symbol'üdür.
+
 ## Katmanlar
 
 | Katman | Örnek | Kim kullanır |
 | --- | --- | --- |
-| İlkel | `Palette.neutralLight[11]` | Yalnızca `KadrajDesign` içi, dışarıya kapalıdır (`internal`) |
+| İlkel | `Palette.neutralLight[11]` | Yalnızca `CornermarkDesign` içi, dışarıya kapalıdır (`internal`) |
 | Anlamsal | `DS.Color.textSecondary` | Bütün bileşenler |
 
 Görünüm değişimi anlamsal katmanda çözülür. Yakalama katmanı gibi her zaman koyu olan yüzeyler pencereye `.darkAqua` atar ve aynı tokenları kullanır, bu yüzden ayrı bir HUD renk ailesi yoktur.
@@ -170,7 +176,7 @@ Sürüklemeyle devam eden hareket yay kullanır: sönüm 1.0, tepki 0.3. Fırlat
 
 ## Bileşenler
 
-Web tarafındaki karşılıklar: token CSS değişkeni, bileşen `NSView` veya `NSButton` alt sınıfı, props `init` parametresi, Storybook ise `swift run HarnessDesign` çıktısıdır. Bileşenler `Sources/KadrajDesign/Components` içindedir ve yalnızca token kullanır.
+Web tarafındaki karşılıklar: token CSS değişkeni, bileşen `NSView` veya `NSButton` alt sınıfı, props `init` parametresi, Storybook ise `swift run HarnessDesign` çıktısıdır. Bileşenler `Sources/CornermarkDesign/Components` içindedir ve yalnızca token kullanır.
 
 | Bileşen | Varyant ve seçenek | Nerede |
 | --- | --- | --- |
@@ -224,5 +230,5 @@ Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` i
 - Bileşen dosyasında ham renk, ham font boyutu veya ham köşe değeri bulunmaz. Bir rol eksikse token eklenir.
 - Görünümde tek bir dolu vurgu butonu olur, eşdeğerleri nötr kalır.
 - Durum yalnızca renkle anlatılmaz, yanında ikon veya etiket bulunur.
-- Kullanıcının çizim paleti (`KadrajCore`) içeriktir ve bu sistemin dışındadır.
+- Kullanıcının çizim paleti (`CornermarkCore`) içeriktir ve bu sistemin dışındadır.
 - Dışa aktarılan görsele giren değerler token kullanmaz, çünkü görünüm değişince dışa aktarım değişmemelidir.

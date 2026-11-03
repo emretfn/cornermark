@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCore
-import KadrajEditor
+import CornermarkCore
+import CornermarkEditor
 
 /// Window point for a source pixel while the crop tool shows the whole, un-cropped image.
 func cropPoint(_ rig: Rig, _ p: CGPoint) -> CGPoint {

@@ -1,8 +1,8 @@
 import AppKit
-import KadrajCapture
-import KadrajCore
-import KadrajEditor
-@testable import KadrajShell
+import CornermarkCapture
+import CornermarkCore
+import CornermarkEditor
+@testable import CornermarkShell
 
 @MainActor
 func checkCaptureFlow() async throws {
@@ -70,7 +70,7 @@ func checkAfterCaptureRouting() async throws {
     w.pasteboard.clearContents()
     w.settings.update { $0.afterCapture = [.save] }
     _ = await w.capture(.fullscreen, expecting: 2)
-    let name = "Kadraj 2026-11-03 at 14.05.09.png"
+    let name = "Cornermark 2026-11-03 at 14.05.09.png"
     let file = w.saveDir.appendingPathComponent(name)
     check(FileManager.default.fileExists(atPath: file.path), "autosave: \(name) written to the temp save folder")
     check((try? FileManager.default.contentsOfDirectory(atPath: w.saveDir.path))?.count == 1, "autosave: exactly one file")
@@ -78,12 +78,12 @@ func checkAfterCaptureRouting() async throws {
     check(w.pasteboard.data(forType: .png) == nil, "save only: pasteboard untouched")
 
     _ = await w.capture(.fullscreen, expecting: 3)
-    check(FileManager.default.fileExists(atPath: w.saveDir.appendingPathComponent("Kadraj 2026-11-03 at 14.05.09 2.png").path), "autosave twice in one second does not overwrite")
+    check(FileManager.default.fileExists(atPath: w.saveDir.appendingPathComponent("Cornermark 2026-11-03 at 14.05.09 2.png").path), "autosave twice in one second does not overwrite")
 
     w.now = Fixture.timestamp(2026, 11, 3, 14, 6, 0)
     w.settings.update { $0.imageFormat = .jpeg }
     _ = await w.capture(.fullscreen, expecting: 4)
-    check(FileManager.default.fileExists(atPath: w.saveDir.appendingPathComponent("Kadraj 2026-11-03 at 14.06.00.jpg").path), "autosave in JPEG uses the .jpg name for the new second")
+    check(FileManager.default.fileExists(atPath: w.saveDir.appendingPathComponent("Cornermark 2026-11-03 at 14.06.00.jpg").path), "autosave in JPEG uses the .jpg name for the new second")
 
     w.now = Fixture.timestamp(2026, 11, 3, 14, 6, 30)
     w.settings.update { $0.afterCapture = [.openEditor]; $0.imageFormat = .png }
@@ -100,7 +100,7 @@ func checkAfterCaptureRouting() async throws {
     w.now = Fixture.timestamp(2026, 11, 3, 14, 7, 0)
     _ = await w.capture(.fullscreen, expecting: 6)
     check(c.overlay.stack.count == 1 && w.pasteboardImage() != nil
-          && FileManager.default.fileExists(atPath: w.saveDir.appendingPathComponent("Kadraj 2026-11-03 at 14.07.00.png").path)
+          && FileManager.default.fileExists(atPath: w.saveDir.appendingPathComponent("Cornermark 2026-11-03 at 14.07.00.png").path)
           && c.editors.count == 2, "all four routes together: card, clipboard, file and editor")
 
     w.settings.update { $0.afterCapture = [] }
@@ -178,8 +178,8 @@ func checkCardActions() async throws {
 
     check(click("card.save", in: view), "Save button clicked")
     let saved = (try? FileManager.default.contentsOfDirectory(atPath: w.saveDir.path)) ?? []
-    check(saved == ["Kadraj 2026-11-03 at 14.05.09.png"], "Save: file in the save folder with the pattern name", detail: "\(saved)")
-    check(c.hud.lastMessage == "Saved Kadraj 2026-11-03 at 14.05.09.png", "Save: HUD names the file", detail: c.hud.lastMessage ?? "nil")
+    check(saved == ["Cornermark 2026-11-03 at 14.05.09.png"], "Save: file in the save folder with the pattern name", detail: "\(saved)")
+    check(c.hud.lastMessage == "Saved Cornermark 2026-11-03 at 14.05.09.png", "Save: HUD names the file", detail: c.hud.lastMessage ?? "nil")
 
     w.pasteboard.clearContents()
     check(click("card.ocr", in: view), "OCR button clicked")
@@ -192,7 +192,7 @@ func checkCardActions() async throws {
     let item = view.dragItem()
     check(item != nil && url != nil, "drag-out produces a dragging item")
     let dragged = (item?.item as? NSURL) as URL?
-    check(dragged?.pathExtension == "png" && dragged?.lastPathComponent.hasPrefix("Kadraj 2026-11-03 at 14.05.09") == true, "drag-out file is a PNG named like a Kadraj screenshot", detail: dragged?.lastPathComponent ?? "nil")
+    check(dragged?.pathExtension == "png" && dragged?.lastPathComponent.hasPrefix("Cornermark 2026-11-03 at 14.05.09") == true, "drag-out file is a PNG named like a Cornermark screenshot", detail: dragged?.lastPathComponent ?? "nil")
     check(dragged.flatMap(Pix.decode).map { $0.width == text.width && $0.height == text.height } == true, "drag-out file holds the capture pixels")
     check(dragged?.deletingLastPathComponent().standardizedFileURL == w.env.dragDirectory.standardizedFileURL, "drag-out file lives in the injected drag directory")
 

@@ -1,5 +1,5 @@
 import AppKit
-@testable import KadrajDesign
+@testable import CornermarkDesign
 
 private final class Probe: NSObject {
     var count = 0
@@ -466,7 +466,7 @@ private func renderedSliderAndCheckbox() {
 }
 
 private func tokenDiscipline() {
-    let dir = "Sources/KadrajDesign/Components"
+    let dir = "Sources/CornermarkDesign/Components"
     guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir).filter({ $0.hasSuffix(".swift") }), !files.isEmpty else {
         check("component sources are readable from the package root", false, dir)
         return

@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCore
-import KadrajEditor
+import CornermarkCore
+import CornermarkEditor
 
 func annRect(_ a: Annotation?) -> CGRect? {
     guard let a else { return nil }

@@ -1,5 +1,5 @@
 import AppKit
-import KadrajDesign
+import CornermarkDesign
 
 private typealias Token = (name: String, color: NSColor)
 

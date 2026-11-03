@@ -3,8 +3,21 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-// Usage: swift make-icon.swift <output.icns>
-// Draws the Kadraj icon (a viewfinder over a deep blue squircle) at every size an .icns needs.
+// Usage: swift make-icon.swift <output.icns|output.png>
+// Draws the Cornermark icon (a lemon viewfinder on a graphite plate) at every size an .icns needs, or once at 512 for a .png.
+
+func superellipse(_ r: CGRect) -> CGPath {
+    let path = CGMutablePath()
+    let exponent = 2.0 / 5.0
+    for i in 0..<720 {
+        let t = Double(i) / 720 * 2 * .pi
+        let x = r.midX + r.width / 2 * CGFloat(copysign(pow(abs(cos(t)), exponent), cos(t)))
+        let y = r.midY + r.height / 2 * CGFloat(copysign(pow(abs(sin(t)), exponent), sin(t)))
+        if i == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+    }
+    path.closeSubpath()
+    return path
+}
 
 func drawIcon(size: Int) -> CGImage {
     let s = CGFloat(size)
@@ -14,38 +27,40 @@ func drawIcon(size: Int) -> CGImage {
     ctx.setAllowsAntialiasing(true)
     ctx.interpolationQuality = .high
 
-    let inset = s * 0.055
+    // The plate follows Apple's icon grid so the icon matches its neighbours' size in the Dock.
+    let inset = s * 0.098
     let plate = CGRect(x: inset, y: inset, width: s - 2 * inset, height: s - 2 * inset)
-    let squircle = CGPath(roundedRect: plate, cornerWidth: plate.width * 0.225, cornerHeight: plate.width * 0.225, transform: nil)
+    let shape = superellipse(plate)
 
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012), blur: s * 0.03, color: CGColor(gray: 0, alpha: 0.35))
-    ctx.addPath(squircle)
-    ctx.setFillColor(CGColor(srgbRed: 0.09, green: 0.11, blue: 0.28, alpha: 1))
+    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012), blur: s * 0.03, color: CGColor(gray: 0, alpha: 0.3))
+    ctx.addPath(shape)
+    ctx.setFillColor(CGColor(srgbRed: 0.08, green: 0.08, blue: 0.07, alpha: 1))
     ctx.fillPath()
     ctx.restoreGState()
 
     ctx.saveGState()
-    ctx.addPath(squircle)
+    ctx.addPath(shape)
     ctx.clip()
     let bg = CGGradient(colorsSpace: space, colors: [
-        CGColor(srgbRed: 0.17, green: 0.20, blue: 0.55, alpha: 1),
-        CGColor(srgbRed: 0.07, green: 0.09, blue: 0.24, alpha: 1),
+        CGColor(srgbRed: 0.19, green: 0.185, blue: 0.175, alpha: 1),
+        CGColor(srgbRed: 0.08, green: 0.08, blue: 0.07, alpha: 1),
     ] as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(bg, start: CGPoint(x: s * 0.2, y: s * 0.95), end: CGPoint(x: s * 0.8, y: s * 0.05), options: [])
-    let glow = CGGradient(colorsSpace: space, colors: [
-        CGColor(srgbRed: 0.25, green: 0.85, blue: 0.80, alpha: 0.55),
-        CGColor(srgbRed: 0.25, green: 0.85, blue: 0.80, alpha: 0),
-    ] as CFArray, locations: [0, 1])!
-    ctx.drawRadialGradient(glow, startCenter: CGPoint(x: s * 0.5, y: s * 0.5), startRadius: 0,
-                           endCenter: CGPoint(x: s * 0.5, y: s * 0.5), endRadius: s * 0.46, options: [])
+    ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: s), end: .zero, options: [])
+    ctx.restoreGState()
 
-    // Viewfinder: four corner brackets framing the plate.
-    let frame = plate.insetBy(dx: plate.width * 0.2, dy: plate.width * 0.2)
-    let arm = frame.width * 0.28
-    let weight = max(1, s * 0.05)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.96))
-    ctx.setLineWidth(weight)
+    // A hairline keeps the graphite plate visible on dark wallpapers and in a dark Dock.
+    ctx.addPath(shape)
+    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.14))
+    ctx.setLineWidth(max(1, s * 0.004))
+    ctx.strokePath()
+
+    // Viewfinder: four corner brackets in the design system's accent, oklch(0.90 0.18 105). Small sizes thicken the strokes to stay legible.
+    let small = size < 48
+    let frame = plate.insetBy(dx: plate.width * (small ? 0.17 : 0.2), dy: plate.width * (small ? 0.17 : 0.2))
+    let arm = frame.width * (small ? 0.24 : 0.3)
+    ctx.setStrokeColor(CGColor(srgbRed: 0.941, green: 0.894, blue: 0.247, alpha: 1))
+    ctx.setLineWidth(s * (small ? 0.085 : 0.062))
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
     let corners: [(CGPoint, CGFloat, CGFloat)] = [
@@ -58,22 +73,6 @@ func drawIcon(size: Int) -> CGImage {
         ctx.addLine(to: CGPoint(x: p.x, y: p.y + dy * arm))
         ctx.strokePath()
     }
-
-    // Aperture: a ring with a solid core in the centre of the frame.
-    let c = CGPoint(x: plate.midX, y: plate.midY)
-    let ring = frame.width * 0.2
-    ctx.setStrokeColor(CGColor(srgbRed: 0.45, green: 0.95, blue: 0.88, alpha: 1))
-    ctx.setLineWidth(weight * 0.8)
-    ctx.strokeEllipse(in: CGRect(x: c.x - ring, y: c.y - ring, width: ring * 2, height: ring * 2))
-    let core = ring * 0.42
-    ctx.setFillColor(CGColor(srgbRed: 0.45, green: 0.95, blue: 0.88, alpha: 1))
-    ctx.fillEllipse(in: CGRect(x: c.x - core, y: c.y - core, width: core * 2, height: core * 2))
-    ctx.restoreGState()
-
-    ctx.addPath(squircle)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.12))
-    ctx.setLineWidth(max(1, s * 0.004))
-    ctx.strokePath()
     return ctx.makeImage()!
 }
 
@@ -84,12 +83,18 @@ func writePNG(_ image: CGImage, to url: URL) {
 }
 
 guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write(Data("usage: make-icon.swift <output.icns>\n".utf8))
+    FileHandle.standardError.write(Data("usage: make-icon.swift <output.icns|output.png>\n".utf8))
     exit(2)
 }
 let out = URL(fileURLWithPath: CommandLine.arguments[1])
 let fm = FileManager.default
-let iconset = fm.temporaryDirectory.appendingPathComponent("Kadraj-\(UUID().uuidString).iconset")
+if out.pathExtension == "png" {
+    try fm.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
+    writePNG(drawIcon(size: 512), to: out)
+    print("wrote \(out.path)")
+    exit(0)
+}
+let iconset = fm.temporaryDirectory.appendingPathComponent("Cornermark-\(UUID().uuidString).iconset")
 try fm.createDirectory(at: iconset, withIntermediateDirectories: true)
 defer { try? fm.removeItem(at: iconset) }
 

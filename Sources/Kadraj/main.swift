@@ -1,3 +1,0 @@
-import KadrajShell
-
-KadrajApp.run()

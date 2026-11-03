@@ -1,7 +1,7 @@
 import AppKit
-import KadrajCore
+import CornermarkCore
 import Vision
-@testable import KadrajShell
+@testable import CornermarkShell
 
 @MainActor
 func checkOCR() async throws {
@@ -17,9 +17,9 @@ func checkOCR() async throws {
     check(qr.qrPayloads == [Fixture.qrPayload], "CoreImage-generated QR payload is decoded", detail: "\(qr.qrPayloads)")
     check(qr.clipboardText == Fixture.qrPayload, "QR-only clipboard text is the payload")
 
-    let mixed = try await recognize(combined(Pix.textImage(["Order 4711"]), Pix.qrImage("kadraj-ticket-9")))
-    check(mixed.qrPayloads == ["kadraj-ticket-9"] && mixed.text.contains("Order 4711"), "text and QR in one image are both found", detail: "\(mixed)")
-    check(mixed.clipboardText == "Order 4711\nkadraj-ticket-9" || mixed.clipboardText.hasSuffix("kadraj-ticket-9"), "clipboard text is text first, then the payload", detail: mixed.clipboardText)
+    let mixed = try await recognize(combined(Pix.textImage(["Order 4711"]), Pix.qrImage("cornermark-ticket-9")))
+    check(mixed.qrPayloads == ["cornermark-ticket-9"] && mixed.text.contains("Order 4711"), "text and QR in one image are both found", detail: "\(mixed)")
+    check(mixed.clipboardText == "Order 4711\ncornermark-ticket-9" || mixed.clipboardText.hasSuffix("cornermark-ticket-9"), "clipboard text is text first, then the payload", detail: mixed.clipboardText)
 
     let blank = Pix.context(300, 200)
     blank.setFillColor(CGColor(gray: 1, alpha: 1))

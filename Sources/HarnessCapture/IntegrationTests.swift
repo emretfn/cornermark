@@ -1,6 +1,6 @@
 import AppKit
-import KadrajCapture
-import KadrajCore
+import CornermarkCapture
+import CornermarkCore
 
 @MainActor
 func expectPixels(_ out: CaptureOutput?, from source: DisplaySnapshot, topLeftRect px: CGRect, _ name: String) {
@@ -116,12 +116,12 @@ func runIntegrationTests() async {
     let a = makeController(source)
     out = await start(a, .allInOne)
     let wa = overlay(a, frame: d1.frame)!
-    check(findView("kadraj.toolbar.capture", in: a.overlayWindows) != nil, "toolbar is visible before any selection")
+    check(findView("cornermark.toolbar.capture", in: a.overlayWindows) != nil, "toolbar is visible before any selection")
     Synth.drag(wa, from: CGPoint(x: 100, y: 160), to: CGPoint(x: 300, y: 260))
     func rect() -> CGRect? { if case .adjusting(let s, _)? = a.overlayState { return s.rect } else { return nil } }
     check(rect() == CGRect(x: 100, y: 160, width: 200, height: 100) && out.value == nil, "mouse-up leaves an adjustable selection", detail: "\(String(describing: rect()))")
-    let toolbarIDs = ["mode.area", "mode.window", "mode.fullscreen", "mode.scrolling", "mode.timer"].map { "kadraj.toolbar." + $0 }
-        + ["kadraj.toolbar.aspect", "kadraj.toolbar.width", "kadraj.toolbar.height", "kadraj.toolbar.capture"]
+    let toolbarIDs = ["mode.area", "mode.window", "mode.fullscreen", "mode.scrolling", "mode.timer"].map { "cornermark.toolbar." + $0 }
+        + ["cornermark.toolbar.aspect", "cornermark.toolbar.width", "cornermark.toolbar.height", "cornermark.toolbar.capture"]
     check(toolbarIDs.allSatisfy { findView($0, in: a.overlayWindows) != nil }, "toolbar offers modes, aspect menu, size fields and Capture")
     snapshot(wa, name: "03-all-in-one-toolbar")
 
@@ -134,12 +134,12 @@ func runIntegrationTests() async {
     Synth.drag(wa, from: CGPoint(x: 200, y: 200), to: CGPoint(x: 240, y: 220))
     check(rect() == CGRect(x: 141, y: 150, width: 250, height: 140), "dragging inside moves the selection", detail: "\(String(describing: rect()))")
 
-    if let popup = findView("kadraj.toolbar.aspect", in: a.overlayWindows) as? NSPopUpButton {
+    if let popup = findView("cornermark.toolbar.aspect", in: a.overlayWindows) as? NSPopUpButton {
         popup.selectItem(at: 3)
         popup.sendAction(popup.action, to: popup.target)
     }
     if let r = rect() { check(abs(r.width / r.height - 16.0 / 9.0) < 0.01, "toolbar aspect menu locks 16:9", detail: "\(r)") }
-    if let field = findView("kadraj.toolbar.width", in: a.overlayWindows) as? NSTextField {
+    if let field = findView("cornermark.toolbar.width", in: a.overlayWindows) as? NSTextField {
         field.stringValue = "320"
         field.sendAction(field.action, to: field.target)
     }
@@ -148,11 +148,11 @@ func runIntegrationTests() async {
     if let r = rect() { check(abs(r.width / r.height - 16.0 / 9.0) < 0.01 && r.minX == 141 && r.maxY == 290, "handle resize keeps 16:9 under the lock", detail: "\(r)") }
     snapshot(wa, name: "04-all-in-one-aspect-locked")
 
-    if let popup = findView("kadraj.toolbar.aspect", in: a.overlayWindows) as? NSPopUpButton {
+    if let popup = findView("cornermark.toolbar.aspect", in: a.overlayWindows) as? NSPopUpButton {
         popup.selectItem(at: 0)
         popup.sendAction(popup.action, to: popup.target)
     }
-    if let field = findView("kadraj.toolbar.height", in: a.overlayWindows) as? NSTextField {
+    if let field = findView("cornermark.toolbar.height", in: a.overlayWindows) as? NSTextField {
         field.stringValue = "100"
         field.sendAction(field.action, to: field.target)
     }
@@ -166,7 +166,7 @@ func runIntegrationTests() async {
     out = await start(a, .allInOne)
     let wa2 = overlay(a, frame: d1.frame)!
     Synth.drag(wa2, from: CGPoint(x: 60, y: 160), to: CGPoint(x: 160, y: 240))
-    (findView("kadraj.toolbar.capture", in: a.overlayWindows) as? NSButton)?.performClick(nil)
+    (findView("cornermark.toolbar.capture", in: a.overlayWindows) as? NSButton)?.performClick(nil)
     _ = await waitUntil { out.value != nil }
     expectPixels(out.output, from: s1, topLeftRect: CGRect(x: 60, y: 160, width: 100, height: 80), "toolbar Capture button commits")
 
@@ -245,7 +245,7 @@ func runIntegrationTests() async {
     out = await start(tc3, .allInOne)
     let wt = overlay(tc3, frame: d1.frame)!
     Synth.drag(wt, from: CGPoint(x: 100, y: 160), to: CGPoint(x: 300, y: 260))
-    (findView("kadraj.toolbar.mode.timer", in: tc3.overlayWindows) as? NSButton)?.performClick(nil)
+    (findView("cornermark.toolbar.mode.timer", in: tc3.overlayWindows) as? NSButton)?.performClick(nil)
     _ = await waitUntil { out.value != nil }
     expectPixels(out.output, from: s1, topLeftRect: CGRect(x: 100, y: 140, width: 200, height: 100), "toolbar Timer captures the selection after the countdown")
     check(out.output?.kind == .timed, "toolbar timer output has kind .timed")
@@ -286,7 +286,7 @@ func runIntegrationTests() async {
     check(reached, "stitched height reaches 700 px as the fixture scrolls", detail: "\(String(describing: sc.overlayState))")
     check(sawSlower, "a jump past the overlap raises the scroll-slower hint")
     let scrollWindows = sc.overlayWindows
-    (findView("kadraj.scroll.done", in: sc.overlayWindows) as? NSButton)?.performClick(nil)
+    (findView("cornermark.scroll.done", in: sc.overlayWindows) as? NSButton)?.performClick(nil)
     _ = await waitUntil { out.value != nil }
     check(out.output?.kind == .scrolling && out.output?.image.width == 300 && out.output?.image.height == 700, "Done returns the stitched 300x700 image with kind .scrolling",
           detail: "\(String(describing: out.output?.image.width))x\(String(describing: out.output?.image.height))")
@@ -312,7 +312,7 @@ func runIntegrationTests() async {
     out = await start(sc2, .scrolling)
     Synth.drag(overlay(sc2, frame: s3.frame)!, from: CGPoint(x: 50, y: 100), to: CGPoint(x: 350, y: 400))
     let scrollWindows3 = sc2.overlayWindows
-    (findView("kadraj.scroll.cancel", in: sc2.overlayWindows) as? NSButton)?.performClick(nil)
+    (findView("cornermark.scroll.cancel", in: sc2.overlayWindows) as? NSButton)?.performClick(nil)
     check(out.isCancelled, "the HUD Cancel button cancels scrolling capture")
     noOverlayWindowsLeft(sc2, held: scrollWindows3, "after scrolling Cancel")
 
