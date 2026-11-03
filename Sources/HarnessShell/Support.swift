@@ -294,8 +294,8 @@ enum Synth {
         window.sendEvent(keyEvent(window, code, chars, modifiers: modifiers))
     }
 
-    static func keyEvent(_ window: NSWindow?, _ code: UInt16, _ chars: String = "", modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
-        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+    static func keyEvent(_ window: NSWindow?, _ code: UInt16, _ chars: String = "", modifiers: NSEvent.ModifierFlags = [], type: NSEvent.EventType = .keyDown) -> NSEvent {
+        NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
                          windowNumber: window?.windowNumber ?? 0, context: nil, characters: chars, charactersIgnoringModifiers: chars,
                          isARepeat: false, keyCode: code)!
     }

@@ -44,14 +44,16 @@ struct HotKey: Codable, Hashable {
         return name.lowercased()
     }
 
+    var displayString: String { Self.modifierSymbols(modifiers) + keyName }
+
     /// Mac order: control, option, shift, command.
-    var displayString: String {
+    static func modifierSymbols(_ modifiers: UInt32) -> String {
         var s = ""
         if modifiers & UInt32(controlKey) != 0 { s += "\u{2303}" }
         if modifiers & UInt32(optionKey) != 0 { s += "\u{2325}" }
         if modifiers & UInt32(shiftKey) != 0 { s += "\u{21E7}" }
         if modifiers & UInt32(cmdKey) != 0 { s += "\u{2318}" }
-        return s + keyName
+        return s
     }
 
     private static let keyNames: [UInt32: String] = [
