@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 enum ActionID: String, CaseIterable {
     case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer
-    case restoreOverlay, hideOverlays, history, settings, openFile, quit
+    case restoreOverlay, hideOverlays, history, settings, checkForUpdates, openFile, quit
 }
 
 /// One row per user intent. The menu, the global hotkeys and the URL scheme all read this table.
@@ -30,6 +30,7 @@ enum ActionTable {
         ActionSpec(id: .hideOverlays, title: "Hide Overlays", hotKey: nil, urlPath: "hide-overlays", menuGroup: 1),
         ActionSpec(id: .history, title: "Capture History\u{2026}", hotKey: nil, urlPath: "history", menuGroup: 2),
         ActionSpec(id: .settings, title: "Settings\u{2026}", hotKey: nil, urlPath: "settings", menuGroup: 2),
+        ActionSpec(id: .checkForUpdates, title: "Check for Updates\u{2026}", hotKey: nil, urlPath: "check-for-updates", menuGroup: 2),
         ActionSpec(id: .openFile, title: "Open Image", hotKey: nil, urlPath: "open", menuGroup: nil),
         ActionSpec(id: .quit, title: "Quit Cornermark", hotKey: nil, urlPath: nil, menuGroup: 3),
     ]
@@ -43,6 +44,7 @@ enum AppAction: Equatable {
     case captureOCR
     case openHistory
     case openSettings
+    case checkForUpdates
     case restoreLastOverlay
     case hideOverlays
     case openFile(URL)
@@ -63,6 +65,7 @@ enum AppAction: Equatable {
         case .captureOCR: return .ocr
         case .openHistory: return .history
         case .openSettings: return .settings
+        case .checkForUpdates: return .checkForUpdates
         case .restoreLastOverlay: return .restoreOverlay
         case .hideOverlays: return .hideOverlays
         case .openFile: return .openFile
@@ -83,6 +86,7 @@ enum AppAction: Equatable {
         case .ocr: return .captureOCR
         case .history: return .openHistory
         case .settings: return .openSettings
+        case .checkForUpdates: return .checkForUpdates
         case .restoreOverlay: return .restoreLastOverlay
         case .hideOverlays: return .hideOverlays
         case .quit: return .quit

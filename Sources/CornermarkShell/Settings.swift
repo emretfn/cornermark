@@ -65,6 +65,7 @@ struct Settings: Codable, Equatable {
     var windowShadow = true
     var timerSeconds = 5
     var retentionDays = 30
+    var checkForUpdatesAutomatically = true
 
     var overlayAutoClose: Double? {
         get { autoCloseSeconds > 0 ? autoCloseSeconds : nil }
@@ -93,6 +94,7 @@ struct Settings: Codable, Equatable {
         windowShadow = get(.windowShadow, d.windowShadow)
         timerSeconds = get(.timerSeconds, d.timerSeconds)
         retentionDays = get(.retentionDays, d.retentionDays)
+        checkForUpdatesAutomatically = get(.checkForUpdatesAutomatically, d.checkForUpdatesAutomatically)
         self = normalized()
     }
 

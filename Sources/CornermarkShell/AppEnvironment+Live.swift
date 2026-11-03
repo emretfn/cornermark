@@ -20,7 +20,7 @@ extension AppEnvironment {
         let store = try CaptureStore(root: support.appendingPathComponent("Cornermark/History", isDirectory: true))
         let drag = fm.temporaryDirectory.appendingPathComponent("CornermarkDrag", isDirectory: true)
         try? fm.createDirectory(at: drag, withIntermediateDirectories: true)
-        return AppEnvironment(
+        let env = AppEnvironment(
             screen: ScreenCaptureKitSource(), store: store, defaults: .standard, pasteboard: .general,
             presentation: .onscreen, clock: { Date() },
             cursorScreenFrame: {
@@ -41,9 +41,38 @@ extension AppEnvironment {
                 NSApp.activate(ignoringOtherApps: true)
                 done(panel.runModal() == .OK ? panel.url : nil)
             },
-            loginItem: MainAppLoginItem(),
+            loginItem: MainAppLoginItem(), updateService: UpdateInstaller(),
             defaultSaveFolder: fm.urls(for: .desktopDirectory, in: .userDomainMask).first ?? fm.homeDirectoryForCurrentUser,
             dragDirectory: drag,
             quit: { NSApp.terminate(nil) })
+        env.confirmUpdate = confirmUpdate
+        env.presentUpdateAlert = presentUpdateAlert
+        return env
+    }
+
+    private static func confirmUpdate(_ release: AppRelease) -> Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CORNERMARK_UPDATE_ASSUME_YES"] == "1" { return true }
+        #endif
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "an unknown version"
+        let alert = NSAlert()
+        alert.messageText = "Cornermark \(release.version) is available"
+        let notes = release.notesSummary()
+        alert.informativeText = "You have \(current)." + (notes.isEmpty ? "" : "\n\n\(notes)")
+        alert.addButton(withTitle: "Install and Relaunch")
+        alert.addButton(withTitle: "Later")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private static func presentUpdateAlert(_ update: UpdateAlert) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = update.title
+        alert.informativeText = update.message
+        alert.addButton(withTitle: update.offersReleasePage ? "Open Release Page" : "OK")
+        if update.offersReleasePage { alert.addButton(withTitle: "Cancel") }
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn && update.offersReleasePage
     }
 }

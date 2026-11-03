@@ -1,3 +1,5 @@
+import AppKit
+import CornermarkCore
 import Foundation
 import Security
 @testable import CornermarkShell
@@ -19,6 +21,9 @@ func checkUpdates() async throws {
     checkReleaseParsing()
     checkUpdateState()
     try checkVerification()
+    try await checkUpdateFlow()
+    try await checkUpdateWiring()
+    try checkUpdateSettings()
 }
 
 @MainActor
@@ -196,4 +201,237 @@ private func checkVerification() throws {
           && (try? String(contentsOf: b.appendingPathComponent("id"), encoding: .utf8)) == "old", "swap exchanges the two folders in one step")
     check((try? UpdateInstaller.swap(dir.appendingPathComponent("nope"), with: a)) == nil
           && (try? String(contentsOf: a.appendingPathComponent("id"), encoding: .utf8)) == "new", "swap with a missing path fails and leaves the target alone")
+}
+
+private func release(_ version: AppVersion, dmg: Bool = true) -> AppRelease {
+    AppRelease(version: version, notes: "Notes", pageURL: URL(string: "https://github.com/emretfn/cornermark/releases/tag/v\(version)")!,
+               dmgURL: dmg ? URL(string: "https://github.com/emretfn/cornermark/releases/download/v\(version)/Cornermark.dmg") : nil)
+}
+
+private let newer = release(AppVersion(0, 3, 0))
+
+@MainActor
+private func menuItem(_ w: World) -> NSMenuItem? {
+    let menu = NSMenu()
+    StatusMenuBuilder(coordinator: w.coordinator).populate(menu)
+    return menu.items.first { $0.identifier?.rawValue == "checkForUpdates" }
+}
+
+@MainActor
+private func openEditedEditor(_ w: World) throws -> CaptureRecord {
+    let c = w.coordinator
+    c.handleCaptured(.init(image: Pix.flat(300, 200, r: 0.7, g: 0.3, b: 0.2), kind: .area, pointScale: 1))
+    let record = w.store.list()[0]
+    guard let editor = c.openEditor(record) else { throw CocoaError(.fileReadUnknown) }
+    editor.perform(.add(Annotation(kind: .rect(CGRect(x: 20, y: 30, width: 100, height: 60), filled: false, cornerRadius: 4),
+                                   stroke: Stroke(color: RGBA(1, 0, 0), width: 4))))
+    return record
+}
+
+@MainActor
+private func checkUpdateFlow() async throws {
+    section("update flow: checking")
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .success(release(AppVersion(0, 2, 1)))
+        await c.updates.perform()
+        check(c.updates.state == .idle && c.hud.lastMessage == "Cornermark is up to date" && w.confirmations.isEmpty, "a manual check on the latest version says it is up to date")
+        c.hud.show("clear")
+        w.updateService.latest = .success(release(AppVersion(0, 2, 0)))
+        await c.updates.perform()
+        check(c.updates.state == .idle && c.hud.lastMessage == "Cornermark is up to date" && w.confirmations.isEmpty, "an older release is not an update")
+        c.hud.show("clear")
+        w.updateService.latest = .success(nil)
+        await c.updates.perform()
+        check(c.updates.state == .idle && c.hud.lastMessage == "Cornermark is up to date", "no release at all counts as up to date")
+        check(w.updateAlerts.isEmpty, "up to date raises no alert")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .success(newer)
+        await c.updates.checkAutomatically()
+        check(c.updates.state == .available(newer), "an automatic check finds a newer release")
+        check(c.hud.lastMessage?.hasPrefix("Cornermark 0.3.0 is available") == true && c.hud.lastMessage?.contains("menu") == true, "and tells the user through the HUD", detail: c.hud.lastMessage ?? "nil")
+        check(w.confirmations.isEmpty && w.updateAlerts.isEmpty, "an automatic find asks nothing")
+        c.hud.show("something else")
+        await c.updates.checkAutomatically()
+        check(w.updateService.latestCalls == 1 && c.hud.lastMessage == "something else", "later automatic checks neither ask GitHub nor announce again")
+        check(menuItem(w)?.title == "Install Cornermark 0.3.0\u{2026}" && menuItem(w)?.isEnabled == true, "the menu offers the install")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .success(release(AppVersion(0, 3, 0), dmg: false))
+        await c.updates.checkAutomatically()
+        check(c.updates.state == .idle && c.hud.lastMessage == nil, "a release whose DMG is not uploaded yet is ignored silently")
+        await c.updates.perform()
+        check(c.updates.state == .idle && c.hud.lastMessage == "Cornermark is up to date" && w.confirmations.isEmpty, "and a manual check calls it up to date")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .failure(UpdateError.network("offline"))
+        await c.updates.checkAutomatically()
+        check(c.updates.state == .idle && w.updateAlerts.isEmpty && c.hud.lastMessage == nil, "an automatic failure is silent")
+        await c.updates.perform()
+        check(c.updates.state == .idle && w.updateAlerts.count == 1 && w.updateAlerts[0].message.contains("offline") && !w.updateAlerts[0].offersReleasePage,
+              "a manual failure raises an alert without a release page", detail: "\(w.updateAlerts)")
+        w.updateService.currentVersion = nil
+        w.updateService.latest = .success(newer)
+        let calls = w.updateService.latestCalls
+        await c.updates.checkAutomatically()
+        check(w.updateService.latestCalls == calls && c.updates.state == .idle, "an app with no known version does not ask GitHub")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .success(newer)
+        w.confirmAnswer = false
+        await c.updates.perform()
+        check(w.confirmations == [newer] && c.updates.state == .available(newer), "a manual check that finds an update asks right away, and Later keeps it available")
+        check(w.updateService.staged.isEmpty && w.quits == 0, "declining downloads nothing")
+        await c.updates.perform()
+        check(w.confirmations.count == 2 && c.updates.state == .available(newer) && w.updateService.latestCalls == 1, "choosing the menu item again asks again without a new check")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .success(newer)
+        w.updateService.latestDelay = 0.3
+        let first = Task { await c.updates.perform() }
+        check(await waitUntil { c.updates.state == .checking(manual: true) }, "a manual check shows as checking")
+        check(menuItem(w)?.title == "Checking for Updates\u{2026}" && menuItem(w)?.isEnabled == false, "while checking, the menu item is disabled")
+        w.confirmAnswer = false
+        await c.updates.perform()
+        await c.updates.checkAutomatically()
+        check(w.updateService.latestCalls == 1, "choosing it again while checking does nothing")
+        await first.value
+    }
+
+    section("update flow: installing")
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        let record = try openEditedEditor(w)
+        var editorsAtInstall: Int?
+        var projectAtInstall: Bool?
+        w.updateService.onInstall = { editorsAtInstall = c.editors.count; projectAtInstall = w.store.hasProject(record) }
+        w.updateService.latest = .success(newer)
+        await c.updates.checkAutomatically()
+        await c.updates.perform()
+        check(w.confirmations == [newer] && w.updateService.staged == [newer], "confirming stages the release")
+        check(editorsAtInstall == 0 && projectAtInstall == true, "open editors are closed, and their edits saved, before the app is replaced",
+              detail: "\(String(describing: editorsAtInstall)) \(String(describing: projectAtInstall))")
+        check(w.updateService.installed.count == 1 && w.quits == 1, "the app swaps itself and then quits")
+        check(c.updates.state == .installing(newer) && w.updateAlerts.isEmpty, "the state stays installing until the app exits")
+        check(menuItem(w)?.title == "Installing Cornermark 0.3.0\u{2026}" && menuItem(w)?.isEnabled == false, "the menu shows the install in progress, disabled")
+        await c.updates.perform()
+        check(w.updateService.staged.count == 1 && w.quits == 1, "choosing it while installing does nothing")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        _ = try openEditedEditor(w)
+        w.updateService.latest = .success(newer)
+        w.updateService.staging = .failure(UpdateError.signatureMismatch)
+        await c.updates.checkAutomatically()
+        await c.updates.perform()
+        check(c.updates.state == .available(newer), "a failed download goes back to available")
+        check(w.updateAlerts.count == 1 && w.updateAlerts[0].message == UpdateError.signatureMismatch.message && w.updateAlerts[0].offersReleasePage,
+              "the user sees why, with a way to the release page", detail: "\(w.updateAlerts)")
+        check(w.opened.isEmpty && w.quits == 0 && w.updateService.installed.isEmpty, "dismissing the alert opens nothing and quits nothing")
+        check(c.editors.count == 1, "a failed download leaves editors open")
+        w.alertOpensPage = true
+        await c.updates.perform()
+        check(w.opened == [newer.pageURL], "the alert's button opens the release page", detail: "\(w.opened)")
+        check(menuItem(w)?.title == "Install Cornermark 0.3.0\u{2026}" && menuItem(w)?.isEnabled == true, "the install can be tried again from the menu")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.latest = .success(newer)
+        w.updateService.installing = .failure(UpdateError.cannotReplace(path: "/Volumes/Cornermark/Cornermark.app"))
+        await c.updates.checkAutomatically()
+        await c.updates.perform()
+        check(c.updates.state == .available(newer) && w.quits == 0, "a failed swap goes back to available without quitting")
+        check(w.updateService.discarded.count == 1, "and removes the staged copy")
+        check(w.updateAlerts.first?.message.contains("/Volumes/Cornermark/Cornermark.app") == true && w.updateAlerts.first?.offersReleasePage == true,
+              "the alert names where the app could not be replaced", detail: "\(w.updateAlerts)")
+    }
+}
+
+@MainActor
+private func checkUpdateWiring() async throws {
+    section("update wiring: action, URL, menu, schedule")
+    let spec = ActionTable.spec(.checkForUpdates)
+    check(spec.hotKey == nil && spec.urlPath == "check-for-updates" && spec.menuGroup == 2, "Check for Updates is a menu action in the windows group with no hotkey")
+    check(AppAction.make(.checkForUpdates, timerSeconds: 5) == .checkForUpdates && AppAction.checkForUpdates.id == .checkForUpdates, "the action maps to its own id")
+    check((try? URLCommand.parse(URL(string: "cornermark://check-for-updates")!).get()) == .checkForUpdates, "cornermark://check-for-updates parses")
+
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let menu = NSMenu()
+        StatusMenuBuilder(coordinator: w.coordinator).populate(menu)
+        let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+        check(titles.firstIndex(of: "Settings\u{2026}").map { titles[$0 + 1] } == "Check for Updates\u{2026}", "the menu lists it after Settings", detail: "\(titles)")
+        check(menuItem(w)?.isEnabled == true && menuItem(w)?.keyEquivalent == "", "idle, it is enabled and shows no shortcut")
+        w.updateService.latest = .success(nil)
+        let item = menuItem(w)!
+        _ = item.target?.perform(item.action, with: item)
+        check(await waitUntil { w.coordinator.hud.lastMessage == "Cornermark is up to date" }, "choosing the menu item runs a check")
+        check(w.coordinator.handle(url: URL(string: "cornermark://check-for-updates")!), "the URL scheme accepts it")
+        check(await waitUntil { w.updateService.latestCalls == 2 }, "and runs a check")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        w.updateService.latest = .success(newer)
+        w.coordinator.startMaintenance()
+        check(await waitUntil { w.coordinator.updates.state == .available(newer) }, "starting up checks for updates by default")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        w.settings.update { $0.checkForUpdatesAutomatically = false }
+        w.updateService.latest = .success(newer)
+        w.coordinator.startMaintenance()
+        w.coordinator.checkForUpdatesIfWanted()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        check(w.updateService.latestCalls == 0 && w.coordinator.updates.state == .idle, "with the setting off, nothing asks GitHub")
+        w.coordinator.perform(.checkForUpdates)
+        check(await waitUntil { w.updateService.latestCalls == 1 }, "a manual check still works with the setting off")
+    }
+}
+
+@MainActor
+private func checkUpdateSettings() throws {
+    section("update setting")
+    check(Settings().checkForUpdatesAutomatically, "automatic checks are on by default")
+    let old = try JSONDecoder().decode(Settings.self, from: Data(#"{"timerSeconds": 9}"#.utf8))
+    check(old.checkForUpdatesAutomatically && old.timerSeconds == 9, "settings saved before this key existed decode with checks on")
+    let off = try JSONDecoder().decode(Settings.self, from: Data(#"{"checkForUpdatesAutomatically": false}"#.utf8))
+    check(!off.checkForUpdatesAutomatically, "an explicit off is kept")
+    let junk = try JSONDecoder().decode(Settings.self, from: Data(#"{"checkForUpdatesAutomatically": "no"}"#.utf8))
+    check(junk.checkForUpdatesAutomatically, "a wrongly typed value falls back to on")
+
+    let suite = "local.emretufan.cornermark.harness.updates.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = SettingsStore(defaults: defaults)
+    store.update { $0.checkForUpdatesAutomatically = false }
+    check(!SettingsStore(defaults: defaults).value.checkForUpdatesAutomatically, "turning it off survives a relaunch")
+    let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(store.value))
+    check(decoded == store.value, "settings with the new key round trip through JSON")
 }

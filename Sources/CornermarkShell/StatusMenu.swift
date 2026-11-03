@@ -26,7 +26,12 @@ final class StatusMenuBuilder: NSObject, NSMenuDelegate {
                 menu.addItem(.separator())
             }
             lastGroup = group
-            let title = spec.id == .hideOverlays && coordinator.overlay.isHidden ? "Show Overlays" : spec.title
+            let update = coordinator.updates.state
+            let title = switch spec.id {
+            case .hideOverlays where coordinator.overlay.isHidden: "Show Overlays"
+            case .checkForUpdates: update.menuTitle
+            default: spec.title
+            }
             let item = BlockMenuItem(title) { [coordinator] in coordinator.perform(id: spec.id) }
             item.identifier = NSUserInterfaceItemIdentifier(spec.id.rawValue)
             if let key = s.hotKey(for: spec.id), let char = key.menuCharacter {
@@ -34,6 +39,7 @@ final class StatusMenuBuilder: NSObject, NSMenuDelegate {
                 item.keyEquivalentModifierMask = key.modifierFlags
             }
             if spec.id == .restoreOverlay { item.isEnabled = !coordinator.overlay.recentlyClosed.isEmpty }
+            if spec.id == .checkForUpdates { item.isEnabled = update.menuEnabled }
             menu.addItem(item)
         }
     }

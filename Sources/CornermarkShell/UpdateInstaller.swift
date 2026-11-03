@@ -110,6 +110,7 @@ final class UpdateInstaller: UpdateServicing {
     }
 
     func discard(_ staged: StagedUpdate) {
+        guard FileManager.default.fileExists(atPath: staged.directory.path) else { return }
         do { try FileManager.default.removeItem(at: staged.directory) } catch {
             Log.shell.error("could not remove \(staged.directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }

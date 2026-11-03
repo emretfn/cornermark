@@ -8,6 +8,15 @@ final class IdleLoginItem: LoginItemControlling {
     func setEnabled(_ enabled: Bool) throws { isEnabled = enabled }
 }
 
+/// Finds no release and touches no network.
+final class IdleUpdates: UpdateServicing {
+    var currentVersion: AppVersion? { AppVersion(1, 0, 0) }
+    func latestRelease() async throws -> AppRelease? { nil }
+    func stage(_ release: AppRelease) async throws -> StagedUpdate { throw UpdateError.noDownload }
+    func installAndRelaunch(_ staged: StagedUpdate) throws {}
+    func discard(_ staged: StagedUpdate) {}
+}
+
 /// Registers nothing with the system; every key reads as registered, so the Shortcuts pane shows "Active".
 final class IdleHotKeys: HotKeyBackend {
     var onPressed: ((UInt32) -> Void)?
@@ -45,7 +54,7 @@ final class Rig {
         env = AppEnvironment(
             screen: FixtureScreenSource(displays: [display]), store: history, defaults: defaults, pasteboard: pasteboard, presentation: .offscreen,
             clock: { Rig.now }, cursorScreenFrame: { visible }, hasScreenPermission: { true }, requestScreenPermission: {},
-            openURL: { _ in }, revealInFinder: { _ in }, playSound: {}, pickFolder: { $0(nil) }, loginItem: IdleLoginItem(),
+            openURL: { _ in }, revealInFinder: { _ in }, playSound: {}, pickFolder: { $0(nil) }, loginItem: IdleLoginItem(), updateService: IdleUpdates(),
             defaultSaveFolder: root.appendingPathComponent("desktop", isDirectory: true),
             dragDirectory: root.appendingPathComponent("drag", isDirectory: true), quit: {})
         coordinator = AppCoordinator(env: env)
