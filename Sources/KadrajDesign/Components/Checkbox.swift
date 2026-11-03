@@ -28,8 +28,7 @@ public final class Checkbox: Pressable {
         didSet { needsDisplay = true }
     }
 
-    private static let boxSide = DS.Size.icon
-    private static let markSize = DS.Size.iconSmall - 2
+    private static let boxSide = DS.Size.iconLarge
     private static let style = DS.Text.label
 
     public override var intrinsicContentSize: NSSize {
@@ -46,15 +45,32 @@ public final class Checkbox: Pressable {
         let look = Self.look(on: self.state == .on, state)
         let path = shape(in: bounds)
         if let fill = look.fill { Paint.fill(path, fill) }
-        Paint.strokeInside(path, look.border)
-        if self.state == .on { Paint.symbol("checkmark", in: box, pointSize: Self.markSize, look.mark) }
+        if let border = look.border { Paint.strokeInside(path, border) }
+        if self.state == .on { drawMark(look.mark) }
         let textX = Self.boxSide + DS.Space.s8
         Paint.text(title, Self.style, look.text, in: CGRect(x: textX, y: 0, width: bounds.width - textX, height: bounds.height))
     }
 
+    /// Drawn as a path because the SF Symbol's own weight and corners look heavy and uneven at this size.
+    private func drawMark(_ color: NSColor) {
+        let side = box.width
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: box.minX + side * x, y: isFlipped ? box.maxY - side * y : box.minY + side * y)
+        }
+        let mark = NSBezierPath()
+        mark.move(to: point(0.24, 0.52))
+        mark.line(to: point(0.43, 0.32))
+        mark.line(to: point(0.76, 0.70))
+        mark.lineWidth = 2
+        mark.lineCapStyle = .round
+        mark.lineJoinStyle = .round
+        color.setStroke()
+        mark.stroke()
+    }
+
     struct Look {
         var fill: NSColor?
-        var border: NSColor
+        var border: NSColor?
         var mark: NSColor
         var text: NSColor
     }
@@ -62,13 +78,13 @@ public final class Checkbox: Pressable {
     static func look(on: Bool, _ state: InteractionState) -> Look {
         let c = DS.Color.self
         switch (on, state) {
-        case (true, .disabled): return Look(fill: c.bgControlActive, border: c.border, mark: c.textDisabled, text: c.textDisabled)
+        case (true, .disabled): return Look(fill: c.bgControlActive, border: nil, mark: c.textDisabled, text: c.textDisabled)
         case (false, .disabled): return Look(fill: nil, border: c.border, mark: c.textDisabled, text: c.textDisabled)
-        case (true, .hover), (true, .pressed): return Look(fill: c.accentSolidHover, border: c.accentMark, mark: c.onAccent, text: c.textPrimary)
-        case (true, .normal): return Look(fill: c.accentSolid, border: c.accentMark, mark: c.onAccent, text: c.textPrimary)
-        case (false, .normal): return Look(fill: nil, border: c.borderStrong, mark: c.onAccent, text: c.textPrimary)
-        case (false, .hover): return Look(fill: c.bgControlHover, border: c.borderStrong, mark: c.onAccent, text: c.textPrimary)
-        case (false, .pressed): return Look(fill: c.bgControlActive, border: c.borderStrong, mark: c.onAccent, text: c.textPrimary)
+        case (true, .hover), (true, .pressed): return Look(fill: c.bgInverseHover, border: nil, mark: c.onInverse, text: c.textPrimary)
+        case (true, .normal): return Look(fill: c.bgInverse, border: nil, mark: c.onInverse, text: c.textPrimary)
+        case (false, .normal): return Look(fill: c.bgControl, border: c.borderStrong, mark: c.onInverse, text: c.textPrimary)
+        case (false, .hover): return Look(fill: c.bgControlHover, border: c.borderStrong, mark: c.onInverse, text: c.textPrimary)
+        case (false, .pressed): return Look(fill: c.bgControlActive, border: c.borderStrong, mark: c.onInverse, text: c.textPrimary)
         }
     }
 }

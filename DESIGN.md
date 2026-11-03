@@ -7,7 +7,7 @@ Kaynak kod `Sources/KadrajDesign` içindedir. Kontrast ve tutarlılık denetimle
 ## İlkeler
 
 1. **Kabuk nötr, ekran görüntüsü renkli.** Kullanıcının içeriğiyle yarışan renkli yüzey olmaz. Grafit nötrler arayüzün yüzde 90'ını taşır.
-2. **Tek vurgu, tek anlam.** Vurgu rengi yalnızca seçili durumu ve görünümdeki tek birincil eylemi gösterir.
+2. **Tek vurgu, tek anlam.** Vurgu rengi yalnızca seçili aracı ve görünümdeki tek birincil eylemi gösterir. Gezinme, örneğin Ayarlar kenar çubuğu, nötr kalır.
 3. **Yerel davranış, özel görünüm.** Sistem fontu, klavye odak halkası, azaltılmış hareket, saydamlık ve artırılmış kontrast ayarları korunur.
 4. **Sık yapılan iş anında olur.** Kısayolla açılan yakalama katmanı animasyon almaz. Hareket yalnızca seyrek anlara ve basma geri bildirimine aittir.
 
@@ -80,9 +80,12 @@ Kod tabanında üç durum gerçekten görünür: kısayol çakışması ve eksik
 | `bgRaised` | n1 | n4 | Menü, açılır panel |
 | `bgSunken` | n3 | n1 | Girdi, kuyu |
 | `bgCanvas` | n4 | n1 | Ekran görüntüsünün arkasındaki alan |
-| `bgControl` | n3 | n4 | Kontrol zemini |
-| `bgControlHover` | n4 | n5 | Üzerine gelme |
-| `bgControlActive` | n5 | n6 | Basılı veya seçili |
+| `bgControl` | n3 | n5 | Kontrol zemini |
+| `bgControlHover` | n4 | n6 | Üzerine gelme |
+| `bgControlActive` | n5 | n7 | Basılı veya seçili |
+| `bgInverse` | n12 | n12 | Açık kutu gibi nötr, güçlü işaret |
+| `bgInverseHover` | n11 | n11 | Üzerine gelme |
+| `onInverse` | n1 | n2 | Üzerindeki işaret |
 | `bgHud` | n2 koyu, yüzde 88 | aynı | Ekranın üstünde yüzen araç çubuğu |
 | `bgScrim` | siyah, yüzde 45 | aynı | Yakalamada seçim dışı karartma |
 | `textPrimary` | n12 | n12 | Birincil metin |
@@ -170,13 +173,15 @@ Web tarafındaki karşılıklar: token CSS değişkeni, bileşen `NSView` veya `
 
 | Bileşen | Varyant ve seçenek | Nerede |
 | --- | --- | --- |
-| `Button` | `primary`, `secondary`, `ghost`, `danger`; `small`, `regular`, `large`; isteğe bağlı ikon | Capture, Done, Cancel, ayar eylemleri |
+| `Button` | `primary`, `secondary`, `ghost`, `danger`, `dangerGhost`; `small`, `regular`, `large`; isteğe bağlı ikon | Capture, Done, Cancel, ayar eylemleri |
 | `IconButton` | `small`, `regular`, `large`; `isSelected`; `tone: .plain` veya `.overlay` (yuvarlak, görüntü üstünde) | Araç çubukları, Hızlı Erişim eylemleri |
 | `TextInput` | `small`, `regular`; `monospaced` | Boyut alanları, formlar |
 | `Surface` | `hud`, `raised`, `floating`, `panel` | Çubuk, kart, panel zemini |
 | `Segments` | Simgeli veya yazılı; `selectOne` ya da `momentary`; gruplar arası ayraç (`NSSegmentedControl` alt sınıfı) | Editör araçları, stil seçimi |
 | `Slider` | Küçük boy, nötr dolgu (`NSSlider` alt sınıfı) | Kalınlık, dolgu, köşe |
-| `Checkbox` | Açık, kapalı (`NSButton` alt sınıfı) | Panel seçenekleri |
+| `Checkbox` | Açık, kapalı, 16 nokta, açıkken grafit `bgInverse` (`NSButton` alt sınıfı) | Panel ve ayar seçenekleri |
+| `SidebarItem` | Simge ve başlık, `isSelected` (nötr `bgControlActive`) | Ayarlar kenar çubuğu |
+| `ImageWell` | Görsel, köşe yarıçapı | Hızlı Erişim, Geçmiş |
 | `Separator` | `horizontal`, `vertical` | Gruplar arası çizgi |
 | `Badge` | `neutral`, `accent`, `danger`, `warning`, `success`; ikon ve metin birlikte | Durum bildirimi |
 | `Label` | `DS.Text` stili ve renk rolü | Her metin |
@@ -191,6 +196,7 @@ Yüzen pencereler (Hızlı Erişim kartı gibi) saydam pencere, `Surface(.panel)
 | `secondary` | `bgControl`, `textPrimary` | `bgControlHover`, `textPrimary` | `bgControlActive` ve ölçek 0.96 | `bgControl`, `textDisabled` |
 | `ghost` | zemin yok, `textSecondary` | `bgControlHover`, `textPrimary` | `bgControlActive` ve ölçek 0.96 | zemin yok, `textDisabled` |
 | `danger` | `dangerSolid`, `onDanger` | `dangerSolid`, `onDanger` | ölçek 0.96 | `bgControl`, `textDisabled` |
+| `dangerGhost` | zemin yok, `dangerText` | `dangerSubtle`, `dangerText` | `dangerSubtle` ve ölçek 0.96 | zemin yok, `textDisabled` |
 
 Editörün araç çubuğu `NSToolbar` öğesi değil, başlık çubuğunun altında duran kendi satırıdır, çünkü macOS 26 her araç çubuğu öğesine kaldırılamayan bir cam kapsül çizer. Ekran görüntüsü üstündeki seçim çerçevesi ve tutamaçlar `selectionStroke` ile `selectionHalo` kullanır, vurgu rengi kullanmaz.
 
@@ -203,6 +209,12 @@ Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` i
 **Kırpma.** Vizör karesi gibi çizilir: köşelerde L biçimli köşebentler, kenar ortalarında kısa çubuklar, ince çerçeve. Üçte bir ızgarası yalnızca sürüklerken görünür. Boyut kutunun sol üstünde yazar, sığmazsa dışına çıkar. Oranlar çubukta doğrudan görünür. Kırpma sırasında görünümün birincil eylemi `Apply` olur, `Copy` ikincile döner.
 
 **Yan panel.** Bütün içerik tek sağ kenarda biter. Etiket sütunu 64 noktadır, kontrol kalan genişliği doldurur. Bölümler arasında kenardan kenara ayraç bulunur. Arka plan seçimi tek bir ızgaradır, küçük görseller yalnızca dolguyu gösterir.
+
+**Ayarlar.** Sistem sekmeleri yerine solda kenar çubuğu, sağda kaydırılabilir içerik. Ayarlar gruplu kartlardadır: başlık solda, kontrol sağda, satırlar arasında ayraç. Açıklamalar başlığın altında küçük yazılır.
+
+**Geçmiş.** Üstte filtre, altta eylem çubuğu. Her görsel aynı boyda bir kuyuda durur, böylece farklı oranlar düzensiz görünmez. Seçim yalnızca kuyunun çevresinde vurgu halkasıdır, kartı doldurmaz.
+
+**Görüntü kuyusu.** Oranı değişken görseller `ImageWell` içinde çizilir: `bgSunken` zemin, `Radius.md`, sığdırılmış görsel, `imageOutline`. Hızlı Erişim ve Geçmiş bunu kullanır.
 
 ## Kurallar
 

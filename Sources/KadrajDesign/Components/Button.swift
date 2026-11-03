@@ -1,7 +1,7 @@
 import AppKit
 
 public final class Button: Pressable {
-    public enum Variant: CaseIterable { case primary, secondary, ghost, danger }
+    public enum Variant: CaseIterable { case primary, secondary, ghost, dangerGhost, danger }
 
     public var variant: Variant {
         didSet { if variant != oldValue { needsDisplay = true } }
@@ -68,8 +68,10 @@ extension Button.Variant {
         case (.ghost, .normal): return ButtonAppearance(fill: nil, text: c.textSecondary)
         case (.ghost, .hover): return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
         case (.ghost, .pressed): return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+        case (.dangerGhost, .normal): return ButtonAppearance(fill: nil, text: c.dangerText)
+        case (.dangerGhost, .hover), (.dangerGhost, .pressed): return ButtonAppearance(fill: c.dangerSubtle, text: c.dangerText)
         case (.danger, .normal), (.danger, .hover), (.danger, .pressed): return ButtonAppearance(fill: c.dangerSolid, text: c.onDanger)
-        case (.ghost, .disabled): return ButtonAppearance(fill: nil, text: c.textDisabled)
+        case (.ghost, .disabled), (.dangerGhost, .disabled): return ButtonAppearance(fill: nil, text: c.textDisabled)
         case (_, .disabled): return ButtonAppearance(fill: c.bgControl, text: c.textDisabled)
         }
     }

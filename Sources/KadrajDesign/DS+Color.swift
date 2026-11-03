@@ -32,14 +32,17 @@ extension DS {
         public static let bgRaised = neutral(light: 1, dark: 4)
         public static let bgSunken = neutral(light: 3, dark: 1)
         public static let bgCanvas = neutral(light: 4, dark: 1)
-        public static let bgControl = neutral(light: 3, dark: 4)
-        public static let bgControlHover = neutral(light: 4, dark: 5)
-        public static let bgControlActive = neutral(light: 5, dark: 6)
+        public static let bgControl = neutral(light: 3, dark: 5)
+        public static let bgControlHover = neutral(light: 4, dark: 6)
+        public static let bgControlActive = neutral(light: 5, dark: 7)
 
         public static let bgHud = NSColor(name: nil) { _ in
             let base = n(nd, 2)
             return NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? base : base.withAlphaComponent(0.88)
         }
+        public static let bgInverse = neutral(12)
+        public static let bgInverseHover = neutral(11)
+        public static let onInverse = neutral(light: 1, dark: 2)
         public static let bgScrim = NSColor.black.withAlphaComponent(0.45)
 
         public static let textPrimary = neutral(12)

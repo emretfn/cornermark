@@ -33,6 +33,7 @@ extension Sheet {
         checkboxes()
         textInputs()
         surfaces()
+        sidebarAndWells()
         smallParts()
     }
 
@@ -237,6 +238,60 @@ extension Sheet {
             }
         }
         y += band.height
+    }
+
+    // MARK: SidebarItem and ImageWell
+
+    private func sidebarAndWells() {
+        y += DS.Space.s24
+        Draw.text("SidebarItem", DS.Text.bodyStrong, C.textPrimary, at: CGPoint(x: left, y: y))
+        Draw.text("a symbol and a title on the sidebar surface; the selected row is a quiet accent fill", DS.Text.caption, C.textSecondary, at: CGPoint(x: left + 84, y: y + 2))
+        y += 28
+        let width: CGFloat = 176, pad = DS.Space.s12
+        let columns: [(String, Bool, [InteractionState])] = [("unselected", false, InteractionState.allCases), ("selected", true, [.normal, .hover, .disabled])]
+        let panelHeight = 4 * (DS.Size.control + DS.Space.s2) - DS.Space.s2 + 2 * pad
+        for (c, column) in columns.enumerated() {
+            let panel = CGRect(x: left + CGFloat(c) * (width + 2 * pad + DS.Space.s24), y: y, width: width + 2 * pad, height: panelHeight)
+            Draw.fill(Draw.rounded(panel, DS.Radius.lg), C.bgSurface)
+            Draw.stroke(Draw.rounded(panel, DS.Radius.lg), C.borderSubtle)
+            for (i, state) in column.2.enumerated() {
+                let item = SidebarItem(symbol: ["gearshape", "command", "rectangle.stack", "camera.viewfinder"][i], title: ["General", "Shortcuts", "Quick Access", "Capture"][i])
+                item.frame.size.width = width
+                item.isSelected = column.1
+                item.forcedState = state
+                item.isEnabled = state != .disabled
+                stamp(item, at: CGPoint(x: panel.minX + pad, y: panel.minY + pad + CGFloat(i) * (DS.Size.control + DS.Space.s2)))
+            }
+            Draw.text(column.0, DS.Text.readout, C.textSecondary, at: CGPoint(x: panel.minX, y: panel.maxY + DS.Space.s8), width: panel.width)
+        }
+        y += panelHeight + DS.Space.s8 + 14
+
+        y += DS.Space.s24
+        Draw.text("ImageWell", DS.Text.bodyStrong, C.textPrimary, at: CGPoint(x: left, y: y))
+        Draw.text("a sunken field with the picture fitted inside, clipped to the field's shape; drawn here in a flipped context", DS.Text.caption, C.textSecondary,
+                  at: CGPoint(x: left + 66, y: y + 2))
+        y += 28
+        let well = CGSize(width: 188, height: 128)
+        let pictures: [(String, CGImage?)] = [("wide", Self.picture(width: 400, height: 150)), ("tall", Self.picture(width: 150, height: 400)),
+                                              ("square", Self.picture(width: 240, height: 240)), ("empty", nil)]
+        for (i, picture) in pictures.enumerated() {
+            let rect = CGRect(origin: CGPoint(x: left + CGFloat(i) * (well.width + DS.Space.s16), y: y), size: well)
+            ImageWell.draw(picture.1, in: rect)
+            Draw.text(picture.0, DS.Text.readout, C.textSecondary, at: CGPoint(x: rect.minX, y: rect.maxY + DS.Space.s6), width: well.width)
+        }
+        y += well.height + DS.Space.s6 + 14
+    }
+
+    /// A gradient with a white corner marker, so a flipped or mis-fitted picture is plain to see.
+    private static func picture(width: Int, height: Int) -> CGImage {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let gradient = CGGradient(colorsSpace: space, colors: [CGColor(srgbRed: 0.13, green: 0.35, blue: 0.75, alpha: 1), CGColor(srgbRed: 0.85, green: 0.3, blue: 0.55, alpha: 1)] as CFArray,
+                                  locations: [0, 1])!
+        ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: CGFloat(height)), end: CGPoint(x: CGFloat(width), y: 0), options: [])
+        ctx.setFillColor(CGColor(gray: 1, alpha: 0.9))
+        ctx.fill(CGRect(x: 0, y: CGFloat(height) - CGFloat(min(width, height)) * 0.18, width: CGFloat(min(width, height)) * 0.4, height: CGFloat(min(width, height)) * 0.18))
+        return ctx.makeImage()!
     }
 
     // MARK: Badge, Separator, Label

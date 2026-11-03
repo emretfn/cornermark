@@ -51,6 +51,9 @@ func checkComponents() {
     componentContrast()
     section("Components: rendered pixels follow the tables")
     renderedLook()
+    section("Components: SidebarItem and ImageWell")
+    sidebarItemChecks()
+    imageWellChecks()
     section("Components: token discipline")
     tokenDiscipline()
 }
@@ -220,8 +223,8 @@ private func geometry() {
     }
     check("Segments .regular is control tall and .small is controlSmall tall", Segments(symbols: ["pin"], labels: ["Pin"]).intrinsicContentSize.height == DS.Size.control
           && Segments(labels: ["Classic"]).intrinsicContentSize.height == DS.Size.controlSmall)
-    check("Checkbox height follows its size and its box is 14pt", Checkbox(title: "Shadow", size: .small).intrinsicContentSize.height == DS.Size.controlSmall
-          && Checkbox(title: "Shadow").intrinsicContentSize.height == DS.Size.control && DS.Size.icon == 14)
+    check("Checkbox height follows its size and its box is 16pt", Checkbox(title: "Shadow", size: .small).intrinsicContentSize.height == DS.Size.controlSmall
+          && Checkbox(title: "Shadow").intrinsicContentSize.height == DS.Size.control && DS.Size.iconLarge == 16)
     check("Slider is controlSmall tall", Slider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil).intrinsicContentSize.height == DS.Size.controlSmall)
 
     let tools = editorTools()
@@ -300,8 +303,9 @@ private func componentContrast() {
                     check(String(format: "[%@] Checkbox on %@ checkmark on its fill >= 4.5 : %.2f", label, "\(state)", mark), mark >= 4.5)
                 }
                 for (name, surface) in surfaces {
-                    let edge = ratio(look.border, on: surface, appearance, over: white)
-                    check(String(format: "[%@] Checkbox %@ %@ border on %@ >= 3 : %.2f", label, on ? "on" : "off", "\(state)", name, edge), edge >= 3)
+                    // An on box has no border, so its fill is what has to stand off the surface.
+                    let edge = ratio(look.border ?? look.fill!, on: surface, appearance, over: white)
+                    check(String(format: "[%@] Checkbox %@ %@ edge on %@ >= 3 : %.2f", label, on ? "on" : "off", "\(state)", name, edge), edge >= 3)
                 }
             }
         }
@@ -363,7 +367,7 @@ private func renderedLook() {
     let got = sample(primary, .aqua, x: 3, y: primary.bounds.height / 2)
     // A window backing store has its own colour space, which nudges saturated colours, so the accent is checked for staying yellow
     // and a neutral fill, which survives the conversion, is checked exactly.
-    check("a primary Button in a non-key window keeps its accent fill", got.r > 0.9 && got.g > 0.85 && got.b < 0.4, "got \(got.hex)")
+    check("a primary Button in a non-key window keeps its accent fill, not the stock grey", got.r > 0.9 && got.g > 0.85 && got.r - got.b > 0.3, "got \(got.hex)")
     let quiet = Button(title: "Capture", variant: .secondary, size: .large)
     window.contentView!.addSubview(quiet)
     check("a secondary Button in a non-key window keeps bgControl", close(sample(quiet, .aqua, x: 3, y: 18), resolve(DS.Color.bgControl, .aqua)),
@@ -455,9 +459,9 @@ private func renderedSliderAndCheckbox() {
         on.state = .on
         let off = Checkbox(title: "Shadow", size: .small)
         let y = on.bounds.height / 2
-        check("[\(label)] an on Checkbox paints accentSolid inside its border", close(sample(on, appearance, x: 2.2, y: y), resolve(DS.Color.accentSolid, appearance), tolerance: 0.05),
+        check("[\(label)] an on Checkbox paints bgInverse", close(sample(on, appearance, x: 2.2, y: y), resolve(DS.Color.bgInverse, appearance), tolerance: 0.05),
               "got \(sample(on, appearance, x: 2.2, y: y).hex)")
-        check("[\(label)] an off Checkbox paints no fill", sample(off, appearance, x: 7, y: y).a < 0.02)
+        check("[\(label)] an off Checkbox paints bgControl", close(sample(off, appearance, x: 8, y: y), resolve(DS.Color.bgControl, appearance)))
     }
 }
 
@@ -520,4 +524,103 @@ private func checkInputTextCentring() {
     }
     let dy = (Double(minY + maxY + 1) / 2 - Double(h) / 2) / Double(scale)
     check(String(format: "TextInput digits are off centre by dy %.2f, at most 0.5", dy), maxY >= 0 && abs(dy) <= 0.5)
+}
+
+private func sidebarItemChecks() {
+    let probe = Probe()
+    let item = SidebarItem(symbol: "gearshape", title: "General")
+    item.target = probe
+    item.action = #selector(Probe.fire)
+    item.performClick(nil)
+    check("SidebarItem is an NSButton and performClick fires its action", (item as AnyObject) is NSButton && probe.count == 1)
+    item.isEnabled = false
+    item.performClick(nil)
+    check("a disabled SidebarItem does not fire", probe.count == 1)
+    check("SidebarItem is control tall and takes its label from the title", item.intrinsicContentSize.height == DS.Size.control && item.accessibilityLabel() == "General")
+    let expected = DS.Space.s8 + DS.Size.icon + DS.Space.s8 + ceil(NSAttributedString(string: "General", attributes: DS.Text.body.attributes(color: .black)).size().width) + DS.Space.s8
+    check("SidebarItem's own width is s8, the icon, s8, the title and s8", item.intrinsicContentSize.width == expected, "\(item.intrinsicContentSize.width) vs \(expected)")
+    check("selection reaches accessibility as a value", item.accessibilityValue() as? String == "Not selected" && { item.isSelected = true; return item.accessibilityValue() as? String == "Selected" }())
+
+    for (label, appearance) in appearances {
+        for selected in [false, true] {
+            for state in InteractionState.allCases where state != .disabled {
+                let look = SidebarItem.look(selected: selected, state)
+                let fill = look.fill ?? DS.Color.bgSurface
+                let title = ratio(look.title, on: fill, appearance, over: white), symbol = ratio(look.symbol, on: fill, appearance, over: white)
+                check(String(format: "[%@] SidebarItem%@ %@ title on its fill >= 4.5 : %.2f", label, selected ? " selected" : "", "\(state)", title), title >= 4.5)
+                check(String(format: "[%@] SidebarItem%@ %@ symbol on its fill >= 4.5 : %.2f", label, selected ? " selected" : "", "\(state)", symbol), symbol >= 4.5)
+            }
+        }
+        func row(_ selected: Bool, _ state: InteractionState) -> SidebarItem {
+            let r = SidebarItem(symbol: "gearshape", title: "General")
+            r.frame.size.width = 176
+            r.isSelected = selected
+            r.forcedState = state
+            return r
+        }
+        let y = DS.Size.control / 2
+        check("[\(label)] a selected SidebarItem paints bgControlActive", close(sample(row(true, .normal), appearance, x: 3, y: y), resolve(DS.Color.bgControlActive, appearance)))
+        check("[\(label)] a hovered SidebarItem paints bgControlHover", close(sample(row(false, .hover), appearance, x: 3, y: y), resolve(DS.Color.bgControlHover, appearance)))
+        check("[\(label)] an idle SidebarItem paints no fill", sample(row(false, .normal), appearance, x: 3, y: y).a < 0.02)
+        check("[\(label)] a SidebarItem reaches its full width", close(sample(row(true, .normal), appearance, x: 172, y: y), resolve(DS.Color.bgControlActive, appearance)))
+    }
+
+    let rep = renderedImage(of: { let r = SidebarItem(symbol: "gearshape", title: "General"); r.frame.size.width = 176; return r }(), appearance: .aqua)
+    let scale = CGFloat(rep.pixelsWide) / 176
+    func firstInk(from x0: CGFloat, to x1: CGFloat) -> CGFloat? {
+        for px in Int(x0 * scale)..<Int(x1 * scale) {
+            for py in 0..<rep.pixelsHigh where (rep.colorAt(x: px, y: py)?.alphaComponent ?? 0) > 0.3 { return CGFloat(px) / scale }
+        }
+        return nil
+    }
+    let symbolEdge = firstInk(from: 0, to: 26) ?? -1, titleEdge = firstInk(from: 26, to: 100) ?? -1
+    let titleStart = DS.Space.s8 + DS.Size.icon + DS.Space.s8
+    check("the symbol starts at the s8 padding", symbolEdge >= DS.Space.s8 - 0.5 && symbolEdge <= DS.Space.s8 + 2, "ink at \(symbolEdge)")
+    check("the title starts s8 after the symbol's box", titleEdge >= titleStart - 0.5 && titleEdge <= titleStart + 2, "ink at \(titleEdge), box at \(titleStart)")
+}
+
+private func imageWellChecks() {
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    func picture(_ w: Int, _ h: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h / 2))
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: h / 2, width: w, height: h - h / 2))
+        return ctx.makeImage()!
+    }
+    let side: CGFloat = 80, scale: CGFloat = 2
+    func well(_ image: CGImage?, flipped: Bool, _ appearance: NSAppearance.Name = .aqua, size: CGSize = CGSize(width: side, height: side)) -> NSBitmapImageRep {
+        render(size: size, scale: scale, flipped: flipped, appearance: appearance) { ImageWell.draw(image, in: CGRect(origin: .zero, size: size)) }
+    }
+    func at(_ rep: NSBitmapImageRep, _ x: CGFloat, _ y: CGFloat) -> RGBA { pixel(rep, x: Int(x * scale), y: Int(y * scale)) }
+
+    for flipped in [false, true] {
+        let name = flipped ? "flipped" : "unflipped"
+        let rep = well(picture(40, 40), flipped: flipped)
+        let top = at(rep, 40, 14), bottom = at(rep, 40, 66)
+        check("an image is upright in a \(name) context: red above, blue below", top.r > 0.85 && top.b < 0.2 && bottom.b > 0.85 && bottom.r < 0.2, "top \(top.hex), bottom \(bottom.hex)")
+        check("the well's corner is cut to its rounded shape in a \(name) context", at(rep, 0.5, 0.5).a < 0.05 && at(rep, 79.5, 79.5).a < 0.05)
+    }
+
+    let wide = well(picture(40, 20), flipped: true, size: CGSize(width: side, height: side))
+    check("a wide image is fitted and leaves bgSunken above and below it", close(at(wide, 40, 8), resolve(DS.Color.bgSunken, .aqua)) && at(wide, 40, 40).r + at(wide, 40, 40).b > 0.8
+          && close(at(wide, 40, 72), resolve(DS.Color.bgSunken, .aqua)), "above \(at(wide, 40, 8).hex) middle \(at(wide, 40, 40).hex)")
+    let tall = well(picture(20, 40), flipped: false)
+    check("a tall image is fitted and leaves bgSunken left and right of it", close(at(tall, 8, 40), resolve(DS.Color.bgSunken, .aqua)) && close(at(tall, 72, 40), resolve(DS.Color.bgSunken, .aqua)))
+    let wider = well(picture(400, 100), flipped: true, size: CGSize(width: 160, height: 80))
+    check("the picture's own aspect is kept: a 4:1 image in a 2:1 well fills its width and half its height",
+          at(wider, 4, 40).r + at(wider, 4, 40).b > 0.8 && close(at(wider, 80, 5), resolve(DS.Color.bgSunken, .aqua)))
+
+    for (label, appearance) in appearances {
+        let empty = well(nil, flipped: true, appearance)
+        check("[\(label)] an empty well paints bgSunken", close(at(empty, 40, 40), resolve(DS.Color.bgSunken, appearance), tolerance: 0.03), "got \(at(empty, 40, 40).hex)")
+        let edge = at(empty, 40, 0.25), inner = at(empty, 40, 3)
+        let sunken = resolve(DS.Color.bgSunken, appearance)
+        let moved = appearance == .aqua ? edge.luminance < inner.luminance - 0.01 : edge.luminance > inner.luminance + 0.01
+        check("[\(label)] the imageOutline is stroked inside the well's edge", moved && abs(inner.luminance - sunken.luminance) < 0.02,
+              "edge \(edge.hex), inner \(inner.hex)")
+    }
+    let covered = well(picture(40, 40), flipped: false)
+    check("the outline is drawn over the picture, not under it", at(covered, 40, 0.25).r < at(covered, 40, 4).r - 0.02, "edge \(at(covered, 40, 0.25).hex) inner \(at(covered, 40, 4).hex)")
 }
