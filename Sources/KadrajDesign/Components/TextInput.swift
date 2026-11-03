@@ -8,7 +8,9 @@ final class TextInputCell: NSTextFieldCell {
         let metrics = font ?? DS.Text.body.font
         let line = ceil(metrics.ascender - metrics.descender + metrics.leading)
         var inner = rect.insetBy(dx: isCentered ? 0 : DS.Space.s8, dy: 0)
-        inner.origin.y += (inner.height - line) / 2
+        // Centres the capitals and digits rather than the font's line box, which sits them about 1pt low.
+        let capCentre = metrics.ascender - metrics.capHeight / 2
+        inner.origin.y += ((inner.height / 2 - capCentre) * 2).rounded() / 2
         inner.size.height = line
         return inner
     }

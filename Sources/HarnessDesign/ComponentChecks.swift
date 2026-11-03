@@ -37,6 +37,9 @@ private func pinned(_ button: Pressable, _ state: InteractionState) -> Pressable
 func checkComponents() {
     section("Components: behaviour")
     behaviour()
+    section("Components: icons are centred optically")
+    checkIconCentring()
+    checkInputTextCentring()
     section("Components: geometry")
     geometry()
     section("Components: contrast of text on fill, every variant and state except disabled")
@@ -254,4 +257,51 @@ private func tokenDiscipline() {
         let hits = forbidden.filter { text.range(of: $0, options: .regularExpression) != nil }
         check("\(file) uses tokens only, no raw colour, font size or radius", hits.isEmpty, hits.joined(separator: ", "))
     }
+}
+
+private func checkIconCentring() {
+    let symbols = ["doc.on.doc", "square.and.arrow.down", "pencil.tip.crop.circle", "text.viewfinder", "pin", "xmark",
+                   "rectangle.dashed", "macwindow", "display", "arrow.up.and.down.text.horizontal", "timer",
+                   "rotate.right", "cursorarrow", "crop"]
+    let scale = 4
+    for symbol in symbols {
+        let button = IconButton(symbol: symbol, label: symbol, size: .large)
+        let w = Int(button.bounds.width) * scale, h = Int(button.bounds.height) * scale
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = button.bounds.size
+        button.cacheDisplay(in: button.bounds, to: rep)
+        var minX = w, maxX = -1, minY = h, maxY = -1
+        var mass = 0.0, massX = 0.0, massY = 0.0
+        for y in 0..<h {
+            for x in 0..<w {
+                let alpha = Double(rep.colorAt(x: x, y: y)?.alphaComponent ?? 0)
+                mass += alpha; massX += alpha * (Double(x) + 0.5); massY += alpha * (Double(y) + 0.5)
+                if alpha > 0.3 { minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y) }
+            }
+        }
+        let dx = ((Double(minX + maxX + 1) / 2 + massX / mass) / 2 - Double(w) / 2) / Double(scale)
+        let dy = ((Double(minY + maxY + 1) / 2 + massY / mass) / 2 - Double(h) / 2) / Double(scale)
+        check(String(format: "%@ optical centre is off by dx %.2f dy %.2f, at most 0.25", symbol, dx, dy), maxX >= 0 && abs(dx) <= 0.25 && abs(dy) <= 0.25)
+    }
+}
+
+private func checkInputTextCentring() {
+    let field = TextInput(placeholder: "W", monospaced: true, centered: true)
+    field.appearance = NSAppearance(named: .darkAqua)
+    field.stringValue = "200"
+    field.frame = CGRect(x: 0, y: 0, width: 48, height: DS.Size.control)
+    let scale = 4, w = 48 * scale, h = Int(DS.Size.control) * scale
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                               isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    rep.size = field.bounds.size
+    field.cacheDisplay(in: field.bounds, to: rep)
+    var minY = h, maxY = -1
+    for y in 0..<h {
+        for x in 0..<w where (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.brightnessComponent ?? 0) > 0.6 {
+            minY = min(minY, y); maxY = max(maxY, y)
+        }
+    }
+    let dy = (Double(minY + maxY + 1) / 2 - Double(h) / 2) / Double(scale)
+    check(String(format: "TextInput digits are off centre by dy %.2f, at most 0.5", dy), maxY >= 0 && abs(dy) <= 0.5)
 }
