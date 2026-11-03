@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 
 final class BlockMenuItem: NSMenuItem {
     private let handler: () -> Void
@@ -41,7 +42,7 @@ final class PinWindow: NSPanel {
 
 final class PinContentView: NSView {
     weak var controller: PinController?
-    private let closeButton = CardButton(.close)
+    private let closeButton = CardAction.close.makeButton()
     private var hovering = false
 
     override var mouseDownCanMoveWindow: Bool { true }

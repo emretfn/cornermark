@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 
 extension CardAction {
     var symbol: String {
@@ -22,44 +23,13 @@ extension CardAction {
         case .close: return "Close"
         }
     }
-}
 
-final class CardButton: NSButton {
-    let cardAction: CardAction
-    private var hovering = false
-
-    init(_ action: CardAction) {
-        cardAction = action
-        super.init(frame: .zero)
-        isBordered = false
-        title = ""
-        imagePosition = .imageOnly
-        toolTip = action.title
-        setAccessibilityLabel(action.title)
-        setAccessibilityIdentifier("card.\(String(describing: action))")
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold).applying(.init(paletteColors: [.white]))
-        image = NSImage(systemSymbolName: action.symbol, accessibilityDescription: action.title)?.withSymbolConfiguration(config)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let alpha: CGFloat = isHighlighted ? 0.85 : (hovering ? 0.75 : 0.6)
-        NSColor(white: 0, alpha: alpha).setFill()
-        NSBezierPath(ovalIn: bounds).fill()
-        guard let image else { return }
-        let s = image.size
-        image.draw(in: NSRect(x: bounds.midX - s.width / 2, y: bounds.midY - s.height / 2, width: s.width, height: s.height))
+    /// The round dark button laid over a thumbnail. Corner actions are small, the rest regular.
+    @MainActor
+    func makeButton() -> IconButton {
+        let button = IconButton(symbol: symbol, label: title, size: self == .close || self == .pin ? .small : .regular, tone: .overlay)
+        button.setAccessibilityIdentifier("card.\(String(describing: self))")
+        return button
     }
 }
 
@@ -68,7 +38,7 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
     private let card: QuickAccessCard
     private var size: CGSize
     private let thumbnail: NSImage
-    private(set) var buttons: [CardAction: CardButton] = [:]
+    private(set) var buttons: [CardAction: IconButton] = [:]
     private(set) var isHovering = false
     private var mouseDownPoint: CGPoint?
     private var dragging = false
@@ -94,7 +64,7 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         wantsLayer = true
         setAccessibilityIdentifier("quickaccess.card")
         for action in CardAction.allCases {
-            let b = CardButton(action)
+            let b = action.makeButton()
             b.target = self
             b.action = #selector(buttonPressed(_:))
             b.isHidden = true
@@ -114,7 +84,13 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
 
     // MARK: Drawing
 
-    private var imageArea: NSRect { NSRect(x: 6, y: 6, width: bounds.width - 12, height: bounds.height - 12 - 22) }
+    /// Room under the image for the readout: gap, one text line, bottom padding.
+    private static let footerHeight = DS.Space.s6 + DS.Text.readout.lineHeight + DS.Space.s8
+
+    private var imageArea: NSRect {
+        let pad = DS.Space.s8
+        return NSRect(x: pad, y: pad, width: bounds.width - 2 * pad, height: bounds.height - pad - Self.footerHeight)
+    }
 
     private var thumbnailRect: NSRect {
         let area = imageArea, s = thumbnail.size
@@ -124,46 +100,56 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
-        NSColor.windowBackgroundColor.setFill()
-        outline.fill()
-        NSColor.separatorColor.setStroke()
-        outline.lineWidth = 1
-        outline.stroke()
+        let chrome = NSBezierPath.continuous(bounds, radius: DS.Radius.xl)
+        DS.Color.bgSurface.setFill()
+        chrome.fill()
+        strokeInside(chrome, DS.Color.borderSubtle)
 
         let r = thumbnailRect
+        let image = NSBezierPath.continuous(r, radius: DS.Radius.md)
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6).addClip()
+        image.addClip()
         NSGraphicsContext.current?.imageInterpolation = .high
         thumbnail.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         if isHovering {
-            NSColor(white: 0, alpha: 0.42).setFill()
+            DS.Color.bgScrim.setFill()
             r.fill()
         }
         NSGraphicsContext.restoreGraphicsState()
-        NSColor(white: 0.5, alpha: 0.35).setStroke()
-        let edge = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
-        edge.lineWidth = 1
-        edge.stroke()
+        strokeInside(image, DS.Color.imageOutline)
 
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
-                                                    .foregroundColor: NSColor.secondaryLabelColor]
-        card.info.draw(at: NSPoint(x: 10, y: bounds.height - 20), withAttributes: attrs)
+        let line = NSRect(x: DS.Space.s12, y: imageArea.maxY + DS.Space.s6, width: bounds.width - 2 * DS.Space.s12, height: DS.Text.readout.lineHeight)
+        NSAttributedString(string: card.info, attributes: DS.Text.readout.attributes(color: DS.Color.textSecondary))
+            .draw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+
+    /// A 1pt line that stays inside the path, so the shape keeps its size.
+    private func strokeInside(_ path: NSBezierPath, _ color: NSColor) {
+        NSGraphicsContext.saveGraphicsState()
+        path.addClip()
+        color.setStroke()
+        path.lineWidth = 2
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     override func layout() {
         super.layout()
-        let d: CGFloat = bounds.width < 190 ? 24 : 30
         let area = thumbnailRect
-        let pad: CGFloat = 6
-        buttons[.close]?.frame = NSRect(x: area.minX + pad, y: area.minY + pad, width: d - 4, height: d - 4)
-        buttons[.pin]?.frame = NSRect(x: area.maxX - pad - (d - 4), y: area.minY + pad, width: d - 4, height: d - 4)
+        let pad = DS.Space.s6
+        let corner = DS.Size.controlSmall
+        buttons[.close]?.frame = NSRect(x: area.minX + pad, y: area.minY + pad, width: corner, height: corner)
+        buttons[.pin]?.frame = NSRect(x: area.maxX - pad - corner, y: area.minY + pad, width: corner, height: corner)
         let middle: [CardAction] = [.copy, .save, .annotate, .ocr]
-        let gap: CGFloat = 8
+        let d = bounds.width < 190 ? DS.Size.controlSmall : DS.Size.control
+        let gap = DS.Space.s8
         let total = CGFloat(middle.count) * d + CGFloat(middle.count - 1) * gap
         var x = area.midX - total / 2
+        // Centred unless a wide, short image would make the row hit the corner buttons; then only as low as it takes.
+        var y = area.midY - d / 2
+        if x < area.minX + pad + corner { y = min(max(y, area.minY + pad + corner + DS.Space.s2), area.maxY - d) }
         for a in middle {
-            buttons[a]?.frame = NSRect(x: x, y: area.midY - d / 2 + 6, width: d, height: d)
+            buttons[a]?.frame = NSRect(x: x, y: y, width: d, height: d)
             x += d + gap
         }
     }
@@ -187,7 +173,9 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         onHover(hovering)
     }
 
-    @objc private func buttonPressed(_ sender: CardButton) { onAction(sender.cardAction) }
+    @objc private func buttonPressed(_ sender: IconButton) {
+        if let action = buttons.first(where: { $0.value === sender })?.key { onAction(action) }
+    }
 
     // MARK: Mouse, drag, swipe
 
@@ -255,9 +243,10 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
             onSwipeDismiss()
         } else {
             window.alphaValue = 1
-            if window.isVisible {
+            if window.isVisible && !DS.Motion.isReduced {
                 NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.2
+                    ctx.duration = DS.Motion.Duration.base
+                    ctx.timingFunction = DS.Motion.Curve.easeOut
                     window.animator().setFrameOrigin(origin)
                 }
             } else {

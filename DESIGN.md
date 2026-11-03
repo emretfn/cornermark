@@ -178,6 +178,8 @@ Web tarafındaki karşılıklar: token CSS değişkeni, bileşen `NSView` veya `
 | `Badge` | `neutral`, `accent`, `danger`, `warning`, `success`; ikon ve metin birlikte | Durum bildirimi |
 | `Label` | `DS.Text` stili ve renk rolü | Her metin |
 
+Yüzen pencereler (Hızlı Erişim kartı gibi) saydam pencere, `Surface(.panel)` ve sistemin pencere gölgesini kullanır. Gölge için kenar payı açılmaz, çünkü pay kartın çevresindeki tıklamaları yutar. Elle çizilen `Elevation`, yakalama katmanı gibi tek pencerede çizilen yüzeyler içindir.
+
 **Durum modeli.** Etkileşim tek bir `InteractionState` değeridir: `normal`, `hover`, `pressed`, `disabled`. Bileşen görünümünü bu duruma göre tablodan okur, ayrı boolean tutmaz.
 
 | Varyant | normal | hover | pressed | disabled |

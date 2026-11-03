@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 import KadrajCore
 
 enum CardState: Equatable { case visible, hovering, dragging, closing }
@@ -202,9 +203,10 @@ final class QuickAccessManager {
         for (card, frame) in zip(stack, frames) {
             guard let panel = panels[card.id] else { continue }
             let fits = bounds.contains(frame)
-            if animated && env.isOnscreen && panel.isVisible {
+            if animated && env.isOnscreen && panel.isVisible && !DS.Motion.isReduced {
                 NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.2
+                    ctx.duration = DS.Motion.Duration.base
+                    ctx.timingFunction = DS.Motion.Curve.easeOut
                     panel.animator().setFrame(frame, display: true)
                 }
             } else {
@@ -217,30 +219,34 @@ final class QuickAccessManager {
 
     private func springIn(_ panel: QuickAccessPanel) {
         guard let layer = panel.contentView?.layer else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0; fade.toValue = 1; fade.duration = DS.Motion.Duration.fast
+        layer.add(fade, forKey: "fadeIn")
+        guard !DS.Motion.isReduced else { return }
         let cx = layer.bounds.midX, cy = layer.bounds.midY
         let ax = layer.anchorPoint.x * layer.bounds.width, ay = layer.anchorPoint.y * layer.bounds.height
         var from = CATransform3DMakeTranslation(cx - ax, cy - ay, 0)
-        from = CATransform3DScale(from, 0.82, 0.82, 1)
+        from = CATransform3DScale(from, DS.Motion.enterScale, DS.Motion.enterScale, 1)
         from = CATransform3DTranslate(from, ax - cx, ay - cy, 0)
         let spring = CASpringAnimation(keyPath: "transform")
         spring.fromValue = NSValue(caTransform3D: from)
         spring.toValue = NSValue(caTransform3D: CATransform3DIdentity)
-        spring.mass = 1; spring.stiffness = 320; spring.damping = 20
+        spring.mass = 1; spring.stiffness = 320
+        spring.damping = 2 * (spring.stiffness * spring.mass).squareRoot()
         spring.duration = spring.settlingDuration
         layer.add(spring, forKey: "springIn")
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0; fade.toValue = 1; fade.duration = 0.15
-        layer.add(fade, forKey: "fadeIn")
     }
 
     private func dismiss(_ panel: QuickAccessPanel) {
         guard env.isOnscreen, panel.isVisible else { panel.close(); return }
+        let reduced = DS.Motion.isReduced
         let toward: CGFloat = settings().overlayCorner.isRight ? 1 : -1
         var target = panel.frame
         target.origin.x += toward * (panel.frame.width + QuickAccessLayout.margin)
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.18
-            panel.animator().setFrame(target, display: true)
+            ctx.duration = DS.Motion.Duration.fast
+            ctx.timingFunction = DS.Motion.Curve.easeOut
+            if !reduced { panel.animator().setFrame(target, display: true) }
             panel.animator().alphaValue = 0
         }, completionHandler: { panel.close() })
     }

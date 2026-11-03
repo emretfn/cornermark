@@ -9,7 +9,7 @@ let package = Package(
         .target(name: "KadrajDesign", swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "KadrajCapture", dependencies: ["KadrajCore", "KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "KadrajEditor", dependencies: ["KadrajCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "KadrajShell", dependencies: ["KadrajCore", "KadrajCapture", "KadrajEditor"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "KadrajShell", dependencies: ["KadrajCore", "KadrajCapture", "KadrajEditor", "KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "Kadraj", dependencies: ["KadrajShell"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "HarnessCapture", dependencies: ["KadrajCapture"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "HarnessDesign", dependencies: ["KadrajDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),

@@ -5,7 +5,7 @@ import KadrajCapture
 import KadrajCore
 @testable import KadrajShell
 
-let scratch = "/private/tmp/claude-501/-Users-emretufan-Documents-test-projects-cornermark/c5db439d-4599-415b-bcac-b995a06e3ad7/scratchpad/shell/"
+let scratch = "build/harness/shell/"
 
 @MainActor
 final class Checks {
