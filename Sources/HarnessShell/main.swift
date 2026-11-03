@@ -33,6 +33,7 @@ Task { @MainActor in
         try await checkHistoryChrome()
         try await checkPrune()
         try await checkImportAndEditorRoundTrip()
+        try await checkUpdates()
         try await checkSettingsWindow()
         try await checkSmallWindows()
         try await takeSnapshots()
