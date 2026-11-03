@@ -35,9 +35,12 @@ enum UpdateVerifier {
 
 /// Reads the GitHub feed, unpacks a release next to the running app and swaps it in.
 final class UpdateInstaller: UpdateServicing {
-    static let feed = URL(string: "https://api.github.com/repos/emretfn/cornermark/releases/latest")!
+    static let releasesAPI = URL(string: "https://api.github.com/repos/emretfn/cornermark/releases")!
+    static let feed = releasesAPI.appendingPathComponent("latest")
+    static let historyFeed = releasesAPI.appending(queryItems: [URLQueryItem(name: "per_page", value: "20")])
 
     private let feedURL: URL
+    private let historyURL: URL
     private let bundleURL: URL
     private let session: URLSession
 
@@ -47,10 +50,14 @@ final class UpdateInstaller: UpdateServicing {
         self.bundleURL = bundleURL
         currentVersion = (Bundle(url: bundleURL)?.infoDictionary?["CFBundleShortVersionString"] as? String).flatMap(AppVersion.init)
         var feed = Self.feed
+        var history = Self.historyFeed
         #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["CORNERMARK_UPDATE_FEED"], let url = URL(string: raw), AppRelease.isTrusted(url) { feed = url }
+        let environment = ProcessInfo.processInfo.environment
+        if let raw = environment["CORNERMARK_UPDATE_FEED"], let url = URL(string: raw), AppRelease.isTrusted(url) { feed = url }
+        if let raw = environment["CORNERMARK_RELEASES_FEED"], let url = URL(string: raw), AppRelease.isTrusted(url) { history = url }
         #endif
         feedURL = feed
+        historyURL = history
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 900
@@ -59,13 +66,23 @@ final class UpdateInstaller: UpdateServicing {
     }
 
     func latestRelease() async throws -> AppRelease? {
-        var request = URLRequest(url: feedURL)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await transfer { try await session.data(for: request) }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let (data, status) = try await getJSON(feedURL)
         if status == 404 { return nil }
         guard status == 200 else { throw UpdateError.network("GitHub answered \(status).") }
         return try AppRelease.parse(json: data)
+    }
+
+    func releaseHistory() async throws -> [ReleaseEntry] {
+        let (data, status) = try await getJSON(historyURL)
+        guard status == 200 else { throw UpdateError.network("GitHub answered \(status).") }
+        return try ReleaseEntry.parseList(json: data)
+    }
+
+    private func getJSON(_ url: URL) async throws -> (Data, status: Int) {
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await transfer { try await session.data(for: request) }
+        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 
     func stage(_ release: AppRelease) async throws -> StagedUpdate {

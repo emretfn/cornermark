@@ -57,11 +57,14 @@ final class FakeLoginItem: LoginItemControlling {
 final class FakeUpdateService: UpdateServicing {
     var currentVersion: AppVersion? = AppVersion(0, 2, 1)
     var latest: Result<AppRelease?, Error> = .success(nil)
+    var history: Result<[ReleaseEntry], Error> = .success([])
     var staging: Result<Void, Error> = .success(())
     var installing: Result<Void, Error> = .success(())
     var onInstall: () -> Void = {}
     var latestDelay: TimeInterval = 0
+    var historyDelay: TimeInterval = 0
     private(set) var latestCalls = 0
+    private(set) var historyCalls = 0
     private(set) var staged: [AppRelease] = []
     private(set) var installed: [StagedUpdate] = []
     private(set) var discarded: [StagedUpdate] = []
@@ -70,6 +73,12 @@ final class FakeUpdateService: UpdateServicing {
         latestCalls += 1
         if latestDelay > 0 { try? await Task.sleep(nanoseconds: UInt64(latestDelay * 1_000_000_000)) }
         return try latest.get()
+    }
+
+    func releaseHistory() async throws -> [ReleaseEntry] {
+        historyCalls += 1
+        if historyDelay > 0 { try? await Task.sleep(nanoseconds: UInt64(historyDelay * 1_000_000_000)) }
+        return try history.get()
     }
 
     func stage(_ release: AppRelease) async throws -> StagedUpdate {

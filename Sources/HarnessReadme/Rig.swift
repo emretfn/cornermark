@@ -12,6 +12,7 @@ final class IdleLoginItem: LoginItemControlling {
 final class IdleUpdates: UpdateServicing {
     var currentVersion: AppVersion? { AppVersion(1, 0, 0) }
     func latestRelease() async throws -> AppRelease? { nil }
+    func releaseHistory() async throws -> [ReleaseEntry] { [] }
     func stage(_ release: AppRelease) async throws -> StagedUpdate { throw UpdateError.noDownload }
     func installAndRelaunch(_ staged: StagedUpdate) throws {}
     func discard(_ staged: StagedUpdate) {}

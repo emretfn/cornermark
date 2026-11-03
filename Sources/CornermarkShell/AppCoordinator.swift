@@ -19,6 +19,7 @@ final class AppCoordinator {
     private(set) var history: HistoryWindowController?
     private(set) var settingsWindow: SettingsWindowController?
     private(set) var permissionWindow: PermissionWindowController?
+    private(set) var whatsNewWindow: WhatsNewWindowController?
     private(set) var editors: [UUID: EditorWindowController] = [:]
     private(set) var loginError: String?
     private var maintenanceTimer: Timer?
@@ -49,6 +50,7 @@ final class AppCoordinator {
         case .openHistory: showHistory()
         case .openSettings: showSettings()
         case .checkForUpdates: Task { await updates.perform() }
+        case .whatsNew: showWhatsNew()
         case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
@@ -280,6 +282,12 @@ final class AppCoordinator {
         env.present(settingsWindow?.window)
     }
 
+    func showWhatsNew() {
+        if whatsNewWindow == nil { whatsNewWindow = WhatsNewWindowController(env: env) }
+        whatsNewWindow?.reload()
+        env.present(whatsNewWindow?.window)
+    }
+
     func showPermissionWindow() {
         if permissionWindow == nil { permissionWindow = PermissionWindowController(env: env) }
         env.present(permissionWindow?.window)
@@ -340,7 +348,17 @@ final class AppCoordinator {
         Task { await updates.checkAutomatically() }
     }
 
+    /// Says so after an update, then remembers the running version. A first run has nothing to compare with.
+    func announceUpdateIfNeeded() {
+        guard let current = env.updateService.currentVersion else { return }
+        if let previous = settings.value.lastRunVersion.flatMap(AppVersion.init), current > previous {
+            hud.show("Updated to Cornermark \(current)")
+        }
+        settings.update { $0.lastRunVersion = current.description }
+    }
+
     func startMaintenance() {
+        announceUpdateIfNeeded()
         prune()
         checkForUpdatesIfWanted()
         guard env.isOnscreen else { return }

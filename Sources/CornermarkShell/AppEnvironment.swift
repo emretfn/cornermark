@@ -17,6 +17,8 @@ protocol UpdateServicing: AnyObject {
     var currentVersion: AppVersion? { get }
     /// Nil when the project has no release yet.
     func latestRelease() async throws -> AppRelease?
+    /// The published releases, newest first.
+    func releaseHistory() async throws -> [ReleaseEntry]
     func stage(_ release: AppRelease) async throws -> StagedUpdate
     func installAndRelaunch(_ staged: StagedUpdate) throws
     func discard(_ staged: StagedUpdate)

@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCore
+import CornermarkDesign
 import Foundation
 import Security
 @testable import CornermarkShell
@@ -24,6 +25,10 @@ func checkUpdates() async throws {
     try await checkUpdateFlow()
     try await checkUpdateWiring()
     try checkUpdateSettings()
+    checkReleaseNotes()
+    checkReleaseList()
+    try await checkWhatsNew()
+    try await checkUpdatedHUD()
 }
 
 @MainActor
@@ -78,8 +83,8 @@ private func checkReleaseParsing() {
     let summary = long.notesSummary(maxCharacters: 100)
     let lines = summary.dropLast().split(separator: "\n")
     check(summary.count <= 101 && summary.hasSuffix("\u{2026}"), "long notes are cut with an ellipsis", detail: summary)
-    check(lines.allSatisfy { $0.hasPrefix("* change number ") && Int($0.dropFirst(16)) != nil }, "notes are cut at a line break, not mid-line", detail: summary)
-    check(good?.notesSummary() == "Notes", "short notes stay as they are")
+    check(lines.allSatisfy { $0.hasPrefix("\u{2022} Change number ") && Int($0.dropFirst(16)) != nil }, "notes are cut at a line break, not mid-line", detail: summary)
+    check(good?.notesSummary() == "\u{2022} Notes", "short notes stay as they are")
 }
 
 @MainActor
@@ -409,6 +414,7 @@ private func checkUpdateWiring() async throws {
         StatusMenuBuilder(coordinator: w.coordinator).populate(menu)
         let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
         check(titles.firstIndex(of: "Settings\u{2026}").map { titles[$0 + 1] } == "Check for Updates\u{2026}", "the menu lists it after Settings", detail: "\(titles)")
+        check(titles.firstIndex(of: "Check for Updates\u{2026}").map { titles[$0 + 1] } == "What's New\u{2026}", "and What's New right after Check for Updates", detail: "\(titles)")
         check(menuItem(w)?.isEnabled == true && menuItem(w)?.keyEquivalent == "", "idle, it is enabled and shows no shortcut")
         w.updateService.latest = .success(nil)
         let item = menuItem(w)!
@@ -457,4 +463,296 @@ private func checkUpdateSettings() throws {
     check(!SettingsStore(defaults: defaults).value.checkForUpdatesAutomatically, "turning it off survives a relaunch")
     let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(store.value))
     check(decoded == store.value, "settings with the new key round trip through JSON")
+
+    check(Settings().lastRunVersion == nil, "no version has run by default")
+    check(old.lastRunVersion == nil, "settings saved before lastRunVersion existed decode with none")
+    let ran = try JSONDecoder().decode(Settings.self, from: Data(#"{"lastRunVersion": "0.2.1"}"#.utf8))
+    check(ran.lastRunVersion == "0.2.1", "a stored version is read")
+    let wrong = try JSONDecoder().decode(Settings.self, from: Data(#"{"lastRunVersion": 3}"#.utf8))
+    check(wrong.lastRunVersion == nil, "a wrongly typed version falls back to none")
+    store.update { $0.lastRunVersion = "0.3.0" }
+    check(SettingsStore(defaults: defaults).value.lastRunVersion == "0.3.0", "the last run version survives a relaunch")
+    check(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(store.value)) == store.value, "settings with a last run version round trip through JSON")
+}
+
+private let realBody = """
+## [0.2.1](https://github.com/emretfn/cornermark/compare/v0.2.0...v0.2.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **settings:** show refused keys and held modifiers in ShortcutRecorderView ([#4](https://github.com/emretfn/cornermark/issues/4)) ([28cff43](https://github.com/emretfn/cornermark/commit/28cff436fd27128861701118d137af89))
+"""
+
+@MainActor
+private func checkReleaseNotes() {
+    section("release notes parsing")
+    let real = ReleaseNotes(markdown: realBody)
+    check(real.sections == [.init(title: "Fixed", items: ["Show refused keys and held modifiers in ShortcutRecorderView"])],
+          "a release-please body reads as one Fixed item without version line, scope, issue or commit links", detail: "\(real.sections)")
+
+    let mixed = ReleaseNotes(markdown: """
+    ## [0.3.0](https://github.com/emretfn/cornermark/compare/v0.2.1...v0.3.0) (2026-11-10)
+
+    ### Features
+
+    * **editor:** add a **blur** tool ([#9](https://github.com/emretfn/cornermark/issues/9)) ([abcdef0](https://github.com/emretfn/cornermark/commit/abcdef0))
+    - see [the guide](https://example.com/guide) for more
+
+    ### Bug Fixes
+
+    * stop the crop handle from jumping
+
+    ### Performance Improvements
+
+    * open History faster
+    """)
+    check(mixed.sections.map(\.title) == ["New", "Fixed", "Performance Improvements"], "Features becomes New, Bug Fixes becomes Fixed, other titles stay", detail: "\(mixed.sections.map(\.title))")
+    check(mixed.sections.first?.items == ["Add a blur tool", "See the guide for more"], "stray ** go, links keep their text, the first letter is capitalized, - bullets count", detail: "\(mixed.sections.first?.items ?? [])")
+    check(mixed.sections[1].items == ["Stop the crop handle from jumping"], "an item with no scope or links only gets its first letter raised")
+
+    let already = ReleaseNotes(markdown: "### New\n* a\n### Fixed\n* b\n### Fixed\n* c")
+    check(already.sections == [.init(title: "New", items: ["A"]), .init(title: "Fixed", items: ["B", "C"])], "New and Fixed stay, and a repeated title shares one section", detail: "\(already.sections)")
+
+    let loose = ReleaseNotes(markdown: "* before any heading\n\n### Fixed\n* after")
+    check(loose.sections.first == .init(title: "", items: ["Before any heading"]) && loose.sections.count == 2, "bullets before a heading go in a section with no title", detail: "\(loose.sections)")
+    check(ReleaseNotes(markdown: "### Fixed\n\n### New\n* kept").sections == [.init(title: "New", items: ["Kept"])], "a heading with no bullets is dropped")
+
+    let prose = ReleaseNotes(markdown: "## Heads up\n\nThis one rewrites the **editor**.\nIt is faster.\n\nSee [notes](https://example.com).\n")
+    check(prose.sections == [.init(title: "", items: ["This one rewrites the editor. It is faster.", "See notes."])], "hand-written prose becomes one item per paragraph", detail: "\(prose.sections)")
+    check(ReleaseNotes(markdown: "").sections.isEmpty && ReleaseNotes(markdown: " \n\n\t\n").sections.isEmpty, "an empty body has no sections")
+    check(ReleaseNotes(markdown: "## [0.1.0](https://example.com) (2026-01-01)").sections.isEmpty, "a body that is only the version line has no sections")
+    let crlf = ReleaseNotes(markdown: "### Features\r\n\r\n* one\r\n* two\r\n")
+    check(crlf.sections == [.init(title: "New", items: ["One", "Two"])], "Windows line endings read the same", detail: "\(crlf.sections)")
+
+    check(real.plainText == "Fixed\n\u{2022} Show refused keys and held modifiers in ShortcutRecorderView", "plain text is the title, then bullet lines", detail: real.plainText)
+    check(ReleaseNotes(markdown: "### New\n* a\n* b\n### Fixed\n* c").plainText == "New\n\u{2022} A\n\u{2022} B\n\nFixed\n\u{2022} C", "sections are separated by a blank line")
+    check(loose.plainText.hasPrefix("\u{2022} Before any heading\n\nFixed"), "a section with no title prints no title line", detail: loose.plainText)
+
+    let alert = AppRelease(version: AppVersion(0, 2, 1), notes: realBody, pageURL: URL(string: pageURL)!, dmgURL: nil).notesSummary()
+    check(alert == real.plainText && !alert.contains("http") && !alert.contains("](") && !alert.contains("**") && !alert.contains("#"),
+          "the update alert text has no URL, link markup or **", detail: alert)
+}
+
+private func entryJSON(_ tag: String?, body: String = "### Bug Fixes\n* fix\n", published: String? = "2026-11-03T10:15:00Z", draft: Bool? = nil, prerelease: Bool? = nil) -> [String: Any] {
+    var o: [String: Any] = ["body": body]
+    if let tag { o["tag_name"] = tag }
+    if let published { o["published_at"] = published }
+    if let draft { o["draft"] = draft }
+    if let prerelease { o["prerelease"] = prerelease }
+    return o
+}
+
+@MainActor
+private func checkReleaseList() {
+    section("release history parsing")
+    let list: [[String: Any]] = [
+        entryJSON("v0.2.0"), entryJSON("v0.3.0", draft: true), entryJSON("v0.10.0"), entryJSON("v0.4.0-beta.1", prerelease: false),
+        entryJSON("v0.5.0", prerelease: true), entryJSON("v0.2.1", draft: false, prerelease: false), entryJSON(nil), entryJSON("nightly"),
+    ]
+    let parsed = try? ReleaseEntry.parseList(json: JSONSerialization.data(withJSONObject: list))
+    check(parsed?.map(\.version) == [AppVersion(0, 10, 0), AppVersion(0, 2, 1), AppVersion(0, 2, 0)],
+          "drafts, pre-releases and tags that are not versions are skipped, newest version first", detail: "\(String(describing: parsed?.map(\.version)))")
+    check(parsed?.first?.notes.sections == [.init(title: "Fixed", items: ["Fix"])], "each entry carries its parsed notes")
+    check(parsed?.first?.publishedAt == ISO8601DateFormatter().date(from: "2026-11-03T10:15:00Z"), "and its publish date")
+
+    let undated = try? ReleaseEntry.parseList(json: JSONSerialization.data(withJSONObject: [entryJSON("v1.0.0", published: nil), entryJSON("v1.0.1", published: "yesterday")]))
+    check(undated?.count == 2 && undated?.allSatisfy { $0.publishedAt == nil } == true, "a missing or unreadable date leaves the entry without one")
+    let bodyless = try? ReleaseEntry.parseList(json: Data(#"[{"tag_name": "v1.0.0"}]"#.utf8))
+    check(bodyless?.first?.notes.sections.isEmpty == true, "a missing body is empty notes")
+    check((try? ReleaseEntry.parseList(json: Data("[]".utf8)))?.isEmpty == true, "an empty list is an empty history")
+    for (name, data) in [("text that is not JSON", Data("<html>".utf8)), ("an object", Data("{}".utf8)), ("an array of numbers", Data("[1]".utf8))] {
+        var thrown: UpdateError?
+        do { _ = try ReleaseEntry.parseList(json: data) } catch { thrown = error as? UpdateError }
+        check(thrown == .badResponse, "rejects \(name)", detail: "\(String(describing: thrown))")
+    }
+}
+
+private func entry(_ version: AppVersion, body: String = "### Bug Fixes\n* **editor:** fix \(UUID().uuidString.prefix(4)) thing", date: Date? = Date(timeIntervalSince1970: 1_793_700_000)) -> ReleaseEntry {
+    ReleaseEntry(version: version, publishedAt: date, notes: ReleaseNotes(markdown: body))
+}
+
+@MainActor
+private func labels(in view: NSView?) -> [NSTextField] {
+    guard let view else { return [] }
+    return ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap { labels(in: $0) }
+}
+
+@MainActor
+private func views<T: NSView>(_ type: T.Type, in view: NSView?) -> [T] {
+    guard let view else { return [] }
+    return ((view as? T).map { [$0] } ?? []) + view.subviews.flatMap { views(type, in: $0) }
+}
+
+@MainActor
+private func checkWhatsNew() async throws {
+    section("what's new")
+    let spec = ActionTable.spec(.whatsNew)
+    check(spec.title == "What's New\u{2026}" && spec.hotKey == nil && spec.urlPath == "whats-new" && spec.menuGroup == 2, "What's New is a menu action in the windows group with no hotkey")
+    check(AppAction.make(.whatsNew, timerSeconds: 5) == .whatsNew && AppAction.whatsNew.id == .whatsNew, "the action maps to its own id")
+    check((try? URLCommand.parse(URL(string: "cornermark://whats-new")!).get()) == .whatsNew, "cornermark://whats-new parses")
+
+    let history = [entry(AppVersion(0, 3, 0), body: "### Features\n* Not yet"),
+                   entry(AppVersion(0, 2, 1), body: realBody),
+                   entry(AppVersion(0, 2, 0), body: "### Features\n* Added a thing\n* Another thing\n\n### Bug Fixes\n* Fixed one"),
+                   entry(AppVersion(0, 1, 0), body: "")]
+    check(WhatsNewContent(history: history, running: AppVersion(0, 2, 1)) == .loaded(Array(history.dropFirst())), "versions above the running one are hidden, the rest stay in order")
+    check(WhatsNewContent(history: history, running: nil) == .loaded(history), "with no known running version everything is shown")
+    check(WhatsNewContent(history: [], running: AppVersion(0, 2, 1)) == .failed, "an empty history is a failure")
+    check(WhatsNewContent(history: history, running: AppVersion(0, 0, 9)) == .failed, "a history with nothing at or below the running version is a failure")
+
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.history = .success(history)
+        w.updateService.historyDelay = 0.15
+        check(c.whatsNewWindow == nil && w.updateService.historyCalls == 0, "nothing is created or fetched until it is asked for")
+        c.perform(.whatsNew)
+        let controller = c.whatsNewWindow
+        check(controller?.content == .loading && w.presented.contains { $0 === controller?.window }, "opening presents the window straight away, loading")
+        check(collectText(controller?.window?.contentView) == ["Loading release notes\u{2026}"], "and says so", detail: "\(collectText(controller?.window?.contentView))")
+        check(await waitUntil { controller?.content != .loading }, "the history arrives")
+        check(controller?.content == .loaded(Array(history.dropFirst())), "versions above the running 0.2.1 are not shown", detail: "\(String(describing: controller?.content))")
+
+        let view = controller?.window?.contentView
+        view?.layoutSubtreeIfNeeded()
+        let texts = collectText(view)
+        check(texts.filter { $0.hasPrefix("Version ") } == ["Version 0.2.1", "Version 0.2.0", "Version 0.1.0"], "versions are listed newest first", detail: "\(texts)")
+        check(!texts.contains("Version 0.3.0"), "a newer release is absent")
+        let dateText = Date(timeIntervalSince1970: 1_793_700_000).formatted(date: .long, time: .omitted)
+        check(texts.filter { $0 == dateText }.count == 3, "each version has its date in the user's format", detail: "\(texts)")
+        check(texts.contains("Fixed") && texts.contains("New") && texts.contains("Show refused keys and held modifiers in ShortcutRecorderView")
+              && texts.contains("Added a thing") && texts.contains("Another thing") && texts.contains("Fixed one"), "section titles and items are shown", detail: "\(texts)")
+        check(!texts.contains { $0.contains("**") || $0.contains("http") }, "no markup or URL reaches the screen")
+        check(texts.filter { $0 == WhatsNewWindowController.emptyVersionNote }.count == 1, "a version with no items says Small fixes and improvements.")
+        let fields = labels(in: view)
+        check(fields.first { $0.stringValue == "Version 0.2.1" }?.font == DS.Text.heading.font, "version headings use the heading style")
+        check(fields.first { $0.stringValue == dateText }?.font == DS.Text.caption.font && fields.first { $0.stringValue == dateText }?.textColor == DS.Color.textSecondary, "the date is a secondary caption")
+        check(fields.filter { ["New", "Fixed"].contains($0.stringValue) }.allSatisfy { $0.font == DS.Text.captionStrong.font }, "section titles use captionStrong")
+        check(fields.first { $0.stringValue == "Another thing" }?.font == DS.Text.body.font, "items use the body style")
+        let badges = views(Badge.self, in: view)
+        check(badges.count == 1 && badges[0].text == "Installed", "only the installed version carries a badge", detail: "\(badges.map(\.text))")
+        if let badge = badges.first, let heading = fields.first(where: { $0.stringValue == "Version 0.2.1" }) {
+            let b = badge.convert(badge.bounds, to: view), h = heading.convert(heading.bounds, to: view)
+            check(abs(b.midY - h.midY) <= 2 && b.minX > h.maxX, "the badge sits beside the 0.2.1 heading", detail: "\(b) \(h)")
+        }
+        if let badge = badges.first, let scroll = findView("whatsnew.scroll", in: view) {
+            let top = badge.convert(badge.bounds, to: scroll)
+            let fromTop = scroll.isFlipped ? top.minY : scroll.bounds.height - top.maxY
+            check(abs(fromTop - DS.Space.s24) <= 1, "the first version starts s24 below the top edge, not at the bottom of the window", detail: "\(fromTop)")
+        }
+        snapshotWindow(controller!.window!, name: "whatsnew-light")
+        snapshotWindow(controller!.window!, name: "whatsnew-dark", dark: true)
+        check(findView("whatsnew.openReleases", in: view) == nil, "the loaded state has no button")
+        check(views(Button.self, in: view).isEmpty, "and the window holds no accent button")
+
+        let window = controller?.window
+        c.perform(.whatsNew)
+        check(c.whatsNewWindow === controller && controller?.window === window, "opening again reuses the window")
+        check(controller?.content == .loading, "and shows loading until the new answer arrives")
+        check(await waitUntil { controller?.content != .loading } && w.updateService.historyCalls == 2, "which comes from a second fetch")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.history = .failure(UpdateError.network("offline"))
+        c.showWhatsNew()
+        let controller = c.whatsNewWindow!
+        check(await waitUntil { controller.content != .loading }, "a failed fetch ends loading")
+        check(controller.content == .failed, "and shows the failed state")
+        let view = controller.window?.contentView
+        view?.layoutSubtreeIfNeeded()
+        snapshotWindow(controller.window!, name: "whatsnew-failed")
+        check(collectText(view) == [WhatsNewWindowController.failureNote, "Open Releases Page"] && WhatsNewWindowController.failureNote == "Cornermark could not load the release notes.",
+              "it is one line and one button", detail: "\(collectText(view))")
+        let button = findView("whatsnew.openReleases", in: view) as? Button
+        check(button?.variant == .secondary, "the button is neutral, since the window has no primary action")
+        check(click("whatsnew.openReleases", in: view) && w.opened == [URL(string: "https://github.com/emretfn/cornermark/releases")!], "the button opens the releases page", detail: "\(w.opened)")
+
+        w.updateService.history = .success([entry(AppVersion(0, 2, 1))])
+        c.showWhatsNew()
+        check(await waitUntil { controller.content != .loading }, "reopening fetches again")
+        check(controller.content != .failed && findView("whatsnew.openReleases", in: controller.window?.contentView) == nil, "and recovers once GitHub answers")
+        w.updateService.history = .success([])
+        c.showWhatsNew()
+        check(await waitUntil { controller.content != .loading } && controller.content == .failed, "an empty answer behaves like a failure")
+        check(findView("whatsnew.openReleases", in: controller.window?.contentView) != nil, "with the same button")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.history = .success((0...12).reversed().map { entry(AppVersion(0, 1, $0), body: "### New\n* \(String(repeating: "A long line that has to wrap. ", count: 6))") })
+        w.updateService.currentVersion = AppVersion(0, 1, 12)
+        c.showWhatsNew()
+        let controller = c.whatsNewWindow!
+        check(await waitUntil { controller.content != .loading }, "a long history loads")
+        let scroll = findView("whatsnew.scroll", in: controller.window?.contentView) as? NSScrollView
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        check((scroll?.documentView?.frame.height ?? 0) > (scroll?.contentView.bounds.height ?? .infinity), "it scrolls when it does not fit", detail: "\(String(describing: scroll?.documentView?.frame.height)) in \(String(describing: scroll?.contentView.bounds.height))")
+        check(scroll?.documentView?.frame.width == scroll?.contentView.bounds.width, "and never scrolls sideways")
+        let wrapped = labels(in: scroll?.documentView).first { $0.stringValue.hasPrefix("A long line") }
+        check((wrapped?.frame.height ?? 0) > DS.Text.body.lineHeight * 2, "long items wrap onto more lines", detail: "\(String(describing: wrapped?.frame))")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        let c = w.coordinator
+        w.updateService.history = .success([entry(AppVersion(0, 2, 1)), entry(AppVersion(0, 2, 0))])
+        let menu = NSMenu()
+        StatusMenuBuilder(coordinator: c).populate(menu)
+        let item = menu.items.first { $0.identifier?.rawValue == "whatsNew" }
+        check(item?.title == "What's New\u{2026}" && item?.isEnabled == true && item?.keyEquivalent == "", "the menu row is enabled and shows no shortcut")
+        if let item { _ = item.target?.perform(item.action, with: item) }
+        check(c.whatsNewWindow != nil && w.presented.contains { $0 === c.whatsNewWindow?.window }, "choosing the menu row opens the window")
+        check(await waitUntil { w.updateService.historyCalls == 1 }, "and fetches")
+        check(c.handle(url: URL(string: "cornermark://whats-new")!), "the URL scheme accepts it")
+        check(await waitUntil { w.updateService.historyCalls == 2 }, "and fetches again")
+        check(c.whatsNewWindow?.window?.isVisible == false, "offscreen, nothing was ordered in")
+    }
+    do {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        w.updateService.history = .success([entry(AppVersion(0, 2, 1))])
+        w.settings.update { $0.lastRunVersion = "0.2.0" }
+        w.coordinator.startMaintenance()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        check(w.coordinator.whatsNewWindow == nil && w.updateService.historyCalls == 0 && !w.presented.contains { $0.title == "What's New" },
+              "an update never opens What's New by itself")
+    }
+}
+
+@MainActor
+private func checkUpdatedHUD() async throws {
+    section("update confirmation after launch")
+    func launch(stored: String?, running: AppVersion?) throws -> (hud: String?, stored: String?) {
+        let w = try World(after: [])
+        defer { w.cleanup() }
+        w.updateService.currentVersion = running
+        w.settings.update { $0.lastRunVersion = stored }
+        w.coordinator.startMaintenance()
+        return (w.coordinator.hud.lastMessage, w.settings.value.lastRunVersion)
+    }
+    let updated = try launch(stored: "0.2.1", running: AppVersion(0, 3, 0))
+    check(updated.hud == "Updated to Cornermark 0.3.0" && updated.stored == "0.3.0", "0.2.1 to 0.3.0 shows the HUD and remembers 0.3.0", detail: "\(updated)")
+    let first = try launch(stored: nil, running: AppVersion(0, 2, 1))
+    check(first.hud == nil && first.stored == "0.2.1", "a first run shows nothing and remembers the version", detail: "\(first)")
+    let same = try launch(stored: "0.2.1", running: AppVersion(0, 2, 1))
+    check(same.hud == nil && same.stored == "0.2.1", "the same version shows nothing", detail: "\(same)")
+    let older = try launch(stored: "0.3.0", running: AppVersion(0, 2, 1))
+    check(older.hud == nil && older.stored == "0.2.1", "an older version shows nothing and is remembered", detail: "\(older)")
+    let junk = try launch(stored: "next", running: AppVersion(0, 2, 1))
+    check(junk.hud == nil && junk.stored == "0.2.1", "an unreadable stored version shows nothing and is replaced", detail: "\(junk)")
+    let unknown = try launch(stored: "0.2.1", running: nil)
+    check(unknown.hud == nil && unknown.stored == "0.2.1", "an app with no known version changes nothing", detail: "\(unknown)")
+
+    let w = try World(after: [])
+    defer { w.cleanup() }
+    w.settings.update { $0.lastRunVersion = "0.2.0" }
+    w.coordinator.startMaintenance()
+    w.coordinator.hud.show("later message")
+    w.coordinator.announceUpdateIfNeeded()
+    check(w.coordinator.hud.lastMessage == "later message", "once remembered, the next launch does not repeat it")
 }
