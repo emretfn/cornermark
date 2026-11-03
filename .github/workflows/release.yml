@@ -63,8 +63,11 @@ jobs:
           # The certificate is self-signed and untrusted, so find-identity -v would hide it.
           IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/\)/ { print $2; exit }')"
           echo "CORNERMARK_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+      # The default Xcode 16.4 cannot build a universal binary from swiftLanguageMode targets.
       - name: Build the DMG
         run: scripts/build-dmg.sh
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app
       - name: Show the signing requirement
         run: codesign -d -r- build/Cornermark.app
       - name: Upload the DMG as a workflow artifact
