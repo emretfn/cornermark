@@ -13,7 +13,16 @@
   <img src="docs/screenshots/hero.png" alt="The editor showing a sales dashboard with a highlighted card, an arrow to the chart's peak, and a pixelated email column">
 </p>
 
-Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock icon, no account, and no cloud connection. You build it from source with Swift Package Manager, and it requires macOS 14 or later.
+Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock icon, no account, and no cloud connection. It requires macOS 14 or later, runs on Apple silicon and Intel Macs, and you can install a release or build it from source with Swift Package Manager.
+
+## Install
+
+1. Download [Cornermark.dmg](https://github.com/emretfn/cornermark/releases/latest/download/Cornermark.dmg). Earlier versions and release notes are on the [Releases](https://github.com/emretfn/cornermark/releases) page.
+2. Open the DMG and drag Cornermark to Applications.
+3. Open Cornermark from Applications. The app is not notarized, so macOS blocks the first launch. Open System Settings > Privacy & Security, scroll down to the message about Cornermark, and click **Open Anyway**.
+4. [Grant the Screen Recording permission](#grant-the-screen-recording-permission).
+
+A downloaded build is signed ad hoc, not with a developer certificate. macOS ties the Screen Recording permission to the signature, so it asks for the permission again after each update.
 
 ## What it does
 
@@ -58,10 +67,12 @@ Press `Ctrl+Shift+7` and select an area. Vision recognizes the text on your devi
 ```sh
 scripts/build-app.sh            # debug build, creates build/Cornermark.app
 scripts/build-app.sh --release  # release build
+scripts/build-app.sh --universal  # arm64 and x86_64 in one binary
 scripts/build-app.sh --no-sign  # skips signing
+scripts/build-dmg.sh            # release, universal, and packed into build/Cornermark.dmg
 ```
 
-The script runs `swift build`, assembles `build/Cornermark.app`, and signs it. Move `build/Cornermark.app` to your Applications folder and open it.
+The script runs `swift build`, assembles `build/Cornermark.app`, and signs it. Move `build/Cornermark.app` to your Applications folder and open it. The version comes from `version.txt`. `scripts/build-dmg.sh` needs [pipx](https://pipx.pypa.io), which runs dmgbuild.
 
 ### Sign with a stable certificate
 
@@ -115,7 +126,7 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 
 - No cloud, accounts, or share links.
 - No video or GIF recording.
-- No prebuilt releases, App Store version, notarization, or automatic updates. You build and run it on your own Mac.
+- No App Store version, notarization, or automatic updates. You download each new release yourself, or build it on your own Mac.
 
 ## Develop
 
@@ -130,6 +141,12 @@ swift scripts/make-icon.swift docs/logo.png  # regenerates the icon in this READ
 `HarnessShell` sets the activation policy to `.prohibited`, orders no windows, and takes no focus. It replaces the pasteboard, UserDefaults, and the history folder with temporary objects, and writes snapshots to `build/harness/shell/`.
 
 `HarnessReadme` produces the images on this page. The windows and cards are the app's real interface. The desktop, menu bar, Dock, dashboard, and code window are drawn sample content, and the companies and figures are fictional.
+
+## Release
+
+Commits to `main` follow [Conventional Commits](https://www.conventionalcommits.org). Before 1.0, `feat:` raises the minor version and `fix:` raises the patch version. Other types, such as `docs:`, `build:` and `ci:`, and commits that do not follow the format do not trigger a release.
+
+[release-please](https://github.com/googleapis/release-please-action) keeps a release pull request open with the next version in `version.txt` and the changelog. Merge it to publish: it tags `v<version>`, creates the GitHub release, and a macOS job builds `Cornermark.dmg` and attaches it. With squash merges, the pull request title is the commit message that counts.
 
 ## License
 
