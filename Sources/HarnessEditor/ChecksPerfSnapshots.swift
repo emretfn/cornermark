@@ -93,10 +93,12 @@ func snapshotScenes() {
         for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let url = snapshot(rig.controller, "\(suffix)-\(name)", appearance: appearance)
             check("snapshot written: \(url.lastPathComponent)", FileManager.default.fileExists(atPath: url.path))
+            if name == "annotations-select" { toolbarStrip(rig.controller, "\(suffix)-toolbar-strip") }
         }
     }
 
     let rig = makeBusyRig()
+    toolbarMetrics(rig)
     rig.driver.tapKey("v")
     rig.driver.click(rig.driver.windowPoint(source: CGPoint(x: 285, y: 140)))
     relayout(rig)
@@ -122,6 +124,15 @@ func snapshotScenes() {
     relayout(rig)
     both(rig, "background-panel")
 
+    for name in ["Soft shadow", "Slide deck"] {
+        (rig.controller.view(identifier: "bg.presetName") as? NSTextField)?.stringValue = name
+        click(rig.controller.view(identifier: "bg.presetSave"))
+    }
+    bg.fill = .solid(RGBA(0.35, 0.45, 0.85))
+    rig.controller.perform(.setBackground(bg))
+    relayout(rig)
+    both(rig, "background-panel-preset")
+
     rig.controller.perform(.setBackground(nil))
     rig.driver.tapKey("c")
     rig.driver.drag(cropPoint(rig, CGPoint(x: 0, y: 0)), cropPoint(rig, CGPoint(x: 140, y: 90)))
@@ -129,5 +140,90 @@ func snapshotScenes() {
     rig.controller.zoom = 0.6
     relayout(rig)
     both(rig, "crop-mid-edit")
+
+    rig.driver.down(cropPoint(rig, CGPoint(x: 1010, y: 690)))
+    for i in 1...4 { rig.driver.move(cropPoint(rig, CGPoint(x: 1010 - CGFloat(i) * 30, y: 690 - CGFloat(i) * 20))) }
+    both(rig, "crop-dragging")
+    rig.driver.up(cropPoint(rig, CGPoint(x: 890, y: 610)))
+
+    rig.controller.perform(.setCrop(nil))
+    rig.driver.tapKey("v")
+    rig.driver.tapKey("c")
+    rig.driver.drag(cropPoint(rig, CGPoint(x: 0, y: 0)), cropPoint(rig, CGPoint(x: 500, y: 300)))
+    rig.driver.drag(cropPoint(rig, CGPoint(x: 1200, y: 800)), cropPoint(rig, CGPoint(x: 600, y: 380)))
+    relayout(rig)
+    both(rig, "crop-small-box")
+
+    rig.controller.window!.setContentSize(NSSize(width: rig.controller.window!.minSize.width, height: 700))
+    relayout(rig)
+    both(rig, "crop-min-width")
     closeRig(rig)
+}
+
+private let toolbarIdentifiers = ["toolbar.tools", "toolbar.geometry", "toolbar.history", "toolbar.dragHandle", "toolbar.actions", "toolbar.copy"]
+
+/// The system paints a glass capsule behind every toolbar item, which a headless snapshot renders as flat white. This draws
+/// the item views themselves on the window colour, so the controls can be read in both appearances.
+func toolbarStrip(_ controller: EditorWindowController, _ name: String) {
+    let gap: CGFloat = 16
+    let reps = toolbarIdentifiers.compactMap { id in controller.view(identifier: id).map { view -> NSBitmapImageRep in
+        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep
+    } }
+    let width = reps.reduce(0) { $0 + $1.size.width + gap } + gap
+    let height = (reps.map(\.size.height).max() ?? 0) + 2 * gap
+    let strip = NSImage(size: NSSize(width: width, height: height))
+    strip.lockFocus()
+    controller.window!.effectiveAppearance.performAsCurrentDrawingAppearance {
+        controller.window!.backgroundColor.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+    }
+    var x = gap
+    for rep in reps {
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        image.draw(in: NSRect(x: x, y: (height - rep.size.height) / 2, width: rep.size.width, height: rep.size.height))
+        x += rep.size.width + gap
+    }
+    strip.unlockFocus()
+    if let tiff = strip.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) { writePNG(rep, to: snapshotDir.appendingPathComponent("\(name).png")) }
+}
+
+/// Lays the toolbar out at the window's minimum width and reports where its items end, so a toolbar that outgrows the window
+/// shows up here as a chevron instead of in someone's window.
+func toolbarMetrics(_ rig: Rig) {
+    section("Toolbar at the minimum window width")
+    let window = rig.controller.window!
+    window.setContentSize(NSSize(width: window.minSize.width, height: 700))
+    relayout(rig)
+    let frame = window.contentView!.superview!
+    let ends = toolbarIdentifiers.compactMap { id -> (String, CGRect)? in
+        rig.controller.view(identifier: id).map { (id, $0.convert($0.bounds, to: frame)) }
+    }
+    for (id, rect) in ends { print(String(format: "INFO %@ spans x %.1f to %.1f, width %.1f", id, rect.minX, rect.maxX, rect.width)) }
+    let right = ends.map { $0.1.maxX }.max() ?? .infinity
+    print(String(format: "INFO window width %.1f, toolbar content ends at %.1f", frame.bounds.width, right))
+    check("every toolbar control is found", ends.count == toolbarIdentifiers.count, "\(ends.map(\.0))")
+    check("the toolbar fits the window at its minimum width", right <= frame.bounds.width, String(format: "%.1f of %.1f", right, frame.bounds.width))
+    for (id, rect) in ends where id != "toolbar.dragHandle" {
+        let hit = frame.hitTest(NSPoint(x: rect.midX, y: rect.midY))
+        check("a click on \(id) reaches it through the title bar", hit?.isDescendant(of: rig.controller.view(identifier: id)!) == true, "hit \(String(describing: hit))")
+    }
+    check("the toolbar row holds no system items, so macOS 26 draws no glass capsules", window.toolbar?.items.isEmpty == true)
+    if let zoom = window.standardWindowButton(.zoomButton), let tools = rig.controller.view(identifier: "toolbar.tools") {
+        let a = zoom.convert(zoom.bounds, to: frame).midY, b = tools.convert(tools.bounds, to: frame).midY
+        check(String(format: "toolbar row sits on the window buttons' centre line: %.1f, %.1f", a, b), abs(a - b) <= 1)
+    }
+    rig.controller.currentTool = .arrow
+    relayout(rig)
+    if let width = rig.controller.view(identifier: "prop.width") {
+        let rect = width.convert(width.bounds, to: frame)
+        let hit = frame.hitTest(NSPoint(x: rect.midX, y: rect.midY))
+        check("a click on the property bar is not taken by the title bar", hit?.isDescendant(of: width) == true, "hit \(String(describing: hit))")
+    } else {
+        check("the arrow tool shows the width slider", false)
+    }
+    window.setContentSize(NSSize(width: 1280, height: 860))
+    relayout(rig)
 }

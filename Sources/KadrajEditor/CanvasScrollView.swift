@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 
 /// Keeps a document view that is smaller than the viewport centred.
 final class CenteringClipView: NSClipView {
@@ -33,7 +34,7 @@ final class CanvasScrollView: NSScrollView {
         minMagnification = 1
         maxMagnification = Self.zoomRange.upperBound
         drawsBackground = true
-        backgroundColor = .underPageBackgroundColor
+        backgroundColor = DS.Color.bgCanvas
     }
 
     required init?(coder: NSCoder) { fatalError() }

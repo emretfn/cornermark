@@ -18,6 +18,10 @@ func press(_ control: NSControl?, segment: Int? = nil) {
     control.sendAction(control.action, to: control.target)
 }
 
+func segment(of control: NSSegmentedControl?, titled title: String) -> Int? {
+    control.flatMap { c in (0..<c.segmentCount).first { c.label(forSegment: $0) == title } }
+}
+
 func checkCrop() {
     section("Crop")
     let rig = makeRig(zoom: 0.6)
@@ -84,16 +88,14 @@ func checkCrop() {
     // Aspect, snapping, reset.
     c.perform(.setCrop(nil))
     d.tapKey("c")
-    let aspect = c.view(identifier: "crop.aspect") as? NSPopUpButton
-    aspect?.selectItem(withTitle: "1:1")
-    press(aspect)
+    let aspect = c.view(identifier: "crop.aspect") as? NSSegmentedControl
+    press(aspect, segment: segment(of: aspect, titled: "1:1"))
     d.returnKey()
     check("1:1 aspect option crops a centred square", rig.doc.crop.map { near($0, CGRect(x: 200, y: 0, width: 800, height: 800), 1.5) } ?? false, rig.doc.crop.map(fmt) ?? "nil")
 
     c.perform(.setCrop(nil))
     d.tapKey("c")
-    aspect?.selectItem(withTitle: "16:9")
-    press(aspect)
+    press(aspect, segment: segment(of: aspect, titled: "16:9"))
     d.drag(cropPoint(rig, CGPoint(x: 1200, y: 800)), cropPoint(rig, CGPoint(x: 600, y: 500)))
     d.returnKey()
     if let crop = rig.doc.crop {

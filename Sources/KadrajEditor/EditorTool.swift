@@ -108,7 +108,7 @@ enum ToolRegistry {
         .text: ToolSpec(title: "Text", symbol: "textformat", key: "t", input: .text,
                         properties: [.color, .textStyle, .fontSize], baseStyle: style(font: 32), hint: "",
                         build: none, matches: { if case .text = $0 { return true } else { return false } }),
-        .counter: ToolSpec(title: "Counter", symbol: "1.circle.fill", key: "n", input: .click,
+        .counter: ToolSpec(title: "Counter", symbol: "1.circle", key: "n", input: .click,
                            properties: [.color, .width], baseStyle: style(width: 6), hint: "",
                            build: { i, s, n in .counter(center: i.end, number: n, radius: max(8, s.width * 2.5)) },
                            matches: { if case .counter = $0 { return true } else { return false } }),

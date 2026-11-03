@@ -1,12 +1,13 @@
 import AppKit
+import KadrajDesign
 import KadrajCore
 
 /// Output scale: the exported size is the canvas size times this.
 final class ResizePanel: NSViewController {
     let model: EditorModel
     private let slider = UI.slider(5...400, width: 200, id: "resize.scale")
-    private let readout = NSTextField(labelWithString: "")
-    private let sizeLabel = NSTextField(labelWithString: "")
+    private let readout = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textPrimary)
+    private let sizeLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
 
     init(model: EditorModel) {
         self.model = model
@@ -16,27 +17,23 @@ final class ResizePanel: NSViewController {
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
-        readout.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        sizeLabel.font = .systemFont(ofSize: 11)
-        sizeLabel.textColor = .secondaryLabelColor
+        readout.alignment = .right
+        readout.widthAnchor.constraint(equalToConstant: 40).isActive = true
         slider.onAction { [unowned self] c in
             model.perform(.setOutputScale((c as! NSSlider).doubleValue / 100), coalescing: "outputScale")
             refresh()
         }
         slider.onTrackingEnd = { [unowned self] in model.endCoalescing() }
 
-        let presets = [25, 50, 100, 200].map { pct -> NSButton in
-            let b = NSButton(title: "\(pct)%", target: nil, action: nil)
-            b.bezelStyle = .rounded
-            b.controlSize = .small
+        let presets = [25, 50, 100, 200].map { pct -> Button in
+            let b = Button(title: "\(pct)%", variant: .secondary, size: .small)
             b.setAccessibilityIdentifier("resize.preset.\(pct)")
             b.onAction { [unowned self] _ in model.perform(.setOutputScale(Double(pct) / 100)); refresh() }
             return b
         }
-        let title = NSTextField(labelWithString: "Resize")
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
-        let stack = UI.vstack([title, UI.hstack([slider, readout]), sizeLabel, UI.hstack(presets)], spacing: 10)
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        let title = NSTextField.label("Resize", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
+        let stack = UI.vstack([title, UI.hstack([slider, readout], spacing: DS.Space.s8), sizeLabel, UI.hstack(presets, spacing: DS.Space.s8)], spacing: DS.Space.s12)
+        stack.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
         view = stack
         refresh()
     }

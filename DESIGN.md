@@ -174,6 +174,9 @@ Web tarafındaki karşılıklar: token CSS değişkeni, bileşen `NSView` veya `
 | `IconButton` | `small`, `regular`, `large`; `isSelected`; `tone: .plain` veya `.overlay` (yuvarlak, görüntü üstünde) | Araç çubukları, Hızlı Erişim eylemleri |
 | `TextInput` | `small`, `regular`; `monospaced` | Boyut alanları, formlar |
 | `Surface` | `hud`, `raised`, `floating`, `panel` | Çubuk, kart, panel zemini |
+| `Segments` | Simgeli veya yazılı; `selectOne` ya da `momentary`; gruplar arası ayraç (`NSSegmentedControl` alt sınıfı) | Editör araçları, stil seçimi |
+| `Slider` | Küçük boy, nötr dolgu (`NSSlider` alt sınıfı) | Kalınlık, dolgu, köşe |
+| `Checkbox` | Açık, kapalı (`NSButton` alt sınıfı) | Panel seçenekleri |
 | `Separator` | `horizontal`, `vertical` | Gruplar arası çizgi |
 | `Badge` | `neutral`, `accent`, `danger`, `warning`, `success`; ikon ve metin birlikte | Durum bildirimi |
 | `Label` | `DS.Text` stili ve renk rolü | Her metin |
@@ -189,7 +192,17 @@ Yüzen pencereler (Hızlı Erişim kartı gibi) saydam pencere, `Surface(.panel)
 | `ghost` | zemin yok, `textSecondary` | `bgControlHover`, `textPrimary` | `bgControlActive` ve ölçek 0.96 | zemin yok, `textDisabled` |
 | `danger` | `dangerSolid`, `onDanger` | `dangerSolid`, `onDanger` | ölçek 0.96 | `bgControl`, `textDisabled` |
 
+Editörün araç çubuğu `NSToolbar` öğesi değil, başlık çubuğunun altında duran kendi satırıdır, çünkü macOS 26 her araç çubuğu öğesine kaldırılamayan bir cam kapsül çizer. Ekran görüntüsü üstündeki seçim çerçevesi ve tutamaçlar `selectionStroke` ile `selectionHalo` kullanır, vurgu rengi kullanmaz.
+
+Stok açılır menü (`NSPopUpButton`) ve renk kuyusu (`NSColorWell`) kalır, çünkü sistem menüsü ve renk seçicisi yerel davranıştır. Kaydırıcı dolgusu nötrdür, çünkü vurgu yalnızca seçili durum ve birincil eylem içindir. Editörde görünümün tek birincil eylemi `Copy` düğmesidir.
+
 Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` ikon. Basma geri bildirimi anında çizilir, azaltılmış harekette ölçek uygulanmaz. Klavye odağında `focusRing` halkası çizilir. Bileşenler pencere aktif değilken griye dönmez ve ilk tıklamayı kabul eder, çünkü yakalama katmanı aktif olmayan bir paneldir.
+
+## Ekran kalıpları
+
+**Kırpma.** Vizör karesi gibi çizilir: köşelerde L biçimli köşebentler, kenar ortalarında kısa çubuklar, ince çerçeve. Üçte bir ızgarası yalnızca sürüklerken görünür. Boyut kutunun sol üstünde yazar, sığmazsa dışına çıkar. Oranlar çubukta doğrudan görünür. Kırpma sırasında görünümün birincil eylemi `Apply` olur, `Copy` ikincile döner.
+
+**Yan panel.** Bütün içerik tek sağ kenarda biter. Etiket sütunu 64 noktadır, kontrol kalan genişliği doldurur. Bölümler arasında kenardan kenara ayraç bulunur. Arka plan seçimi tek bir ızgaradır, küçük görseller yalnızca dolguyu gösterir.
 
 ## Kurallar
 

@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 import KadrajCore
 
 extension CanvasView {
@@ -119,7 +120,11 @@ extension CanvasView {
         tv.textContainerInset = pad
         tv.layer?.cornerRadius = style.textStyle == .pill ? (size * 1.2 + pad.height * 2) / 2 : 0
         tv.layer?.borderWidth = 1 / max(magnification, 0.01)
-        tv.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        tv.layer?.borderColor = DS.Color.selectionStroke.cgColor
+        tv.layer?.shadowColor = DS.Color.selectionHalo.cgColor
+        tv.layer?.shadowOpacity = 1
+        tv.layer?.shadowOffset = .zero
+        tv.layer?.shadowRadius = 1 / max(magnification, 0.01)
     }
 
     func layoutTextView(_ t: Gesture.TextSession) {

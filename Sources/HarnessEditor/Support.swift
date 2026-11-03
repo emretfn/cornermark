@@ -26,7 +26,7 @@ func settle(_ seconds: TimeInterval = 0.05) {
     RunLoop.current.run(until: Date().addingTimeInterval(seconds))
 }
 
-let snapshotDir = URL(fileURLWithPath: "/private/tmp/claude-501/-Users-emretufan-Documents-test-projects-cornermark/c5db439d-4599-415b-bcac-b995a06e3ad7/scratchpad/editor", isDirectory: true)
+let snapshotDir = URL(fileURLWithPath: "build/harness/editor", isDirectory: true)
 
 enum Fixture {
     /// A busy, asymmetric picture so rotation and crop mistakes are visible: coloured quadrants, a grid and text.

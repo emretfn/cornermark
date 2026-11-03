@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 import ObjectiveC
 
 /// Closure-backed target so controls are wired where they are created.
@@ -43,7 +44,7 @@ extension NSControl {
 }
 
 /// A slider that reports the end of a drag, so a run of value changes can close one undo step.
-final class TrackingSlider: NSSlider {
+final class TrackingSlider: Slider {
     var onTrackingEnd: (() -> Void)?
 
     override func mouseDown(with event: NSEvent) {
@@ -61,9 +62,9 @@ class BarView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
+        DS.Color.bgSurface.setFill()
         bounds.fill()
-        NSColor.separatorColor.setFill()
+        DS.Color.separator.setFill()
         switch edge {
         case .bottom: NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
         case .top: NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
@@ -73,46 +74,35 @@ class BarView: NSView {
 }
 
 enum UI {
-    static func symbol(_ name: String, _ description: String? = nil) -> NSImage? {
-        NSImage(systemSymbolName: name, accessibilityDescription: description ?? name)
-    }
-
     static func caption(_ text: String) -> NSTextField {
-        let f = NSTextField(labelWithString: text)
-        f.font = .systemFont(ofSize: 11)
-        f.textColor = .secondaryLabelColor
+        let f = NSTextField.label(text, style: DS.Text.caption, color: DS.Color.textSecondary)
         f.setContentCompressionResistancePriority(.required, for: .horizontal)
         return f
     }
 
     static func valueLabel(width: CGFloat = 34) -> NSTextField {
-        let f = NSTextField(labelWithString: "")
-        f.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        f.textColor = .secondaryLabelColor
+        let f = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
         f.alignment = .right
         f.widthAnchor.constraint(equalToConstant: width).isActive = true
         return f
     }
 
-    static func slider(_ range: ClosedRange<Double>, width: CGFloat = 110, id: String) -> TrackingSlider {
+    static func slider(_ range: ClosedRange<Double>, width: CGFloat? = 110, id: String) -> TrackingSlider {
         let s = TrackingSlider(value: range.lowerBound, minValue: range.lowerBound, maxValue: range.upperBound, target: nil, action: nil)
         s.controlSize = .small
         s.isContinuous = true
-        s.widthAnchor.constraint(equalToConstant: width).isActive = true
+        if let width { s.widthAnchor.constraint(equalToConstant: width).isActive = true }
         s.setAccessibilityIdentifier(id)
         return s
     }
 
-    static func button(symbol name: String, tip: String, id: String) -> NSButton {
-        let b = NSButton(image: symbol(name, tip) ?? NSImage(), target: nil, action: nil)
-        b.bezelStyle = .texturedRounded
-        b.controlSize = .small
-        b.toolTip = tip
+    static func button(symbol name: String, tip: String, id: String) -> IconButton {
+        let b = IconButton(symbol: name, label: tip, size: .small)
         b.setAccessibilityIdentifier(id)
         return b
     }
 
-    static func hstack(_ views: [NSView], spacing: CGFloat = 6) -> NSStackView {
+    static func hstack(_ views: [NSView], spacing: CGFloat = DS.Space.s6) -> NSStackView {
         let s = NSStackView(views: views)
         s.orientation = .horizontal
         s.alignment = .centerY
@@ -120,7 +110,7 @@ enum UI {
         return s
     }
 
-    static func vstack(_ views: [NSView], spacing: CGFloat = 10) -> NSStackView {
+    static func vstack(_ views: [NSView], spacing: CGFloat = DS.Space.s12) -> NSStackView {
         let s = NSStackView(views: views)
         s.orientation = .vertical
         s.alignment = .leading
@@ -146,7 +136,7 @@ final class SwatchButton: NSButton {
     var color: RGBA
     var isCurrent: () -> Bool = { false }
 
-    init(color: RGBA, size: CGFloat = 22) {
+    init(color: RGBA, size: CGFloat = DS.Size.controlSmall) {
         self.color = color
         super.init(frame: NSRect(x: 0, y: 0, width: size, height: size))
         isBordered = false
@@ -160,16 +150,15 @@ final class SwatchButton: NSButton {
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        let chip = bounds.insetBy(dx: 4, dy: 4)
+        let chip = NSBezierPath(ovalIn: bounds.insetBy(dx: 3, dy: 3))
         color.nsColor.setFill()
-        let path = NSBezierPath(ovalIn: chip)
-        path.fill()
-        NSColor.separatorColor.setStroke()
-        path.lineWidth = 1
-        path.stroke()
+        chip.fill()
+        DS.Color.imageOutline.setStroke()
+        chip.lineWidth = 1
+        chip.stroke()
         if isCurrent() {
-            NSColor.controlAccentColor.setStroke()
-            let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5))
+            DS.Color.accentMark.setStroke()
+            let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1))
             ring.lineWidth = 2
             ring.stroke()
         }

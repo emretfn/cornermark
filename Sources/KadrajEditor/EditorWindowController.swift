@@ -1,5 +1,6 @@
 import AppKit
 import KadrajCore
+import KadrajDesign
 
 public struct EditorCallbacks {
     public var onSaveProject: (Document, AssetStore) -> Void
@@ -32,7 +33,7 @@ final class EditorWindow: NSWindow {
     }
 }
 
-public final class EditorWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
+public final class EditorWindowController: NSWindowController, NSWindowDelegate {
     public static let canvasMargin = CanvasView.margin
 
     public var callbacks: EditorCallbacks
@@ -45,12 +46,14 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
     let propertyBar: PropertyBar
     let backgroundPanel: BackgroundPanel
     let statusBar = StatusBar()
+    private let titleBar = TitleBar()
     lazy var resizePanel = ResizePanel(model: model)
-    private var toolControl: NSSegmentedControl!
-    private var undoControl: NSSegmentedControl!
+    private var toolControl: Segments!
+    private var undoControl: Segments!
     private let dragHandle = DragHandleView()
     private var resizePopover: NSPopover?
     private var panelWidth: NSLayoutConstraint!
+    private var copyButton: Button?
     private var segmentActions: [String: (Int) -> Void] = [:]
 
     public init(document: Document, assets: AssetStore, callbacks: EditorCallbacks = EditorCallbacks(),
@@ -62,7 +65,7 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
         backgroundPanel = BackgroundPanel(model: model)
 
         let window = EditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered, defer: false)
         super.init(window: window)
         window.editor = self
@@ -72,6 +75,8 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.toolbarStyle = .unified
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = DS.Color.bgSurface
         buildContent(in: window)
         buildToolbar(for: window)
         wire()
@@ -135,9 +140,14 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
 
         let content = NSView()
         window.contentView = content
-        [propertyBar, scroll, backgroundPanel, statusBar].forEach(content.addSubview)
+        titleBar.translatesAutoresizingMaskIntoConstraints = false
+        [titleBar, propertyBar, scroll, backgroundPanel, statusBar].forEach(content.addSubview)
         NSLayoutConstraint.activate([
-            propertyBar.topAnchor.constraint(equalTo: content.topAnchor),
+            titleBar.topAnchor.constraint(equalTo: content.topAnchor),
+            titleBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            titleBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+
+            propertyBar.topAnchor.constraint(equalTo: titleBar.bottomAnchor),
             propertyBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             propertyBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
@@ -185,6 +195,8 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
         panelWidth.constant = showPanel ? BackgroundPanel.width : 0
         backgroundPanel.reload()
         if let i = EditorTool.allCases.firstIndex(of: model.tool), toolControl.selectedSegment != i { toolControl.selectedSegment = i }
+        // A view has one primary action, and while cropping that is Apply.
+        copyButton?.variant = model.tool == .crop ? .secondary : .primary
         undoControl?.setEnabled(model.history.canUndo, forSegment: 0)
         undoControl?.setEnabled(model.history.canRedo, forSegment: 1)
         statusBar.update(model: model, zoom: scroll.zoom)
@@ -194,22 +206,27 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
 
     // MARK: Toolbar
 
-    private enum ItemID {
-        static let tools = NSToolbarItem.Identifier("kadraj.tools")
-        static let geometry = NSToolbarItem.Identifier("kadraj.geometry")
-        static let history = NSToolbarItem.Identifier("kadraj.history")
-        static let drag = NSToolbarItem.Identifier("kadraj.drag")
-        static let actions = NSToolbarItem.Identifier("kadraj.actions")
+    /// Tool order in the toolbar is `EditorTool.allCases`; a divider goes after the last tool of every group but the final one.
+    private static let toolGroups: [[EditorTool]] = [
+        [.select],
+        [.arrow, .line, .rect, .filledRect, .ellipse, .filledEllipse],
+        [.text, .counter],
+        [.pencil, .highlighter],
+        [.blur, .pixelate, .spotlight],
+        [.crop, .background],
+    ]
+
+    static var toolDividers: Set<Int> {
+        precondition(toolGroups.flatMap { $0 } == EditorTool.allCases, "toolbar groups must follow the tool order")
+        return Set(toolGroups.dropLast().reduce(into: [Int]()) { $0.append(($0.last ?? -1) + $1.count) })
     }
 
     private func buildToolbar(for window: NSWindow) {
         let tools = EditorTool.allCases
-        toolControl = NSSegmentedControl(images: tools.map { UI.symbol($0.spec.symbol, $0.spec.title) ?? NSImage() },
-                                         trackingMode: .selectOne, target: nil, action: nil)
-        toolControl.segmentStyle = .texturedRounded
+        toolControl = Segments(symbols: tools.map { $0.spec.symbol }, labels: tools.map { $0.spec.title })
+        toolControl.dividers = Self.toolDividers
         toolControl.setAccessibilityIdentifier("toolbar.tools")
         for (i, t) in tools.enumerated() {
-            toolControl.setWidth(29, forSegment: i)
             toolControl.setToolTip("\(t.spec.title) (\(String(t.spec.key).uppercased()))", forSegment: i)
         }
         toolControl.onAction { [unowned self] c in model.setTool(tools[(c as! NSSegmentedControl).selectedSegment]) }
@@ -221,69 +238,77 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
         dragHandle.toolTip = "Drag the rendered image into Finder or any app"
         dragHandle.setAccessibilityIdentifier("toolbar.dragHandle")
 
-        let toolbar = NSToolbar(identifier: "kadraj.editor")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        window.toolbar = toolbar
+        // An empty toolbar gives the taller title bar with centred window buttons. The controls live in `titleBar` instead of
+        // toolbar items, because macOS 26 puts every toolbar item on a glass capsule that no public API removes.
+        window.toolbar = NSToolbar(identifier: "kadraj.editor")
+        let leading = (window.standardWindowButton(.zoomButton)?.frame.maxX ?? 68) + DS.Space.s16
+        // The row is as tall as it takes to sit on the window buttons' centre line, which the system decides.
+        window.layoutIfNeeded()
+        let buttonCentre = window.standardWindowButton(.zoomButton).flatMap { button -> CGFloat? in
+            guard let frame = window.contentView?.superview else { return nil }
+            let rect = button.convert(button.bounds, to: frame)
+            return frame.isFlipped ? rect.midY : frame.bounds.height - rect.midY
+        }
+        titleBar.heightAnchor.constraint(equalToConstant: 2 * (buttonCentre ?? 26)).isActive = true
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        let row = NSStackView(views: [toolControl, spacer, geometryControl(), undoControl, dragHandle, actionsView()])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = DS.Space.s8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        titleBar.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: titleBar.leadingAnchor, constant: leading),
+            row.trailingAnchor.constraint(equalTo: titleBar.trailingAnchor, constant: -DS.Space.s12),
+            row.centerYAnchor.constraint(equalTo: titleBar.centerYAnchor),
+        ])
     }
 
-    private func momentary(_ symbols: [String], tips: [String], id: String, action: @escaping (Int) -> Void) -> NSSegmentedControl {
-        let c = NSSegmentedControl(images: symbols.map { UI.symbol($0) ?? NSImage() }, trackingMode: .momentary, target: nil, action: nil)
-        c.segmentStyle = .texturedRounded
+    private func momentary(_ symbols: [String], tips: [String], id: String, action: @escaping (Int) -> Void) -> Segments {
+        let c = Segments(symbols: symbols, labels: tips, trackingMode: .momentary, quiet: true)
         c.setAccessibilityIdentifier(id)
-        for i in symbols.indices {
-            c.setWidth(29, forSegment: i)
-            c.setToolTip(tips[i], forSegment: i)
-        }
+        for i in symbols.indices { c.setToolTip(tips[i], forSegment: i) }
         segmentActions[id] = action
         c.onAction { action(($0 as! NSSegmentedControl).selectedSegment) }
         return c
     }
 
-    public func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.tools, .flexibleSpace, ItemID.geometry, ItemID.history, ItemID.drag, ItemID.actions]
-    }
-
-    public func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
-    }
-
-    public func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar: Bool) -> NSToolbarItem? {
-        let item = NSToolbarItem(itemIdentifier: id)
-        switch id {
-        case ItemID.tools:
-            item.label = "Tools"; item.view = toolControl
-        case ItemID.geometry:
-            item.label = "Image"
-            let c = momentary(["rotate.right", "arrow.left.and.right.righttriangle.left.righttriangle.right",
-                               "arrow.up.and.down.righttriangle.up.righttriangle.down", "arrow.up.left.and.down.right.magnifyingglass"],
-                              tips: ["Rotate 90° clockwise", "Flip horizontally", "Flip vertically", "Resize"], id: "toolbar.geometry") { [unowned self] i in
-                switch i {
-                case 0: perform(.rotateClockwise)
-                case 1: perform(.flipHorizontal)
-                case 2: perform(.flipVertical)
-                default: showResizePanel()
-                }
+    private func geometryControl() -> NSView {
+        momentary(["rotate.right", "arrow.left.and.right.righttriangle.left.righttriangle.right",
+                   "arrow.up.and.down.righttriangle.up.righttriangle.down", "arrow.up.left.and.down.right.magnifyingglass"],
+                  tips: ["Rotate 90° clockwise", "Flip horizontally", "Flip vertically", "Resize"], id: "toolbar.geometry") { [unowned self] i in
+            switch i {
+            case 0: perform(.rotateClockwise)
+            case 1: perform(.flipHorizontal)
+            case 2: perform(.flipVertical)
+            default: showResizePanel()
             }
-            item.view = c
-        case ItemID.history:
-            item.label = "History"; item.view = undoControl
-        case ItemID.drag:
-            item.label = "Drag"; item.view = dragHandle
-        case ItemID.actions:
-            item.label = "Actions"
-            item.view = momentary(["pin", "doc.on.doc", "square.and.arrow.down"], tips: ["Pin to screen", "Copy (⌘C)", "Save image… (⌘S)"], id: "toolbar.actions") { [unowned self] i in
-                switch i {
-                case 0: callbacks.onPin(renderedImage())
-                case 1: copyToPasteboard()
-                default: presentSaveImagePanel()
-                }
-            }
-        default:
-            return nil
         }
-        return item
+    }
+
+    /// Pin and save are segments of "toolbar.actions"; Copy is the view's one primary button. Both reach the same
+    /// closure under the indices automation uses: 0 pin, 1 copy, 2 save.
+    private func actionsView() -> NSView {
+        let run: (Int) -> Void = { [unowned self] i in
+            switch i {
+            case 0: callbacks.onPin(renderedImage())
+            case 1: copyToPasteboard()
+            default: presentSaveImagePanel()
+            }
+        }
+        segmentActions["toolbar.actions"] = run
+        let segments = Segments(symbols: ["pin", "square.and.arrow.down"], labels: ["Pin to screen", "Save image… (⌘S)"], trackingMode: .momentary, quiet: true)
+        segments.setAccessibilityIdentifier("toolbar.actions")
+        for (i, tip) in ["Pin to screen", "Save image… (⌘S)"].enumerated() { segments.setToolTip(tip, forSegment: i) }
+        segments.onAction { c in run([0, 2][(c as! NSSegmentedControl).selectedSegment]) }
+
+        let copy = Button(title: "Copy", variant: .primary)
+        copyButton = copy
+        copy.toolTip = "Copy (⌘C)"
+        copy.setAccessibilityIdentifier("toolbar.copy")
+        copy.onAction { _ in run(1) }
+        return UI.hstack([segments, copy], spacing: DS.Space.s8)
     }
 
     /// Orders the editor on screen and makes it key. Creating the controller never shows anything.
@@ -317,19 +342,26 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate,
     }
 }
 
+/// The toolbar row, drawn under the transparent title bar. Empty parts of it drag the window as a title bar does.
+final class TitleBar: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        DS.Color.bgSurface.setFill()
+        bounds.fill()
+    }
+}
+
 final class StatusBar: BarView {
     var zoomIn: () -> Void = {}
     var zoomOut: () -> Void = {}
     var fit: () -> Void = {}
-    private let info = NSTextField(labelWithString: "")
-    private let zoomLabel = NSTextField(labelWithString: "100%")
+    private let info = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
+    private let zoomLabel = NSTextField.label("100%", style: DS.Text.readout, color: DS.Color.textPrimary)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         edge = .top
-        info.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        info.textColor = .secondaryLabelColor
-        zoomLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         zoomLabel.alignment = .center
         zoomLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
         zoomLabel.setAccessibilityIdentifier("status.zoom")
@@ -344,13 +376,13 @@ final class StatusBar: BarView {
             zoomLabel,
             small("plus", "Zoom in (⌘+)", "status.zoomIn") { [unowned self] in zoomIn() },
             small("arrow.up.left.and.down.right.and.arrow.up.right.and.down.left", "Fit to window (⌘0)", "status.fit") { [unowned self] in fit() },
-        ], spacing: 4)
+        ], spacing: DS.Space.s4)
         for v in [info, controls] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 30),
-            info.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            heightAnchor.constraint(equalToConstant: DS.Size.control + DS.Space.s4),
+            info.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DS.Space.s16),
             info.centerYAnchor.constraint(equalTo: centerYAnchor),
-            controls.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            controls.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DS.Space.s12),
             controls.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }

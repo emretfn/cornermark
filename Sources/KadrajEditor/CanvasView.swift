@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 import KadrajCore
 
 /// Draws the document through `Renderer.draw` and owns pointer interaction. View coordinates are
@@ -118,7 +119,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        NSColor.underPageBackgroundColor.setFill()
+        DS.Color.bgCanvas.setFill()
         dirtyRect.fill()
 
         let m = Self.margin
@@ -130,7 +131,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
         paintDocument(in: ctx, dirty: dirty)
         ctx.restoreGState()
 
-        NSColor.separatorColor.setStroke()
+        DS.Color.imageOutline.setStroke()
         NSBezierPath.defaultLineWidth = 1 / max(magnification, 0.01)
         NSBezierPath.stroke(canvas.offsetBy(dx: m, dy: m).insetBy(dx: -0.5, dy: -0.5))
 
@@ -210,8 +211,6 @@ final class CanvasView: NSView, NSTextViewDelegate {
 
     // MARK: Chrome
 
-    private var selectionColor: NSColor { .controlAccentColor }
-
     var displayedSelection: Annotation? {
         guard model.tool == .select else { return nil }
         switch gesture {
@@ -227,24 +226,20 @@ final class CanvasView: NSView, NSTextViewDelegate {
         let mag = max(magnification, 0.01)
         let frame = viewRect(source: ann.bounds)
         ctx.saveGState()
-        ctx.setStrokeColor(selectionColor.cgColor)
-        ctx.setLineWidth(1.5 / mag)
-        ctx.stroke(frame)
+        let line = 1.5 / mag
+        ctx.strokeWithHalo(frame, color: DS.Color.selectionStroke, width: line)
 
         let size = 9 / mag
         for h in ann.handles {
             let c = viewPoint(source: h.position)
             let box = CGRect(x: c.x - size / 2, y: c.y - size / 2, width: size, height: size)
-            ctx.setFillColor(NSColor.white.cgColor)
-            ctx.setLineWidth(1.5 / mag)
             switch h.kind {
             case .edge:
-                ctx.fill(box); ctx.stroke(box)
+                ctx.strokeWithHalo(box, color: DS.Color.selectionStroke, width: line, fill: DS.Color.selectionStroke)
             case .endpoint, .radius:
-                ctx.fillEllipse(in: box); ctx.strokeEllipse(in: box)
+                ctx.strokeWithHalo(box, color: DS.Color.selectionStroke, width: line, fill: DS.Color.selectionStroke, oval: true)
             case .control:
-                ctx.setFillColor(selectionColor.cgColor)
-                ctx.fillEllipse(in: box.insetBy(dx: -1 / mag, dy: -1 / mag)); ctx.strokeEllipse(in: box)
+                ctx.strokeWithHalo(box.insetBy(dx: -1 / mag, dy: -1 / mag), color: DS.Color.selectionStroke, width: line, fill: DS.Color.accentSolid, oval: true)
             }
         }
         ctx.restoreGState()

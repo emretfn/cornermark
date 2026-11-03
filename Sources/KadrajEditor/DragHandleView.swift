@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 
 /// The drag grip: dragging it hands a rendered PNG file to Finder, Mail, a browser or anything else that takes files.
 final class DragHandleView: NSView, NSDraggingSource {
@@ -6,21 +7,18 @@ final class DragHandleView: NSView, NSDraggingSource {
     var provider: () -> (url: URL, preview: NSImage)? = { nil }
     private var pressed: NSEvent?
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 32, height: 26) }
+    override var intrinsicContentSize: NSSize { NSSize(width: DS.Size.control, height: DS.Size.control) }
 
     override func draw(_ dirtyRect: NSRect) {
-        let box = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
-        NSColor.controlColor.setFill()
+        let path = NSBezierPath.continuous(bounds.insetBy(dx: 0.5, dy: 0.5), radius: DS.Radius.sm)
+        DS.Color.bgControl.setFill()
         path.fill()
-        NSColor.separatorColor.setStroke()
+        DS.Color.border.setStroke()
         path.stroke()
-
-        guard let icon = UI.symbol("hand.draw", "Drag")?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) else { return }
-        let size = icon.size
-        icon.tinted(.labelColor).draw(in: NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height))
+        Glyph.draw("hand.draw", in: bounds, DS.Color.textSecondary)
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
     override func mouseDown(with event: NSEvent) { pressed = event }
 
@@ -38,16 +36,4 @@ final class DragHandleView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
-}
-
-extension NSImage {
-    func tinted(_ color: NSColor) -> NSImage {
-        let copy = NSImage(size: size, flipped: false) { rect in
-            self.draw(in: rect)
-            color.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        return copy
-    }
 }

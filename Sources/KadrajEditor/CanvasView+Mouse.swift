@@ -100,6 +100,7 @@ extension CanvasView {
 
         case .cropping:
             gesture = .idle
+            invalidateAll()
 
         case .idle, .editingText:
             break

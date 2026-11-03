@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 import KadrajCore
 
 /// The contextual bar under the toolbar. Its controls come from `ToolSpec.properties`, so a new
@@ -10,6 +11,7 @@ final class PropertyBar: BarView {
     var cancelCrop: () -> Void = {}
 
     private let stack = NSStackView()
+    private lazy var stackFill = stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DS.Space.s16)
     private var refreshers: [() -> Void] = []
     private var signature: [AnyHashable] = []
     private var sampler: NSColorSampler?
@@ -21,14 +23,14 @@ final class PropertyBar: BarView {
         edge = .bottom
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 12
+        stack.spacing = DS.Space.s12
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DS.Space.s16),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
-            heightAnchor.constraint(equalToConstant: 44),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -DS.Space.s16),
+            heightAnchor.constraint(equalToConstant: DS.Size.control + DS.Space.s12),
         ])
         reload()
     }
@@ -51,6 +53,7 @@ final class PropertyBar: BarView {
 
     private func rebuild() {
         refreshers = []
+        stackFill.isActive = false
         stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
 
         if model.tool == .crop {
@@ -78,11 +81,9 @@ final class PropertyBar: BarView {
     }
 
     private func divider() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        box.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        return box
+        let line = Separator(axis: .vertical)
+        line.heightAnchor.constraint(equalToConstant: DS.Space.s16).isActive = true
+        return line
     }
 
     private func control(for p: PropertyKind) -> NSView {
@@ -112,7 +113,7 @@ final class PropertyBar: BarView {
 
         let well = NSColorWell(style: .minimal)
         well.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        well.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        well.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         well.toolTip = "Custom colour"
         well.setAccessibilityIdentifier("prop.colorWell")
         well.onAction { [unowned self] w in
@@ -139,7 +140,7 @@ final class PropertyBar: BarView {
         chips.append(star)
 
         for fav in model.prefs.favoriteColors { chips.append(chip(fav, favorite: true)) }
-        let row = UI.hstack(chips, spacing: 3)
+        let row = UI.hstack(chips, spacing: DS.Space.s2)
         row.setAccessibilityIdentifier("prop.colors")
         return row
     }
@@ -176,14 +177,12 @@ final class PropertyBar: BarView {
             value.stringValue = "\(Int(v.rounded()))"
         }
         refreshers.last?()
-        return UI.hstack([UI.caption(label), s, value])
+        return UI.hstack([UI.caption(label), s, value], spacing: DS.Space.s8)
     }
 
     private func segmented<T: Equatable>(_ items: [(String, T)], id: String, get: @escaping (ToolStyle) -> T,
                                          set: @escaping (inout ToolStyle, T) -> Void, key: String) -> NSView {
-        let seg = NSSegmentedControl(labels: items.map(\.0), trackingMode: .selectOne, target: nil, action: nil)
-        seg.controlSize = .small
-        seg.segmentStyle = .rounded
+        let seg = Segments(labels: items.map(\.0), trackingMode: .selectOne, size: .small)
         seg.setAccessibilityIdentifier(id)
         seg.onAction { [unowned self] c in
             let i = (c as! NSSegmentedControl).selectedSegment
@@ -200,12 +199,12 @@ final class PropertyBar: BarView {
 
     private func arrowStyleControl() -> NSView {
         UI.hstack([UI.caption("Style"), segmented(ArrowStyle.allCases.map { ($0.rawValue.capitalized, $0) }, id: "prop.arrowStyle",
-                                                  get: { $0.arrowStyle }, set: { $0.arrowStyle = $1 }, key: "arrowStyle")])
+                                                  get: { $0.arrowStyle }, set: { $0.arrowStyle = $1 }, key: "arrowStyle")], spacing: DS.Space.s8)
     }
 
     private func blurModeControl() -> NSView {
         UI.hstack([UI.caption("Mode"), segmented(BlurMode.allCases.map { ($0.rawValue.capitalized, $0) }, id: "prop.blurMode",
-                                                 get: { $0.blurMode }, set: { $0.blurMode = $1 }, key: "blurMode")])
+                                                 get: { $0.blurMode }, set: { $0.blurMode = $1 }, key: "blurMode")], spacing: DS.Space.s8)
     }
 
     private func textStyleControl() -> NSView {
@@ -222,7 +221,7 @@ final class PropertyBar: BarView {
             popup.selectItem(at: TextStylePreset.allCases.firstIndex(of: model.activeStyle.textStyle) ?? 0)
         }
         refreshers.last?()
-        return UI.hstack([UI.caption("Look"), popup])
+        return UI.hstack([UI.caption("Look"), popup], spacing: DS.Space.s8)
     }
 
     // MARK: Presets
@@ -251,14 +250,12 @@ final class PropertyBar: BarView {
     }
 
     private func promptForPresetName(from anchor: NSView) {
-        let field = NSTextField(string: "")
-        field.placeholderString = "Preset name"
+        let field = TextInput(placeholder: "Preset name", size: .small)
         field.setAccessibilityIdentifier("prop.presetName")
         field.widthAnchor.constraint(equalToConstant: 150).isActive = true
         let popover = NSPopover()
         popover.behavior = .transient
-        let save = NSButton(title: "Save", target: nil, action: nil)
-        save.bezelStyle = .rounded
+        let save = Button(title: "Save", variant: .secondary, size: .small)
         save.keyEquivalent = "\r"
         let onSave: (NSControl) -> Void = { [unowned self] _ in
             model.saveStylePreset(named: field.stringValue)
@@ -266,8 +263,8 @@ final class PropertyBar: BarView {
         }
         save.onAction(onSave)
         field.onAction(onSave)
-        let row = UI.hstack([field, save])
-        row.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        let row = UI.hstack([field, save], spacing: DS.Space.s8)
+        row.edgeInsets = NSEdgeInsets(top: DS.Space.s12, left: DS.Space.s12, bottom: DS.Space.s12, right: DS.Space.s12)
         let vc = NSViewController()
         vc.view = row
         popover.contentViewController = vc
@@ -278,36 +275,36 @@ final class PropertyBar: BarView {
     // MARK: Crop
 
     private func buildCropControls() {
-        let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
-        aspect.controlSize = .small
+        let aspects = CropAspect.allCases
+        let aspect = Segments(labels: aspects.map(\.title), trackingMode: .selectOne, size: .small, tilePadding: DS.Space.s8)
         aspect.setAccessibilityIdentifier("crop.aspect")
-        for a in CropAspect.allCases { aspect.addItem(withTitle: a.title) }
-        aspect.onAction { [unowned self] c in setAspect(CropAspect.allCases[(c as! NSPopUpButton).indexOfSelectedItem]) }
+        aspect.onAction { [unowned self] c in setAspect(aspects[(c as! NSSegmentedControl).selectedSegment]) }
         refreshers.append { [unowned self] in
-            aspect.selectItem(at: CropAspect.allCases.firstIndex(of: model.cropDraft?.aspect ?? .free) ?? 0)
+            aspect.selectedSegment = aspects.firstIndex(of: model.cropDraft?.aspect ?? .free) ?? 0
         }
         refreshers.last?()
 
-        let reset = NSButton(title: "Reset", target: nil, action: nil)
-        reset.bezelStyle = .rounded
-        reset.controlSize = .small
+        let reset = Button(title: "Reset", variant: .ghost, size: .small)
         reset.setAccessibilityIdentifier("crop.reset")
         reset.onAction { [unowned self] _ in
             model.setCropDraft(CropDraft(rect: model.document.sourceBounds, aspect: model.cropDraft?.aspect ?? .free))
         }
-        let cancel = NSButton(title: "Cancel", target: nil, action: nil)
-        cancel.bezelStyle = .rounded
-        cancel.controlSize = .small
+        let cancel = Button(title: "Cancel", variant: .ghost, size: .small)
         cancel.setAccessibilityIdentifier("crop.cancel")
         cancel.onAction { [unowned self] _ in cancelCrop() }
-        let apply = NSButton(title: "Apply", target: nil, action: nil)
-        apply.bezelStyle = .rounded
-        apply.controlSize = .small
+        let apply = Button(title: "Apply", variant: .primary, size: .small)
         apply.setAccessibilityIdentifier("crop.apply")
         apply.onAction { [unowned self] _ in applyCrop() }
 
-        for v: NSView in [UI.caption("Aspect"), aspect, divider(), reset, cancel, apply, UI.caption("Return applies, Esc cancels")] {
-            stack.addArrangedSubview(v)
-        }
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        let hint = UI.caption("Return applies, Esc cancels")
+
+        for v: NSView in [aspect, spacer, hint, reset, cancel, apply] { stack.addArrangedSubview(v) }
+        stack.setCustomSpacing(DS.Space.s16, after: hint)
+        stack.setCustomSpacing(DS.Space.s4, after: reset)
+        stack.setCustomSpacing(DS.Space.s8, after: cancel)
+        // The spacer only takes up slack when the stack spans the bar.
+        stackFill.isActive = true
     }
 }

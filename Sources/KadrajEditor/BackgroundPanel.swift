@@ -1,35 +1,32 @@
 import AppKit
+import KadrajDesign
 import KadrajCore
 import UniformTypeIdentifiers
 
 /// Gradient swatches drawn by `Renderer` itself, so a thumbnail is exactly what the background looks like.
+/// The picture is a transparent 2x2 inside padding, so only the fill shows.
 enum BackgroundThumbnails {
     private static var cache: [Int: NSImage] = [:]
-    private static let panel: (AssetStore, AssetID, CGSize) = {
+    private static let clear: (AssetStore, AssetID) = {
         let store = AssetStore()
-        let w = 46, h = 28
-        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+        let ctx = CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        ctx.setFillColor(CGColor(gray: 0.97, alpha: 1))
-        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-        ctx.setFillColor(CGColor(gray: 0.82, alpha: 1))
-        ctx.fill(CGRect(x: 0, y: h - 6, width: w, height: 6))
-        let id = store.add(image: ctx.makeImage()!)!
-        return (store, id, CGSize(width: w, height: h))
+        return (store, store.add(image: ctx.makeImage()!)!)
     }()
 
     static func image(index: Int) -> NSImage {
         if let hit = cache[index] { return hit }
-        var doc = Document(base: panel.1, pixelSize: panel.2, pointScale: 1)
+        // The canvas is 2 + 2 * padding wide: exactly twice the tile, so the swatch is sharp on a 2x display.
+        let pixels = TileChrome.side * 2
+        var doc = Document(base: clear.1, pixelSize: CGSize(width: 2, height: 2), pointScale: 1)
         var style = BackgroundSettings()
         style.fill = .builtin(index: index)
-        style.padding = 15
-        style.aspectRatio = 1.5
-        style.cornerRadius = 4
-        style.shadow = true
+        style.padding = (pixels - 2) / 2
+        style.aspectRatio = 1
+        style.cornerRadius = 0
+        style.shadow = false
         doc.background = style
-        let cg = Renderer.render(doc, assets: panel.0)
-        let image = NSImage(cgImage: cg, size: NSSize(width: 52, height: 35))
+        let image = NSImage(cgImage: Renderer.render(doc, assets: clear.0), size: NSSize(width: TileChrome.side, height: TileChrome.side))
         cache[index] = image
         return image
     }
@@ -38,45 +35,150 @@ enum BackgroundThumbnails {
 /// NSView declares its own BackgroundStyle.
 typealias BackgroundSettings = KadrajCore.BackgroundStyle
 
+/// The square the fill grid is made of. The picture is inset when the tile is current, so the accent ring sits outside it
+/// with a gap and the two corner radii stay concentric.
+enum TileChrome {
+    static let side: CGFloat = 44
+    private static let ring: CGFloat = 2
+    private static let gap: CGFloat = 1
+
+    static func draw(in bounds: CGRect, current: Bool, hovering: Bool, content: (CGRect) -> Void) {
+        let inset = current ? ring + gap : 0
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let picture: NSBezierPath = .continuous(rect, radius: DS.Radius.md - inset)
+
+        NSGraphicsContext.saveGraphicsState()
+        picture.addClip()
+        content(rect)
+        DS.Color.imageOutline.setStroke()
+        picture.lineWidth = 2
+        picture.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+
+        if current {
+            DS.Color.accentMark.setStroke()
+            let outline: NSBezierPath = .continuous(bounds.insetBy(dx: ring / 2, dy: ring / 2), radius: DS.Radius.md - ring / 2)
+            outline.lineWidth = ring
+            outline.stroke()
+        } else if hovering {
+            let outline: NSBezierPath = .continuous(bounds, radius: DS.Radius.md)
+            NSGraphicsContext.saveGraphicsState()
+            outline.addClip()
+            DS.Color.borderStrong.setStroke()
+            outline.lineWidth = 2
+            outline.stroke()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    static func trackHover(_ view: NSView) {
+        view.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: view))
+    }
+
+    static func fix(_ view: NSView) {
+        view.widthAnchor.constraint(equalToConstant: side).isActive = true
+        view.heightAnchor.constraint(equalToConstant: side).isActive = true
+    }
+}
+
 final class ThumbButton: NSButton {
     var isCurrent: () -> Bool = { false }
+    private let paint: (CGRect) -> Void
+    private var hovering = false { didSet { if oldValue != hovering { needsDisplay = true } } }
 
-    init(image: NSImage, tip: String, id: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 52, height: 35))
-        self.image = image
-        imageScaling = .scaleAxesIndependently
+    init(tip: String, id: String, paint: @escaping (CGRect) -> Void) {
+        self.paint = paint
+        super.init(frame: NSRect(x: 0, y: 0, width: TileChrome.side, height: TileChrome.side))
         isBordered = false
         title = ""
         toolTip = tip
         setAccessibilityIdentifier(id)
         setAccessibilityLabel(tip)
-        widthAnchor.constraint(equalToConstant: 52).isActive = true
-        heightAnchor.constraint(equalToConstant: 35).isActive = true
-        wantsLayer = true
-        layer?.cornerRadius = 5
-        layer?.masksToBounds = true
+        TileChrome.fix(self)
+        TileChrome.trackHover(self)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        if isCurrent() {
-            NSColor.controlAccentColor.setStroke()
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), xRadius: 4, yRadius: 4)
-            ring.lineWidth = 3
-            ring.stroke()
-        } else {
-            NSColor.separatorColor.setStroke()
-            let edge = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-            edge.lineWidth = 1
-            edge.stroke()
+        TileChrome.draw(in: bounds, current: isCurrent(), hovering: hovering, content: paint)
+    }
+
+    override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.md).fill() }
+    override var focusRingMaskBounds: NSRect { bounds }
+}
+
+/// The system colour well, kept for its colour panel. The minimal style draws through a hosted SwiftUI view that `draw` never
+/// reaches, so the tile is an overlay that passes every click through to the well.
+final class SolidWell: NSColorWell {
+    var isCurrent: () -> Bool = { false }
+    fileprivate var hovering = false { didSet { if oldValue != hovering { overlay.needsDisplay = true } } }
+    private let overlay = TileOverlay()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        // `init(style:)` hands back a plain NSColorWell, never this subclass.
+        colorWellStyle = .minimal
+        overlay.well = self
+        overlay.frame = bounds
+        overlay.autoresizingMask = [.width, .height]
+        addSubview(overlay)
+        TileChrome.trackHover(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var color: NSColor {
+        didSet { overlay.needsDisplay = true }
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func draw(_ dirtyRect: NSRect) {}
+
+    override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.md).fill() }
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    func redrawTile() { overlay.needsDisplay = true }
+
+    fileprivate final class TileOverlay: NSView {
+        weak var well: SolidWell?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard let well else { return }
+            // Covers the system swatch, which can reach past the picture when the tile is inset.
+            DS.Color.bgSurface.setFill()
+            bounds.fill()
+            let solid = well.isCurrent()
+            TileChrome.draw(in: bounds, current: solid, hovering: well.hovering) { rect in
+                if solid {
+                    well.color.setFill()
+                    rect.fill()
+                } else {
+                    DS.Color.bgControl.setFill()
+                    rect.fill()
+                    Glyph.draw("paintpalette", in: rect, pointSize: DS.Size.icon, DS.Color.textSecondary)
+                }
+            }
         }
     }
 }
 
 final class BackgroundPanel: NSView {
-    static let width: CGFloat = 300
+    static let width: CGFloat = 284
+    /// Every control ends on this one right edge: the panel width less the s16 inset on each side.
+    private static let inner = width - 2 * DS.Space.s16
+    private static let labelColumn: CGFloat = 64
+    private static let controlWidth = inner - labelColumn
+    private static let readoutWidth: CGFloat = 28
+    private static let columns = 5
+
     let model: EditorModel
 
     private let content = NSStackView()
@@ -114,8 +216,7 @@ final class BackgroundPanel: NSView {
 
         content.orientation = .vertical
         content.alignment = .leading
-        content.spacing = 14
-        content.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 16, right: 16)
+        content.spacing = 0
         content.translatesAutoresizingMaskIntoConstraints = false
 
         let flipped = FlippedView()
@@ -125,90 +226,97 @@ final class BackgroundPanel: NSView {
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        // A legacy scroller would take width from the grid and move every right edge.
+        scroll.scrollerStyle = .overlay
         scroll.documentView = flipped
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)
         NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 1), scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
             content.leadingAnchor.constraint(equalTo: flipped.leadingAnchor), content.trailingAnchor.constraint(equalTo: flipped.trailingAnchor),
             content.topAnchor.constraint(equalTo: flipped.topAnchor), content.bottomAnchor.constraint(equalTo: flipped.bottomAnchor),
             flipped.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
 
-        content.addArrangedSubview(section("Fill", fillGrid()))
-        content.addArrangedSubview(section("Layout", layoutControls()))
-        content.addArrangedSubview(section("Appearance", appearanceControls()))
-        content.addArrangedSubview(section("Presets", presetsSection()))
+        let sections: [NSView] = [section("Background", fillGrid()), section("Frame", frameControls()), section("Presets", presetsSection())]
+        for (i, view) in sections.enumerated() {
+            if i > 0 {
+                let line = Separator(axis: .horizontal)
+                line.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+                content.addArrangedSubview(line)
+            }
+            content.addArrangedSubview(view)
+        }
         reload()
     }
 
     private func section(_ title: String, _ body: NSView) -> NSView {
-        let header = NSTextField(labelWithString: title.uppercased())
-        header.font = .systemFont(ofSize: 10, weight: .semibold)
-        header.textColor = .secondaryLabelColor
-        return UI.vstack([header, body], spacing: 8)
+        let header = NSTextField.label(title, style: DS.Text.label, color: DS.Color.textPrimary)
+        let stack = UI.vstack([header, body], spacing: DS.Space.s12)
+        stack.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
+        stack.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        return stack
     }
 
     // MARK: Fill
 
     private func fillGrid() -> NSView {
-        func tile(_ image: NSImage, tip: String, id: String, current: @escaping () -> Bool, action: @escaping () -> Void) -> ThumbButton {
-            let b = ThumbButton(image: image, tip: tip, id: id)
+        func tile(tip: String, id: String, current: @escaping () -> Bool, paint: @escaping (CGRect) -> Void, action: @escaping () -> Void) -> ThumbButton {
+            let b = ThumbButton(tip: tip, id: id, paint: paint)
             b.isCurrent = current
             b.onAction { _ in action() }
             tiles.append { b.needsDisplay = true }
             return b
         }
 
-        let none = tile(noneImage(), tip: "No background", id: "bg.none", current: { [unowned self] in style == nil }) { [unowned self] in
-            model.perform(.setBackground(nil))
-        }
+        let none = tile(tip: "No background", id: "bg.none", current: { [unowned self] in style == nil }, paint: { rect in
+            DS.Color.bgControl.setFill()
+            rect.fill()
+            DS.Color.textSecondary.setStroke()
+            let slash = NSBezierPath()
+            slash.move(to: NSPoint(x: rect.minX + 10, y: rect.minY + 10)); slash.line(to: NSPoint(x: rect.maxX - 10, y: rect.maxY - 10))
+            slash.lineWidth = 1.5
+            slash.lineCapStyle = .round
+            slash.stroke()
+        }) { [unowned self] in model.perform(.setBackground(nil)) }
 
-        let well = NSColorWell(style: .minimal)
+        let well = SolidWell(frame: .zero)
         well.setAccessibilityIdentifier("bg.solid")
+        well.setAccessibilityLabel("Solid colour")
         well.toolTip = "Solid colour"
-        well.widthAnchor.constraint(equalToConstant: 52).isActive = true
-        well.heightAnchor.constraint(equalToConstant: 35).isActive = true
+        TileChrome.fix(well)
         well.color = .systemGray
+        well.isCurrent = { [unowned self] in if case .solid? = style?.fill { return true } else { return false } }
         well.onAction { [unowned self] c in
             let color = RGBA((c as! NSColorWell).color)
             edit({ $0.fill = .solid(color) }, key: "solid")
         }
         tiles.append { [unowned self] in
             if case .solid(let c)? = style?.fill { well.color = c.nsColor }
+            well.redrawTile()
         }
 
-        let image = NSButton(title: "Image…", target: nil, action: nil)
-        image.bezelStyle = .rounded
-        image.controlSize = .small
-        image.setAccessibilityIdentifier("bg.image")
-        image.onAction { [unowned self] _ in chooseImage() }
-
-        var rows: [NSView] = [UI.hstack([none, well, image], spacing: 8)]
-        let all = BuiltinBackgrounds.all
-        for start in stride(from: 0, to: all.count, by: 4) {
-            let row = (start..<min(start + 4, all.count)).map { i in
-                tile(BackgroundThumbnails.image(index: i), tip: all[i].name, id: "bg.fill.\(i)", current: { [unowned self] in
-                    if case .builtin(let idx)? = style?.fill { return idx == i } else { return false }
-                }) { [unowned self] in edit({ $0.fill = .builtin(index: i) }) }
-            }
-            rows.append(UI.hstack(row, spacing: 8))
-        }
-        return UI.vstack(rows, spacing: 8)
-    }
-
-    private func noneImage() -> NSImage {
-        NSImage(size: NSSize(width: 52, height: 35), flipped: false) { rect in
-            NSColor.controlBackgroundColor.setFill()
+        let image = tile(tip: "Image…", id: "bg.image", current: { [unowned self] in
+            if case .image? = style?.fill { return true } else { return false }
+        }, paint: { rect in
+            DS.Color.bgControl.setFill()
             rect.fill()
-            NSColor.secondaryLabelColor.setStroke()
-            let slash = NSBezierPath()
-            slash.move(to: NSPoint(x: rect.minX + 12, y: rect.minY + 6)); slash.line(to: NSPoint(x: rect.maxX - 12, y: rect.maxY - 6))
-            slash.lineWidth = 1.5
-            slash.stroke()
-            return true
+            Glyph.draw("photo", in: rect, pointSize: DS.Size.icon, DS.Color.textSecondary)
+        }) { [unowned self] in chooseImage() }
+
+        var all: [NSView] = [none, well, image]
+        let builtins = BuiltinBackgrounds.all
+        for i in builtins.indices {
+            all.append(tile(tip: builtins[i].name, id: "bg.fill.\(i)", current: { [unowned self] in
+                if case .builtin(let idx)? = style?.fill { return idx == i } else { return false }
+            }, paint: { rect in BackgroundThumbnails.image(index: i).draw(in: rect) }) { [unowned self] in edit({ $0.fill = .builtin(index: i) }) })
         }
+
+        let rows = stride(from: 0, to: all.count, by: Self.columns).map { start in
+            UI.hstack(Array(all[start..<min(start + Self.columns, all.count)]), spacing: DS.Space.s8)
+        }
+        return UI.vstack(rows, spacing: DS.Space.s8)
     }
 
     private func chooseImage() {
@@ -224,12 +332,26 @@ final class BackgroundPanel: NSView {
         edit { $0.fill = .image(asset: id) }
     }
 
-    // MARK: Layout and appearance
+    // MARK: Frame
+
+    private func labelColumn(_ text: String) -> NSTextField {
+        let name = UI.caption(text)
+        name.widthAnchor.constraint(equalToConstant: Self.labelColumn).isActive = true
+        return name
+    }
+
+    /// A label column and a control that runs to the right edge, one control tall.
+    private func row(_ label: String, _ control: NSView) -> NSView {
+        let r = UI.hstack([labelColumn(label), control], spacing: 0)
+        r.heightAnchor.constraint(equalToConstant: DS.Size.control).isActive = true
+        return r
+    }
 
     private func sliderRow(_ label: String, range: ClosedRange<Double>, id: String, key: String,
                            get: @escaping (BackgroundSettings) -> Double, set: @escaping (inout BackgroundSettings, Double) -> Void) -> NSView {
-        let s = UI.slider(range, width: 130, id: id)
-        let value = UI.valueLabel()
+        let s = UI.slider(range, width: nil, id: id)
+        s.widthAnchor.constraint(equalToConstant: Self.controlWidth - DS.Space.s8 - Self.readoutWidth).isActive = true
+        let value = UI.valueLabel(width: Self.readoutWidth)
         s.onAction { [unowned self] c in
             guard !updating else { return }
             let v = (c as! NSSlider).doubleValue
@@ -242,35 +364,47 @@ final class BackgroundPanel: NSView {
             s.doubleValue = v
             value.stringValue = "\(Int(v.rounded()))"
         }
-        let name = UI.caption(label)
-        name.widthAnchor.constraint(equalToConstant: 56).isActive = true
-        return UI.hstack([name, s, value])
+        return row(label, UI.hstack([s, value], spacing: DS.Space.s8))
     }
 
     private static let aspects: [(String, Double?)] = [
         ("Auto", nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5), ("16:9", 16.0 / 9), ("16:10", 1.6), ("3:4", 0.75), ("9:16", 9.0 / 16),
     ]
 
-    private func layoutControls() -> NSView {
-        let padding = sliderRow("Padding", range: 0...300, id: "bg.padding", key: "padding", get: { $0.padding }, set: { $0.padding = $1 })
+    private func popup(id: String, titles: [String]) -> NSPopUpButton {
+        let p = NSPopUpButton(frame: .zero, pullsDown: false)
+        p.controlSize = .small
+        p.font = DS.Text.label.font
+        p.setAccessibilityIdentifier(id)
+        for title in titles { p.addItem(withTitle: title) }
+        p.widthAnchor.constraint(equalToConstant: Self.controlWidth).isActive = true
+        return p
+    }
 
-        let align = NSPopUpButton(frame: .zero, pullsDown: false)
-        align.controlSize = .small
-        align.setAccessibilityIdentifier("bg.alignment")
-        for a in BackgroundAlignment.allCases { align.addItem(withTitle: a.rawValue.capitalized) }
-        align.onAction { [unowned self] c in
+    private func checkRow(_ label: String, id: String, get: @escaping (BackgroundSettings) -> Bool,
+                          set: @escaping (inout BackgroundSettings, Bool) -> Void) -> NSView {
+        let box = Checkbox(title: "", size: .small)
+        box.setAccessibilityIdentifier(id)
+        box.setAccessibilityLabel(label)
+        box.onAction { [unowned self] c in
             guard !updating else { return }
-            let a = BackgroundAlignment.allCases[(c as! NSPopUpButton).indexOfSelectedItem]
-            edit { $0.alignment = a }
+            let on = (c as! NSButton).state == .on
+            edit { set(&$0, on) }
         }
-        refreshers.append { [unowned self] in
-            align.selectItem(at: BackgroundAlignment.allCases.firstIndex(of: (style ?? BackgroundSettings()).alignment) ?? 0)
-        }
+        refreshers.append { [unowned self] in box.state = get(style ?? BackgroundSettings()) ? .on : .off }
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        let r = UI.hstack([UI.caption(label), spacer, box], spacing: 0)
+        r.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
+        r.heightAnchor.constraint(equalToConstant: DS.Size.control).isActive = true
+        return r
+    }
 
-        let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
-        aspect.controlSize = .small
-        aspect.setAccessibilityIdentifier("bg.aspect")
-        for (title, _) in Self.aspects { aspect.addItem(withTitle: title) }
+    private func frameControls() -> NSView {
+        let padding = sliderRow("Padding", range: 0...300, id: "bg.padding", key: "padding", get: { $0.padding }, set: { $0.padding = $1 })
+        let corners = sliderRow("Corners", range: 0...100, id: "bg.radius", key: "radius", get: { $0.cornerRadius }, set: { $0.cornerRadius = $1 })
+
+        let aspect = popup(id: "bg.aspect", titles: Self.aspects.map(\.0))
         aspect.onAction { [unowned self] c in
             guard !updating else { return }
             let ratio = Self.aspects[(c as! NSPopUpButton).indexOfSelectedItem].1
@@ -281,46 +415,29 @@ final class BackgroundPanel: NSView {
             aspect.selectItem(at: Self.aspects.firstIndex { $0.1 == ratio } ?? 0)
         }
 
-        func labelled(_ name: String, _ control: NSView) -> NSView {
-            let l = UI.caption(name)
-            l.widthAnchor.constraint(equalToConstant: 56).isActive = true
-            return UI.hstack([l, control])
+        let align = popup(id: "bg.alignment", titles: BackgroundAlignment.allCases.map { $0.rawValue.capitalized })
+        align.onAction { [unowned self] c in
+            guard !updating else { return }
+            let a = BackgroundAlignment.allCases[(c as! NSPopUpButton).indexOfSelectedItem]
+            edit { $0.alignment = a }
         }
-        return UI.vstack([padding, labelled("Align", align), labelled("Ratio", aspect)], spacing: 8)
-    }
-
-    private func appearanceControls() -> NSView {
-        let radius = sliderRow("Corners", range: 0...100, id: "bg.radius", key: "radius", get: { $0.cornerRadius }, set: { $0.cornerRadius = $1 })
-
-        func check(_ title: String, id: String, get: @escaping (BackgroundSettings) -> Bool, set: @escaping (inout BackgroundSettings, Bool) -> Void) -> NSButton {
-            let b = NSButton(checkboxWithTitle: title, target: nil, action: nil)
-            b.controlSize = .small
-            b.setAccessibilityIdentifier(id)
-            b.onAction { [unowned self] c in
-                guard !updating else { return }
-                let on = (c as! NSButton).state == .on
-                edit { set(&$0, on) }
-            }
-            refreshers.append { [unowned self] in b.state = get(style ?? BackgroundSettings()) ? .on : .off }
-            return b
+        refreshers.append { [unowned self] in
+            align.selectItem(at: BackgroundAlignment.allCases.firstIndex(of: (style ?? BackgroundSettings()).alignment) ?? 0)
         }
-        let shadow = check("Shadow", id: "bg.shadow", get: { $0.shadow }, set: { $0.shadow = $1 })
-        let balance = check("Auto Balance", id: "bg.autoBalance", get: { $0.autoBalance }, set: { $0.autoBalance = $1 })
-        return UI.vstack([radius, UI.hstack([shadow, balance], spacing: 14)], spacing: 8)
+
+        let shadow = checkRow("Shadow", id: "bg.shadow", get: { $0.shadow }, set: { $0.shadow = $1 })
+        let balance = checkRow("Auto Balance", id: "bg.autoBalance", get: { $0.autoBalance }, set: { $0.autoBalance = $1 })
+        return UI.vstack([padding, corners, row("Ratio", aspect), row("Align", align), shadow, balance], spacing: DS.Space.s4)
     }
 
     // MARK: Presets
 
     private func presetsSection() -> NSView {
-        let field = NSTextField(string: "")
-        field.placeholderString = "Preset name"
-        field.controlSize = .small
+        let field = TextInput(placeholder: "Preset name", size: .small)
         field.setAccessibilityIdentifier("bg.presetName")
-        field.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        let save = NSButton(title: "Save", target: nil, action: nil)
-        save.bezelStyle = .rounded
-        save.controlSize = .small
+        let save = Button(title: "Save", variant: .secondary, size: .small)
         save.setAccessibilityIdentifier("bg.presetSave")
+        field.widthAnchor.constraint(equalToConstant: Self.inner - DS.Space.s8 - save.intrinsicContentSize.width).isActive = true
         let doSave: (NSControl) -> Void = { [unowned self] _ in
             model.saveBackgroundPreset(named: field.stringValue)
             field.stringValue = ""
@@ -330,21 +447,24 @@ final class BackgroundPanel: NSView {
 
         presetList.orientation = .vertical
         presetList.alignment = .leading
-        presetList.spacing = 4
-        return UI.vstack([UI.hstack([field, save]), presetList], spacing: 8)
+        presetList.spacing = DS.Space.s4
+        return UI.vstack([UI.hstack([field, save], spacing: DS.Space.s8), presetList], spacing: DS.Space.s8)
     }
 
     private func rebuildPresets() {
         presetList.arrangedSubviews.forEach { presetList.removeArrangedSubview($0); $0.removeFromSuperview() }
         for preset in model.prefs.backgroundPresets {
-            let apply = NSButton(title: preset.name, target: nil, action: nil)
-            apply.bezelStyle = .inline
-            apply.controlSize = .small
+            let apply = Button(title: preset.name, variant: .ghost, size: .small)
             apply.setAccessibilityIdentifier("bg.preset.apply.\(preset.name)")
             apply.onAction { [unowned self] _ in model.applyBackgroundPreset(preset) }
             let delete = UI.button(symbol: "xmark", tip: "Delete preset", id: "bg.preset.delete.\(preset.name)")
             delete.onAction { [unowned self] _ in model.deleteBackgroundPreset(preset.id) }
-            presetList.addArrangedSubview(UI.hstack([apply, delete]))
+
+            let spacer = NSView()
+            spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+            let line = UI.hstack([apply, spacer, delete], spacing: 0)
+            line.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
+            presetList.addArrangedSubview(line)
         }
         if presetList.arrangedSubviews.isEmpty {
             presetList.addArrangedSubview(UI.caption("No presets yet"))
