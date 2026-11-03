@@ -3,7 +3,12 @@ import AppKit
 
 private final class Probe: NSObject {
     var count = 0
+    var lastSegment = -2
     @objc func fire() { count += 1 }
+    @objc func fireSegment(_ sender: NSSegmentedControl) {
+        count += 1
+        lastSegment = sender.selectedSegment
+    }
 }
 
 private func crossing(_ type: NSEvent.EventType) -> NSEvent {
@@ -94,6 +99,9 @@ private func behaviour() {
     let after = icon.accessibilityValue() as? String
     check("IconButton selection is exposed as accessibility value, not colour alone", before != after && after == "Selected", "\(String(describing: before)) -> \(String(describing: after))")
 
+    segmentsBehaviour()
+    sliderAndCheckboxBehaviour()
+
     let host = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
     let surface = Surface(style: .hud, shadowInset: DS.Space.s32)
     surface.frame = CGRect(x: 50, y: 50, width: 200, height: 120)
@@ -114,6 +122,92 @@ private func behaviour() {
     check("disabled TextInput switches to textDisabled", input.textColor == DS.Color.textDisabled)
 }
 
+private let editorDividers: Set<Int> = [0, 6, 8, 10, 13]
+
+private func editorTools() -> Segments {
+    let symbols = Array(repeating: "circle", count: 16)
+    let s = Segments(symbols: symbols, labels: symbols.indices.map { "Tool \($0)" })
+    s.dividers = editorDividers
+    return s
+}
+
+private func at(_ x: CGFloat, _ y: CGFloat = 0) -> NSEvent {
+    NSEvent.mouseEvent(with: .mouseMoved, location: CGPoint(x: x, y: y), modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                       eventNumber: 0, clickCount: 0, pressure: 0)!
+}
+
+private func segmentsBehaviour() {
+    let probe = Probe()
+    let tools = Segments(symbols: ["cursorarrow", "arrow.up.right", "crop"], labels: ["Select", "Arrow", "Crop"])
+    tools.target = probe
+    tools.action = #selector(Probe.fireSegment(_:))
+    check("Segments is an NSSegmentedControl with one segment per symbol", (tools as AnyObject) is NSSegmentedControl && tools.segmentCount == 3)
+    tools.activate(1)
+    check("selectOne activation selects the segment and fires the action once", tools.selectedSegment == 1 && probe.count == 1 && probe.lastSegment == 1,
+          "selected \(tools.selectedSegment), count \(probe.count), last \(probe.lastSegment)")
+    tools.selectedSegment = -1
+    check("selectedSegment -1 clears the selection", tools.selectedSegment == -1 && !tools.isSelected(1))
+    tools.setToolTip("Arrow (A)", forSegment: 1)
+    check("setToolTip(forSegment:) is the stock API and keeps its value", tools.toolTip(forSegment: 1) == "Arrow (A)")
+    check("each symbol segment carries its label as the image's accessibility description", tools.image(forSegment: 2)?.accessibilityDescription == "Crop")
+
+    let momentary = Segments(symbols: ["rotate.right", "pin"], labels: ["Rotate", "Pin"], trackingMode: .momentary)
+    momentary.target = probe
+    momentary.action = #selector(Probe.fireSegment(_:))
+    probe.count = 0
+    momentary.activate(0)
+    check("momentary activation fires with the pressed index and shows no selection", probe.count == 1 && probe.lastSegment == 0 && !momentary.isSelected(0),
+          "count \(probe.count), last \(probe.lastSegment), selected \(momentary.isSelected(0))")
+
+    let labelled = Segments(labels: ["Classic", "Tapered"])
+    check("label segments keep their labels", labelled.label(forSegment: 0) == "Classic" && labelled.label(forSegment: 1) == "Tapered")
+
+    tools.setEnabled(false, forSegment: 2)
+    check("a disabled segment reads .disabled and its neighbours do not", tools.state(of: 2) == .disabled && tools.state(of: 1) == .normal)
+    tools.isEnabled = false
+    check("a disabled control disables every segment", (0..<3).allSatisfy { tools.state(of: $0) == .disabled })
+    tools.isEnabled = true
+    tools.setEnabled(true, forSegment: 2)
+
+    tools.frame = CGRect(x: 0, y: 0, width: tools.intrinsicContentSize.width, height: tools.intrinsicContentSize.height)
+    let inside = tools.tile(1).midX
+    var trail: [InteractionState] = [tools.state(of: 1)]
+    tools.mouseMoved(with: at(inside, 14)); trail.append(tools.state(of: 1))
+    tools.mouseMoved(with: at(tools.tile(2).midX, 14)); trail.append(tools.state(of: 1))
+    tools.mouseExited(with: crossing(.mouseExited)); trail.append(tools.state(of: 2))
+    check("hover is tracked per segment and cleared on exit", trail == [.normal, .hover, .normal, .normal], "\(trail)")
+    tools.forcedStates = [0: .pressed]
+    check("forcedStates pins one segment and leaves the others alone", tools.state(of: 0) == .pressed && tools.state(of: 1) == .normal)
+
+    check("hit testing maps a point to its segment and a point outside to none", tools.segment(at: CGPoint(x: tools.tile(2).midX, y: 14)) == 2
+          && tools.segment(at: CGPoint(x: -3, y: 14)) == nil)
+    check("controls accept the first mouse", tools.acceptsFirstMouse(for: nil))
+}
+
+private func sliderAndCheckboxBehaviour() {
+    let slider = Slider(value: 0.25, minValue: 0, maxValue: 1, target: nil, action: nil)
+    check("Slider is an NSSlider that keeps its value model", (slider as AnyObject) is NSSlider && slider.doubleValue == 0.25 && slider.maxValue == 1)
+    check("Slider draws through its own cell, also when built with the NSSlider convenience initialiser", slider.cell is SliderCell)
+
+    final class Subclass: Slider { var ended = 0 }
+    check("Slider can be subclassed by a view that watches tracking", Subclass(frame: .zero).cell is SliderCell)
+
+    let probe = Probe()
+    let box = Checkbox(title: "Shadow")
+    box.target = probe
+    box.action = #selector(Probe.fire)
+    check("Checkbox is a switch-type NSButton that starts off", (box as AnyObject) is NSButton && box.state == .off && box.accessibilityRole() == .checkBox,
+          "state \(box.state.rawValue) role \(String(describing: box.accessibilityRole()))")
+    box.performClick(nil)
+    check("performClick turns a Checkbox on and fires its action", box.state == .on && probe.count == 1, "state \(box.state.rawValue), count \(probe.count)")
+    box.performClick(nil)
+    check("a second performClick turns it off again", box.state == .off && probe.count == 2)
+    box.isEnabled = false
+    box.performClick(nil)
+    check("a disabled Checkbox does not toggle", box.state == .off && probe.count == 2)
+    check("Checkbox takes its label from the title", box.accessibilityLabel() == "Shadow" && box.title == "Shadow")
+}
+
 private func geometry() {
     for size in ComponentSize.allCases {
         let token = size == .small ? DS.Size.controlSmall : size == .regular ? DS.Size.control : DS.Size.controlLarge
@@ -124,6 +218,27 @@ private func geometry() {
         check("IconButton .\(size) is a \(Int(token)) square", square == NSSize(width: token, height: token))
         check("TextInput .\(size) height is \(Int(token))", TextInput(placeholder: "W", size: size).intrinsicContentSize.height == token)
     }
+    check("Segments .regular is control tall and .small is controlSmall tall", Segments(symbols: ["pin"], labels: ["Pin"]).intrinsicContentSize.height == DS.Size.control
+          && Segments(labels: ["Classic"]).intrinsicContentSize.height == DS.Size.controlSmall)
+    check("Checkbox height follows its size and its box is 14pt", Checkbox(title: "Shadow", size: .small).intrinsicContentSize.height == DS.Size.controlSmall
+          && Checkbox(title: "Shadow").intrinsicContentSize.height == DS.Size.control && DS.Size.icon == 14)
+    check("Slider is controlSmall tall", Slider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil).intrinsicContentSize.height == DS.Size.controlSmall)
+
+    let tools = editorTools()
+    let want = 16 * DS.Size.control + 15 * DS.Space.s4 + CGFloat(editorDividers.count) * (DS.Space.s4 + 1 + DS.Space.s8)
+    check("16 tool tiles, s4 apart, plus room for 5 dividers, are \(Int(want)) wide", tools.intrinsicContentSize.width == want, "\(tools.intrinsicContentSize.width)")
+    tools.frame.size = tools.intrinsicContentSize
+    let tiles = (0..<16).map { tools.tile($0) }
+    check("tiles are square, control tall and never overlap", tiles.allSatisfy { $0.width == DS.Size.control && $0.height == DS.Size.control }
+          && zip(tiles, tiles.dropFirst()).allSatisfy { $0.maxX + DS.Space.s4 <= $1.minX })
+    check("tiles without a divider are exactly s4 apart", (0..<15).filter { !editorDividers.contains($0) }.allSatisfy { tiles[$0 + 1].minX - tiles[$0].maxX == DS.Space.s4 })
+    check("a divider sits s8 from the tile before it and s8 from the one after, 1pt wide",
+          editorDividers.allSatisfy { i in
+              let line = tools.dividerRect(after: i)
+              return line.width == 1 && line.minX - tiles[i].maxX == DS.Space.s8 && tiles[i + 1].minX - line.maxX == DS.Space.s8
+          })
+    check("each segment's width includes its gap and divider room, so slots tile the control exactly",
+          (0..<15).allSatisfy { tiles[$0].minX + tools.slotWidth($0) == tiles[$0 + 1].minX } && tiles[15].maxX == tools.intrinsicContentSize.width)
     check("Badge height is controlSmall", Badge(text: "Seçili", symbol: "checkmark", tone: .accent).intrinsicContentSize.height == DS.Size.controlSmall)
 
     func textWidth(_ s: String, _ style: TextStyle) -> CGFloat { ceil(NSAttributedString(string: s, attributes: style.attributes(color: DS.Color.textPrimary)).size().width) }
@@ -160,6 +275,41 @@ private func componentContrast() {
                     check(String(format: "[%@] IconButton .plain%@ %@ on %@ >= 4.5 : %.2f", label, selected ? " selected" : "", "\(state)", name, r), r >= 4.5)
                 }
             }
+        }
+        for labelled in [false, true] {
+            for quiet in [false, true] where !(labelled && quiet) {
+                for selected in [false, true] {
+                    for state in nonDisabled {
+                        let look = Segments.look(selected: selected, state: state, labelled: labelled, quiet: quiet)
+                        for (name, fill) in look.fill.map({ [("fill", $0)] }) ?? surfaces {
+                            let r = ratio(look.text, on: fill, appearance, over: white)
+                            check(String(format: "[%@] Segments %@%@%@ %@ on %@ >= 4.5 : %.2f", label, labelled ? "label" : "glyph", quiet ? " quiet" : "", selected ? " selected" : "",
+                                         "\(state)", name, r), r >= 4.5)
+                        }
+                    }
+                }
+            }
+        }
+        for on in [false, true] {
+            for state in nonDisabled {
+                let look = Checkbox.look(on: on, state)
+                let text = ratio(look.text, on: DS.Color.bgSurface, appearance, over: white)
+                check(String(format: "[%@] Checkbox %@ %@ title on bgSurface >= 4.5 : %.2f", label, on ? "on" : "off", "\(state)", text), text >= 4.5)
+                if on {
+                    let mark = ratio(look.mark, on: look.fill!, appearance, over: white)
+                    check(String(format: "[%@] Checkbox on %@ checkmark on its fill >= 4.5 : %.2f", label, "\(state)", mark), mark >= 4.5)
+                }
+                for (name, surface) in surfaces {
+                    let edge = ratio(look.border, on: surface, appearance, over: white)
+                    check(String(format: "[%@] Checkbox %@ %@ border on %@ >= 3 : %.2f", label, on ? "on" : "off", "\(state)", name, edge), edge >= 3)
+                }
+            }
+        }
+        for (name, surface) in surfaces {
+            let knob = ratio(DS.Color.borderStrong, on: surface, appearance, over: white)
+            check(String(format: "[%@] Slider knob border on %@ >= 3 : %.2f", label, name, knob), knob >= 3)
+            let fill = ratio(DS.Color.textSecondary, on: surface, appearance, over: white)
+            check(String(format: "[%@] Slider fill on %@ >= 3 : %.2f", label, name, fill), fill >= 3)
         }
         for tone in Badge.Tone.allCases {
             let look = tone.appearance
@@ -202,6 +352,9 @@ private func renderedLook() {
         check("[\(label)] selected IconButton paints accentSubtle", close(sample(selected, appearance, x: 4, y: selected.bounds.height / 2), resolve(DS.Color.accentSubtle, appearance)))
     }
 
+    renderedSegments()
+    renderedSliderAndCheckbox()
+
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 80), styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: .aqua)
     let primary = Button(title: "Capture", variant: .primary, size: .large)
@@ -243,6 +396,69 @@ private func renderedLook() {
     }
 
     print("NOT VERIFIED (headless): the system draws the keyboard focus ring itself only for a visible key window, so only the mask shape is checked")
+}
+
+private func renderedSegments() {
+    for (label, appearance) in appearances {
+        let seg = Segments(symbols: ["cursorarrow", "arrow.up.right", "crop", "pin", "xmark"], labels: ["a", "b", "c", "d", "e"])
+        seg.selectedSegment = 1
+        seg.forcedStates = [2: .hover, 3: .pressed]
+        let y = seg.bounds.height / 2
+        func edge(_ i: Int) -> CGFloat { seg.tile(i).minX + 2 }
+        check("[\(label)] a selected segment paints accentSubtle", close(sample(seg, appearance, x: edge(1), y: y), resolve(DS.Color.accentSubtle, appearance)))
+        check("[\(label)] a hovered segment paints bgControlHover", close(sample(seg, appearance, x: edge(2), y: y), resolve(DS.Color.bgControlHover, appearance)))
+        check("[\(label)] a pressed segment paints bgControlActive", close(sample(seg, appearance, x: edge(3) + 1, y: y), resolve(DS.Color.bgControlActive, appearance)))
+        let gap = seg.tile(1).maxX + DS.Space.s2
+        check("[\(label)] the gap between tiles shows the host, not a joined capsule", sample(seg, appearance, x: gap, y: y).a < 0.02, "a \(sample(seg, appearance, x: gap, y: y).a)")
+        check("[\(label)] an idle segment draws no fill", sample(seg, appearance, x: edge(4), y: y).a < 0.02)
+
+        seg.dividers = [1]
+        seg.frame.size = seg.intrinsicContentSize
+        let line = seg.dividerRect(after: 1)
+        check("[\(label)] a divider paints the separator token", close(sample(seg, appearance, x: line.midX, y: line.midY), resolve(DS.Color.separator, appearance), tolerance: 0.03),
+              "got \(sample(seg, appearance, x: line.midX, y: line.midY).hex)")
+    }
+
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 80), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .aqua)
+    let seg = Segments(symbols: ["cursorarrow", "arrow.up.right"], labels: ["a", "b"])
+    seg.selectedSegment = 1
+    window.contentView!.addSubview(seg)
+    check("the Segments host window is not key", !window.isKeyWindow)
+    let selected = sample(seg, .aqua, x: seg.tile(1).minX + 2, y: seg.bounds.height / 2)
+    check("a selected segment in a non-key window keeps its accent look, not the stock grey", selected.r > selected.b + 0.05, "got \(selected.hex)")
+}
+
+private func renderedSliderAndCheckbox() {
+    for (label, appearance) in appearances {
+        func slider(_ value: Double, enabled: Bool = true) -> Slider {
+            let s = Slider(value: value, minValue: 0, maxValue: 1, target: nil, action: nil)
+            s.controlSize = .small
+            s.isEnabled = enabled
+            s.frame = CGRect(x: 0, y: 0, width: 140, height: s.intrinsicContentSize.height)
+            return s
+        }
+        let full = slider(1), empty = slider(0)
+        let mid = full.bounds.height / 2
+        check("[\(label)] the slider's unfilled track is bgControlActive", close(sample(empty, appearance, x: 100, y: mid), resolve(DS.Color.bgControlActive, appearance), tolerance: 0.03),
+              "got \(sample(empty, appearance, x: 100, y: mid).hex)")
+        let filled = sample(full, appearance, x: 30, y: mid)
+        check("[\(label)] the slider's filled track is neutral textSecondary, not the accent", close(filled, resolve(DS.Color.textSecondary, appearance), tolerance: 0.03)
+              && abs(filled.r - filled.b) < 0.08, "got \(filled.hex)")
+        let half = slider(0.5)
+        check("[\(label)] the knob is bgRaised at its centre", close(sample(half, appearance, x: 7 + (140 - 14) * 0.5, y: mid), resolve(DS.Color.bgRaised, appearance), tolerance: 0.03),
+              "got \(sample(half, appearance, x: 7 + 63, y: mid).hex)")
+        let dead = sample(slider(1, enabled: false), appearance, x: 30, y: mid)
+        check("[\(label)] a disabled slider fills with textDisabled", close(dead, resolve(DS.Color.textDisabled, appearance), tolerance: 0.03), "got \(dead.hex)")
+
+        let on = Checkbox(title: "Shadow", size: .small)
+        on.state = .on
+        let off = Checkbox(title: "Shadow", size: .small)
+        let y = on.bounds.height / 2
+        check("[\(label)] an on Checkbox paints accentSolid inside its border", close(sample(on, appearance, x: 2.2, y: y), resolve(DS.Color.accentSolid, appearance), tolerance: 0.05),
+              "got \(sample(on, appearance, x: 2.2, y: y).hex)")
+        check("[\(label)] an off Checkbox paints no fill", sample(off, appearance, x: 7, y: y).a < 0.02)
+    }
 }
 
 private func tokenDiscipline() {

@@ -28,6 +28,9 @@ extension Sheet {
         section("Components", "Real instances of the shipped controls, rendered by HarnessDesign. Each cell pins its state; the controls read one InteractionState and a table.")
         buttons()
         iconButtons()
+        segments()
+        sliders()
+        checkboxes()
         textInputs()
         surfaces()
         smallParts()
@@ -113,6 +116,70 @@ extension Sheet {
                 }
             }
             y += rowHeight + DS.Space.s4
+        }
+    }
+
+    // MARK: Segments, Slider, Checkbox
+
+    private func segments() {
+        y += DS.Space.s24
+        Draw.text("Segments", DS.Text.bodyStrong, C.textPrimary, at: CGPoint(x: left, y: y))
+        Draw.text("separate tiles, dividers between groups, one segment pinned to each state", DS.Text.caption, C.textSecondary, at: CGPoint(x: left + 70, y: y + 2))
+        y += 28
+        let tools = ["cursorarrow", "arrow.up.right", "line.diagonal", "rectangle", "textformat", "1.circle", "pencil", "crop", "photo.artframe"]
+        let rows: [(String, Segments, [Int: InteractionState])] = [
+            ("tools, regular", { let s = Segments(symbols: tools, labels: tools); s.dividers = [0, 2, 5, 6]; s.selectedSegment = 1; return s }(),
+             [3: .hover, 4: .pressed, 8: .disabled]),
+            ("quiet, regular, momentary", Segments(symbols: ["rotate.right", "arrow.left.and.right.righttriangle.left.righttriangle.right", "arrow.up.and.down.righttriangle.up.righttriangle.down"],
+                                                   labels: ["Rotate", "Flip horizontally", "Flip vertically"], trackingMode: .momentary, quiet: true), [1: .hover, 2: .pressed]),
+            ("labels, small", { let s = Segments(labels: ["Classic", "Tapered", "Double"]); s.selectedSegment = 0; return s }(), [1: .hover, 2: .disabled]),
+            ("tools, small", { let s = Segments(symbols: ["arrow.uturn.backward", "arrow.uturn.forward"], labels: ["Undo", "Redo"], trackingMode: .momentary, size: .small); return s }(),
+             [0: .hover, 1: .disabled]),
+        ]
+        for (name, control, states) in rows {
+            control.forcedStates = states
+            Draw.text(name, DS.Text.label, C.textPrimary, at: CGPoint(x: left, y: y + control.bounds.height / 2 - 8), width: 168)
+            stamp(control, at: CGPoint(x: left + 176, y: y))
+            y += DS.Size.control + DS.Space.s8
+        }
+    }
+
+    private func sliders() {
+        y += DS.Space.s24
+        Draw.text("Slider", DS.Text.bodyStrong, C.textPrimary, at: CGPoint(x: left, y: y))
+        Draw.text("3pt track, neutral fill, 14pt raised knob; the accent is never used", DS.Text.caption, C.textSecondary, at: CGPoint(x: left + 48, y: y + 2))
+        y += 28
+        for (i, (name, value, enabled, small)) in [("0%", 0.0, true, true), ("40%", 0.4, true, true), ("100%", 1.0, true, true), ("40%, regular", 0.4, true, false),
+                                                   ("disabled", 0.4, false, true)].enumerated() {
+            let slider = Slider(value: value, minValue: 0, maxValue: 1, target: nil, action: nil)
+            slider.controlSize = small ? .small : .regular
+            slider.isEnabled = enabled
+            slider.frame = CGRect(x: 0, y: 0, width: 140, height: slider.intrinsicContentSize.height)
+            let x = left + CGFloat(i) * 192
+            stamp(slider, at: CGPoint(x: x, y: y))
+            Draw.text(name, DS.Text.readout, C.textSecondary, at: CGPoint(x: x, y: y + DS.Size.controlSmall + 4), width: 160)
+        }
+        y += DS.Size.controlSmall + 4 + 14
+    }
+
+    private func checkboxes() {
+        y += DS.Space.s24
+        Draw.text("Checkbox", DS.Text.bodyStrong, C.textPrimary, at: CGPoint(x: left, y: y))
+        Draw.text("off and on, four states each; the box carries the accent only when on", DS.Text.caption, C.textSecondary, at: CGPoint(x: left + 70, y: y + 2))
+        y += 28
+        let cell: CGFloat = 144
+        for (i, state) in InteractionState.allCases.enumerated() { column("\(state)", x: left + 96 + CGFloat(i) * cell, width: cell) }
+        y += 20
+        for on in [false, true] {
+            Draw.text(on ? "on" : "off", DS.Text.readout, C.textSecondary, at: CGPoint(x: left, y: y + 6))
+            for (i, state) in InteractionState.allCases.enumerated() {
+                let box = Checkbox(title: "Shadow", size: .small)
+                box.state = on ? .on : .off
+                box.forcedState = state
+                box.isEnabled = state != .disabled
+                stamp(box, at: CGPoint(x: left + 96 + CGFloat(i) * cell, y: y))
+            }
+            y += DS.Size.controlSmall + DS.Space.s8
         }
     }
 

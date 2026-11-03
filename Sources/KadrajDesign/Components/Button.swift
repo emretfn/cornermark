@@ -3,7 +3,9 @@ import AppKit
 public final class Button: Pressable {
     public enum Variant: CaseIterable { case primary, secondary, ghost, danger }
 
-    public let variant: Variant
+    public var variant: Variant {
+        didSet { if variant != oldValue { needsDisplay = true } }
+    }
     public let size: ComponentSize
     public let symbol: String?
 

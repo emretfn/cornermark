@@ -67,6 +67,9 @@ public final class TextInput: NSTextField {
 
     public override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: size.height) }
 
+    // NSTextField reports a 2pt alignment inset, which would push the drawn field out of line with its neighbours in a stack.
+    public override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
+
     private var shape: NSBezierPath { .continuous(bounds, radius: DS.Radius.sm) }
 
     public override func draw(_ dirtyRect: NSRect) {
