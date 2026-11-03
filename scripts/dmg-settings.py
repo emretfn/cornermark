@@ -23,4 +23,8 @@ text_size = 13
 icon_locations = {
     "Cornermark.app": (180, 190),
     "Applications": (480, 190),
+    # Finder shows these when hidden files are on, so keep them out of the window.
+    ".background.tiff": (180, 900),
+    ".VolumeIcon.icns": (480, 900),
+    ".DS_Store": (780, 900),
 }

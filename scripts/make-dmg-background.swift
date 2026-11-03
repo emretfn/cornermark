@@ -12,6 +12,7 @@ let size = CGSize(width: 660, height: 420)
 let appIcon = CGPoint(x: 180, y: 190)
 let applicationsIcon = CGPoint(x: 480, y: 190)
 let iconSize: CGFloat = 128
+let labelOffset: CGFloat = 83.5
 
 let lemon = CGColor(srgbRed: 0.941, green: 0.894, blue: 0.247, alpha: 1)
 
@@ -75,6 +76,13 @@ func draw(scale: Int) -> CGImage {
     let gap: CGFloat = 20
     taperedArrow(from: CGPoint(x: appIcon.x + iconSize / 2 + gap, y: appIcon.y),
                  to: CGPoint(x: target.minX - gap, y: applicationsIcon.y), width: 8, in: ctx)
+
+    // Finder draws icon labels in black on a picture background, even in Dark Mode, so each label needs a light plate.
+    for icon in [appIcon, applicationsIcon] {
+        let chip = CGRect(x: icon.x - 48, y: icon.y + labelOffset - 11, width: 96, height: 22)
+        ctx.addPath(CGPath(roundedRect: chip, cornerWidth: 6, cornerHeight: 6, transform: nil))
+        ctx.fillPath()
+    }
 
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
