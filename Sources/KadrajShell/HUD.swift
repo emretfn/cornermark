@@ -1,40 +1,55 @@
 import AppKit
+import KadrajDesign
 
 final class HUDView: NSView {
     let message: String
     let symbol: String?
-    static let font = NSFont.systemFont(ofSize: 14, weight: .medium)
+    private static let style = DS.Text.bodyStrong
+    static let height = DS.Size.control + DS.Space.s12
+    private static let padding = DS.Space.s16
+    private static let gap = DS.Space.s8
+    private static let maxWidth: CGFloat = 520
 
     init(message: String, symbol: String?) {
         self.message = message
         self.symbol = symbol
         super.init(frame: .zero)
+        // The HUD floats over any screen, so it is always the dark surface whatever the system is set to.
+        appearance = NSAppearance(named: .darkAqua)
         setAccessibilityLabel(message)
         setAccessibilityIdentifier("hud")
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    private static func leading(hasSymbol: Bool) -> CGFloat { padding + (hasSymbol ? DS.Size.iconLarge + gap : 0) }
+
     static func size(for message: String, hasSymbol: Bool) -> CGSize {
-        let text = (message as NSString).size(withAttributes: [.font: font])
-        return CGSize(width: min(ceil(text.width) + (hasSymbol ? 70 : 44), 520), height: 46)
+        let text = NSAttributedString(string: message, attributes: style.attributes(color: DS.Color.textPrimary)).size()
+        return CGSize(width: min(leading(hasSymbol: hasSymbol) + ceil(text.width) + padding, maxWidth), height: height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(white: 0.1, alpha: 0.86).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 14, yRadius: 14).fill()
-        var x: CGFloat = 20
-        if let symbol, let img = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
-            let cfg = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold).applying(.init(paletteColors: [.white]))
-            let tinted = img.withSymbolConfiguration(cfg) ?? img
-            tinted.draw(in: NSRect(x: 18, y: bounds.midY - 10, width: 20, height: 20))
-            x = 46
+        let shape = NSBezierPath.continuous(bounds, radius: DS.Radius.lg)
+        DS.Color.bgHud.setFill()
+        shape.fill()
+        NSGraphicsContext.saveGraphicsState()
+        shape.addClip()
+        DS.Color.border.setStroke()
+        shape.lineWidth = 2
+        shape.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+
+        if let symbol {
+            Glyph.draw(symbol, in: CGRect(x: Self.padding, y: 0, width: DS.Size.iconLarge, height: bounds.height), pointSize: DS.Size.iconLarge, DS.Color.textPrimary)
         }
-        let para = NSMutableParagraphStyle()
-        para.lineBreakMode = .byTruncatingTail
-        let attrs: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: NSColor.white, .paragraphStyle: para]
-        let h = (message as NSString).size(withAttributes: attrs).height
-        (message as NSString).draw(in: NSRect(x: x, y: bounds.midY - h / 2, width: bounds.width - x - 18, height: h), withAttributes: attrs)
+        let x = Self.leading(hasSymbol: symbol != nil)
+        var attributes = Self.style.attributes(color: DS.Color.textPrimary)
+        let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
+        paragraph.lineBreakMode = .byTruncatingTail
+        attributes[.paragraphStyle] = paragraph
+        let line = CGRect(x: x, y: bounds.midY - Self.style.lineHeight / 2, width: max(bounds.width - x - Self.padding, 0), height: Self.style.lineHeight)
+        NSAttributedString(string: message, attributes: attributes).draw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }
 

@@ -362,6 +362,73 @@ func snapshot(_ view: NSView, name: String, dark: Bool = false, backdrop: NSColo
     return url
 }
 
+/// A whole window, title bar and traffic lights included. `cacheDisplay` of the window's frame view comes back without the content
+/// when the content holds a scroll view and the window was never ordered in, so the content is painted from its pieces: every
+/// subtree without a scroll view on its own, a scroll view as its document view at the scroll offset, and the frame view's chrome on top.
+@MainActor
+@discardableResult
+func snapshotWindow(_ window: NSWindow, name: String, dark: Bool = false) -> URL? {
+    let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    window.appearance = appearance
+    guard let content = window.contentView, let frameView = content.superview else { return nil }
+    content.layoutSubtreeIfNeeded()
+    let scale: CGFloat = 2
+    let size = frameView.bounds.size
+
+    func image(of view: NSView) -> CGImage? {
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * scale), pixelsHigh: Int(view.bounds.height * scale),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = view.bounds.size
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep.cgImage
+    }
+
+    let ctx = Pix.context(Int(size.width * scale), Int(size.height * scale))
+    ctx.scaleBy(x: scale, y: scale)
+    var background = NSColor.windowBackgroundColor
+    appearance?.performAsCurrentDrawingAppearance { background = window.backgroundColor.usingColorSpace(.sRGB) ?? background }
+    ctx.setFillColor(background.cgColor)
+    ctx.fill(CGRect(origin: .zero, size: size))
+    func place(_ image: CGImage?, _ rect: CGRect, clip: CGRect? = nil) {
+        guard let image else { return }
+        ctx.saveGState()
+        if let clip { ctx.clip(to: clip) }
+        ctx.draw(image, in: rect)
+        ctx.restoreGState()
+    }
+    func containsScroll(_ view: NSView) -> Bool { view is NSScrollView || view.subviews.contains(where: containsScroll) }
+    func paint(_ view: NSView) {
+        guard !view.isHidden else { return }
+        if let scroll = view as? NSScrollView, let document = scroll.documentView {
+            let clip = scroll.convert(scroll.bounds, to: content)
+            if scroll.drawsBackground {
+                appearance?.performAsCurrentDrawingAppearance { ctx.setFillColor((scroll.backgroundColor.usingColorSpace(.sRGB) ?? .clear).cgColor) }
+                ctx.fill(clip)
+            }
+            document.appearance = appearance
+            place(image(of: document), document.convert(document.bounds, to: content), clip: clip)
+        } else if containsScroll(view) {
+            view.subviews.forEach(paint)
+        } else {
+            view.appearance = appearance
+            place(image(of: view), view.convert(view.bounds, to: content))
+        }
+    }
+    content.subviews.forEach(paint)
+    place(image(of: frameView), CGRect(origin: .zero, size: size))
+
+    let url = URL(fileURLWithPath: scratch + name + ".png")
+    guard let out = ctx.makeImage(), let png = AssetStore.pngData(from: out), (try? png.write(to: url)) != nil else {
+        check(false, "snapshot \(name) could not be written")
+        return nil
+    }
+    print("SNAPSHOT \(url.path) \(out.width)x\(out.height)")
+    return url
+}
+
 /// A view that is not in any ordered window: give it a hidden, never-shown window so it lays out and resolves appearance.
 @MainActor
 func hostOffscreen(_ view: NSView, size: NSSize? = nil) -> NSWindow {
@@ -371,6 +438,21 @@ func hostOffscreen(_ view: NSView, size: NSSize? = nil) -> NSWindow {
     w.contentView = view
     view.frame = NSRect(origin: .zero, size: s)
     return w
+}
+
+/// A dynamic colour as sRGB components under an appearance, the way a view drawing in that appearance would see it.
+@MainActor
+func rgba(_ color: NSColor, _ appearance: NSAppearance.Name) -> [CGFloat] {
+    var out: [CGFloat] = []
+    NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance {
+        let c = color.usingColorSpace(.sRGB)!
+        out = [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent]
+    }
+    return out
+}
+
+func isClose(_ a: [CGFloat], _ b: [CGFloat], _ tolerance: CGFloat = 0.03) -> Bool {
+    zip(a, b).allSatisfy { abs($0 - $1) <= tolerance }
 }
 
 @MainActor

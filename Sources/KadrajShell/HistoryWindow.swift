@@ -1,5 +1,7 @@
 import AppKit
 import KadrajCore
+import KadrajDesign
+import KadrajEditor
 
 struct HistoryActions {
     var restore: (CaptureRecord) -> Void = { _ in }
@@ -15,38 +17,53 @@ final class HistoryItemView: NSView {
     var subtitle = "" { didSet { needsDisplay = true } }
     var isSelected = false { didSet { needsDisplay = true } }
     var onOpen: () -> Void = {}
+    private var isHovering = false { didSet { if oldValue != isHovering { needsDisplay = true } } }
     override var isFlipped: Bool { true }
 
+    /// Room around the well for the ring, which sits outside it: ring gap plus ring width, rounded up to the s8 grid.
+    static let inset = DS.Space.s8
+    private static let ringGap: CGFloat = 3
+    /// The title and subtitle under the well: gap, a label line, a small gap, a readout line, bottom padding.
+    static let footerHeight = DS.Space.s8 + DS.Text.label.lineHeight + DS.Space.s2 + DS.Text.readout.lineHeight + DS.Space.s8
+
+    /// The fixed rectangle every capture sits in, whatever its proportions.
+    var well: CGRect {
+        CGRect(x: Self.inset, y: Self.inset, width: bounds.width - 2 * Self.inset, height: bounds.height - Self.inset - Self.footerHeight)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovering = true }
+    override func mouseExited(with event: NSEvent) { isHovering = false }
+
+    /// A ring concentric with the well, `Self.ringGap` outside it.
+    private func ring(width: CGFloat, color: NSColor) {
+        let offset = Self.ringGap + width / 2
+        let path = NSBezierPath.continuous(well.insetBy(dx: -offset, dy: -offset), radius: DS.Radius.md + offset)
+        path.lineWidth = width
+        color.setStroke()
+        path.stroke()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        let card = bounds.insetBy(dx: 2, dy: 2)
-        if isSelected {
-            NSColor.selectedContentBackgroundColor.withAlphaComponent(0.25).setFill()
-            NSBezierPath(roundedRect: card, xRadius: 10, yRadius: 10).fill()
-            NSColor.selectedContentBackgroundColor.setStroke()
-            let ring = NSBezierPath(roundedRect: card.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10)
-            ring.lineWidth = 2
-            ring.stroke()
+        let well = self.well
+        ImageWell.draw(thumbnail, in: well)
+        if isSelected { ring(width: 2, color: DS.Color.accentMark) } else if isHovering { ring(width: 1, color: DS.Color.borderStrong) }
+
+        let label = DS.Text.label, readout = DS.Text.readout
+        let titleLine = CGRect(x: well.minX, y: well.maxY + DS.Space.s8, width: well.width, height: label.lineHeight)
+        let subtitleLine = CGRect(x: well.minX, y: titleLine.maxY + DS.Space.s2, width: well.width, height: readout.lineHeight)
+        for (text, style, color, line) in [(title, label, DS.Color.textPrimary, titleLine), (subtitle, readout, DS.Color.textSecondary, subtitleLine)] {
+            var attributes = style.attributes(color: color)
+            let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
+            paragraph.lineBreakMode = .byTruncatingTail
+            attributes[.paragraphStyle] = paragraph
+            NSAttributedString(string: text, attributes: attributes).draw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
-        let area = NSRect(x: card.minX + 8, y: card.minY + 8, width: card.width - 16, height: card.height - 52)
-        if let thumbnail {
-            let s = CGSize(width: thumbnail.width, height: thumbnail.height)
-            let k = min(area.width / s.width, area.height / s.height)
-            let r = NSRect(x: area.midX - s.width * k / 2, y: area.midY - s.height * k / 2, width: s.width * k, height: s.height * k)
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).addClip()
-            NSGraphicsContext.current?.imageInterpolation = .high
-            NSImage(cgImage: thumbnail, size: r.size).draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            NSGraphicsContext.restoreGraphicsState()
-            NSColor(white: 0.5, alpha: 0.35).setStroke()
-            NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).stroke()
-        } else {
-            NSColor.quaternaryLabelColor.setFill()
-            NSBezierPath(roundedRect: area, xRadius: 5, yRadius: 5).fill()
-        }
-        let titleAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor]
-        let subAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
-        title.draw(at: NSPoint(x: card.minX + 10, y: card.maxY - 40), withAttributes: titleAttrs)
-        subtitle.draw(at: NSPoint(x: card.minX + 10, y: card.maxY - 22), withAttributes: subAttrs)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -86,16 +103,14 @@ final class HistoryItem: NSCollectionViewItem {
 }
 
 final class HistoryHeaderView: NSView {
-    private let label = NSTextField(labelWithString: "")
+    private let label = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     override init(frame: NSRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DS.Space.s16),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -DS.Space.s6),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -116,6 +131,16 @@ final class HistoryCollectionView: NSCollectionView {
     }
 }
 
+/// The row under the transparent title bar that holds the filter and the count.
+final class HistoryTitleRow: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        DS.Color.bgSurface.setFill()
+        bounds.fill()
+    }
+}
+
 @MainActor
 final class HistoryWindowController: NSWindowController, NSCollectionViewDataSource, NSCollectionViewDelegateFlowLayout {
     private let env: AppEnvironment
@@ -126,17 +151,20 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     private(set) var filter: HistoryFilter = .all
     private(set) var sections: [HistorySection] = []
     let collectionView = HistoryCollectionView()
-    private let filterControl = NSSegmentedControl(labels: HistoryFilter.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
-    private let countLabel = NSTextField(labelWithString: "")
-    private let emptyLabel = NSTextField(labelWithString: "No captures yet")
+    private let filterControl = Segments(labels: HistoryFilter.allCases.map(\.title), trackingMode: .selectOne, size: .small, tilePadding: DS.Space.s8)
+    private let countLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
+    private let emptyLabel = NSTextField.label("No captures yet", style: DS.Text.heading, color: DS.Color.textSecondary)
     private(set) var actionButtons: [String: NSButton] = [:]
 
     init(env: AppEnvironment, thumbnails: ThumbnailCache = ThumbnailCache()) {
         self.env = env
         self.thumbnails = thumbnails
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 920, height: 640),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: true)
         window.title = "Capture History"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = DS.Color.bgSurface
         window.minSize = NSSize(width: 640, height: 420)
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -158,16 +186,18 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     private func build(in window: NSWindow) {
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 204, height: 172)
-        layout.minimumInteritemSpacing = 10
-        layout.minimumLineSpacing = 10
-        layout.sectionInset = NSEdgeInsets(top: 4, left: 16, bottom: 14, right: 16)
+        layout.minimumInteritemSpacing = 0
+        layout.minimumLineSpacing = DS.Space.s6
+        // The wells start s16 in, and each item already holds s8 of room for its selection ring.
+        let side = DS.Space.s16 - HistoryItemView.inset
+        layout.sectionInset = NSEdgeInsets(top: DS.Space.s4, left: side, bottom: DS.Space.s16, right: side)
         layout.headerReferenceSize = NSSize(width: 0, height: 34)
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
-        collectionView.backgroundColors = [.clear]
+        collectionView.backgroundColors = [DS.Color.bgWindow]
         collectionView.register(HistoryItem.self, forItemWithIdentifier: NSUserInterfaceItemIdentifier("item"))
         collectionView.register(HistoryHeaderView.self, forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
                                 withIdentifier: NSUserInterfaceItemIdentifier("header"))
@@ -178,35 +208,59 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         let scroll = NSScrollView()
         scroll.documentView = collectionView
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        scroll.scrollerStyle = .overlay
+        scroll.drawsBackground = true
+        scroll.backgroundColor = DS.Color.bgWindow
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets()
 
         filterControl.selectedSegment = 0
         filterControl.target = self
         filterControl.action = #selector(filterChanged)
         filterControl.setAccessibilityIdentifier("history.filter")
-        countLabel.textColor = .secondaryLabelColor
-        countLabel.font = .systemFont(ofSize: 12)
-        let top = NSStackView(views: [filterControl, NSView(), countLabel])
-        top.orientation = .horizontal
-        top.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 8, right: 16)
+        filterControl.setAccessibilityLabel("Filter")
 
-        let bottom = NSStackView()
-        bottom.orientation = .horizontal
-        bottom.spacing = 8
-        bottom.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 12, right: 16)
-        let defs: [(String, String, Selector)] = [
-            ("restore", "Show Overlay", #selector(restoreSelected)), ("edit", "Edit", #selector(editSelected)),
-            ("copy", "Copy", #selector(copySelected)), ("reveal", "Reveal in Finder", #selector(revealSelected)),
+        // The title row is a row of our own under the transparent title bar, on the window buttons' centre line.
+        let (rowHeight, leading) = WindowChrome.titleRowMetrics(for: window, toolbarIdentifier: "kadraj.history")
+        let titleRow = HistoryTitleRow()
+        let rule = Separator(axis: .horizontal)
+        for v in [filterControl, countLabel] { v.translatesAutoresizingMaskIntoConstraints = false; titleRow.addSubview(v) }
+        NSLayoutConstraint.activate([
+            titleRow.heightAnchor.constraint(equalToConstant: rowHeight),
+            filterControl.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: leading),
+            filterControl.centerYAnchor.constraint(equalTo: titleRow.centerYAnchor),
+            countLabel.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor, constant: -DS.Space.s16),
+            countLabel.centerYAnchor.constraint(equalTo: titleRow.centerYAnchor),
+            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: filterControl.trailingAnchor, constant: DS.Space.s16),
+        ])
+
+        let bar = BarView()
+        bar.edge = .top
+        let defs: [(String, String, Button.Variant, String?, Selector)] = [
+            ("copy", "Copy", .primary, nil, #selector(copySelected)),
+            ("edit", "Edit", .ghost, nil, #selector(editSelected)),
+            ("restore", "Show Overlay", .ghost, nil, #selector(restoreSelected)),
+            ("reveal", "Reveal in Finder", .ghost, nil, #selector(revealSelected)),
         ]
-        for (id, title, sel) in defs { bottom.addArrangedSubview(makeButton(id, title, sel)) }
-        bottom.addArrangedSubview(NSView())
-        bottom.addArrangedSubview(makeButton("delete", "Delete", #selector(deleteSelected)))
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        let buttons = defs.map { makeButton($0.0, $0.1, $0.2, $0.3, $0.4) }
+            + [spacer, makeButton("delete", "Delete", .dangerGhost, "trash", #selector(deleteSelected))]
+        let barRow = NSStackView(views: buttons)
+        barRow.orientation = .horizontal
+        barRow.alignment = .centerY
+        barRow.spacing = DS.Space.s8
+        barRow.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(barRow)
+        NSLayoutConstraint.activate([
+            bar.heightAnchor.constraint(equalToConstant: 48),
+            barRow.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: DS.Space.s12),
+            barRow.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -DS.Space.s12),
+            barRow.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        ])
 
-        emptyLabel.font = .systemFont(ofSize: 15)
-        emptyLabel.textColor = .tertiaryLabelColor
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let column = NSStackView(views: [top, scroll, bottom])
+        let column = NSStackView(views: [titleRow, rule, scroll, bar])
         column.orientation = .vertical
         column.spacing = 0
         column.alignment = .width
@@ -219,15 +273,16 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
             column.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             column.topAnchor.constraint(equalTo: root.topAnchor),
             column.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            emptyLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            emptyLabel.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            emptyLabel.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
+            emptyLabel.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
         ])
         window.contentView = root
     }
 
-    private func makeButton(_ id: String, _ title: String, _ action: Selector) -> NSButton {
-        let b = NSButton(title: title, target: self, action: action)
-        b.bezelStyle = .rounded
+    private func makeButton(_ id: String, _ title: String, _ variant: Button.Variant, _ symbol: String?, _ action: Selector) -> Button {
+        let b = Button(title: title, variant: variant, size: .small, symbol: symbol)
+        b.target = self
+        b.action = action
         b.setAccessibilityIdentifier("history.\(id)")
         actionButtons[id] = b
         return b

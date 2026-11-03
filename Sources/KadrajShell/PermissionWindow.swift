@@ -1,18 +1,75 @@
 import AppKit
+import KadrajDesign
+
+/// A flat colour behind a window's content, so a snapshot of the view carries the window colour too.
+final class FillView: NSView {
+    private let color: NSColor
+    init(color: NSColor) {
+        self.color = color
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        bounds.fill()
+    }
+}
+
+/// The accent tile that heads the window.
+private final class PermissionTile: NSView {
+    static let side: CGFloat = 48
+    override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath.continuous(bounds, radius: DS.Radius.lg)
+        DS.Color.accentSubtle.setFill()
+        path.fill()
+        Glyph.draw("camera.viewfinder", in: bounds, pointSize: DS.Size.iconLarge + DS.Space.s8, DS.Color.accentText)
+    }
+}
+
+/// A numbered disc. The digit is drawn on the text's optical line so it sits in the middle of the disc.
+private final class StepNumber: NSView {
+    static let side: CGFloat = 20
+    private let digit: String
+    init(_ digit: Int) {
+        self.digit = "\(digit)"
+        super.init(frame: .zero)
+        setAccessibilityElement(false)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
+    override func draw(_ dirtyRect: NSRect) {
+        DS.Color.bgControl.setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+        let style = DS.Text.captionStrong
+        var attributes = style.attributes(color: DS.Color.textPrimary)
+        let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
+        paragraph.alignment = .center
+        attributes[.paragraphStyle] = paragraph
+        NSAttributedString(string: digit, attributes: attributes)
+            .draw(with: CGRect(x: 0, y: bounds.midY - style.lineHeight / 2, width: bounds.width, height: style.lineHeight), options: [.usesLineFragmentOrigin])
+    }
+}
 
 /// Shown when a capture fails because Screen & System Audio Recording is not granted.
 @MainActor
 final class PermissionWindowController: NSWindowController {
     private let env: AppEnvironment
+    private static let width: CGFloat = 520
 
     init(env: AppEnvironment) {
         self.env = env
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 340),
                               styleMask: [.titled, .closable], backing: .buffered, defer: true)
         window.title = "Screen Recording Permission"
+        window.backgroundColor = DS.Color.bgWindow
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        window.contentView = buildContent()
+        let content = buildContent()
+        // Assigning the content view stretches it to the window's rect, so the fitted size is taken first.
+        let fitted = content.frame.size
+        window.contentView = content
+        window.setContentSize(fitted)
         window.center()
     }
 
@@ -24,69 +81,91 @@ final class PermissionWindowController: NSWindowController {
         "Quit and reopen Kadraj. macOS only applies the permission to a freshly launched app.",
     ]
 
-    private func buildContent() -> NSView {
-        let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 40, weight: .light).applying(.init(paletteColors: [.systemRed])))
-        icon.setContentHuggingPriority(.required, for: .horizontal)
+    private func wrapping(_ text: String, _ style: TextStyle, _ color: NSColor, width: CGFloat) -> NSTextField {
+        let field = NSTextField(wrappingLabelWithString: text)
+        field.font = style.font
+        field.textColor = color
+        field.isSelectable = false
+        field.preferredMaxLayoutWidth = width
+        return field
+    }
 
-        let title = NSTextField(wrappingLabelWithString: "Kadraj needs permission to record your screen")
-        title.font = .systemFont(ofSize: 18, weight: .semibold)
-        let header = NSStackView(views: [icon, title])
+    private func buildContent() -> NSView {
+        let inner = Self.width - 2 * DS.Space.s24
+
+        let title = wrapping("Kadraj needs permission to record your screen", DS.Text.title, DS.Color.textPrimary,
+                             width: inner - PermissionTile.side - DS.Space.s12)
+        let header = NSStackView(views: [PermissionTile(), title])
         header.orientation = .horizontal
-        header.spacing = 14
+        header.spacing = DS.Space.s12
         header.alignment = .centerY
 
-        let intro = NSTextField(wrappingLabelWithString:
-            "macOS blocks screenshots until you allow them. Kadraj captures on this Mac only, nothing leaves it.")
-        intro.textColor = .secondaryLabelColor
+        let intro = wrapping("macOS blocks screenshots until you allow them. Kadraj captures on this Mac only, nothing leaves it.",
+                             DS.Text.body, DS.Color.textSecondary, width: inner)
 
         let steps = NSStackView()
         steps.orientation = .vertical
         steps.alignment = .leading
-        steps.spacing = 8
-        for (i, s) in Self.steps.enumerated() {
-            let n = NSTextField(labelWithString: "\(i + 1).")
-            n.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-            n.setContentHuggingPriority(.required, for: .horizontal)
-            let t = NSTextField(wrappingLabelWithString: s)
-            let row = NSStackView(views: [n, t])
-            row.orientation = .horizontal
-            row.alignment = .firstBaseline
-            row.spacing = 6
+        steps.spacing = DS.Space.s12
+        for (i, text) in Self.steps.enumerated() {
+            let number = StepNumber(i + 1)
+            let label = wrapping(text, DS.Text.body, DS.Color.textPrimary, width: inner - StepNumber.side - DS.Space.s12)
+            let row = NSView()
+            for v in [number, label] { v.translatesAutoresizingMaskIntoConstraints = false; row.addSubview(v) }
+            // The disc is centred on the first line of text, which is a body line tall.
+            let lead = (StepNumber.side - DS.Text.body.lineHeight) / 2
+            NSLayoutConstraint.activate([
+                number.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+                number.topAnchor.constraint(equalTo: row.topAnchor),
+                number.widthAnchor.constraint(equalToConstant: StepNumber.side),
+                number.heightAnchor.constraint(equalToConstant: StepNumber.side),
+                label.leadingAnchor.constraint(equalTo: number.trailingAnchor, constant: DS.Space.s12),
+                label.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+                label.topAnchor.constraint(equalTo: row.topAnchor, constant: lead),
+                row.bottomAnchor.constraint(greaterThanOrEqualTo: label.bottomAnchor),
+                row.bottomAnchor.constraint(greaterThanOrEqualTo: number.bottomAnchor),
+                row.widthAnchor.constraint(equalToConstant: inner),
+            ])
             steps.addArrangedSubview(row)
         }
 
-        let open = NSButton(title: "Open System Settings", target: self, action: #selector(openSettings))
-        open.bezelStyle = .rounded
-        open.keyEquivalent = "\r"
-        open.setAccessibilityIdentifier("permission.open")
-        let quit = NSButton(title: "Quit Kadraj", target: self, action: #selector(quit))
-        quit.bezelStyle = .rounded
-        quit.setAccessibilityIdentifier("permission.quit")
-        let buttons = NSStackView(views: [quit, open])
-        buttons.spacing = 10
+        let hint = wrapping("After you switch it on, macOS asks you to quit Kadraj. Reopen it from Applications.", DS.Text.caption, DS.Color.textSecondary, width: inner)
 
-        let hint = NSTextField(wrappingLabelWithString: "After you switch it on, macOS asks you to quit Kadraj. Reopen it from Applications.")
-        hint.textColor = .secondaryLabelColor
-        hint.font = .systemFont(ofSize: 12)
+        let openButton = Button(title: "Open System Settings", variant: .primary)
+        openButton.keyEquivalent = "\r"
+        openButton.target = self
+        openButton.action = #selector(openSettings)
+        openButton.setAccessibilityIdentifier("permission.open")
+        let quitButton = Button(title: "Quit Kadraj", variant: .ghost)
+        quitButton.target = self
+        quitButton.action = #selector(quit)
+        quitButton.setAccessibilityIdentifier("permission.quit")
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        let buttons = NSStackView(views: [spacer, quitButton, openButton])
+        buttons.orientation = .horizontal
+        buttons.spacing = DS.Space.s8
+        buttons.alignment = .centerY
 
         let stack = NSStackView(views: [header, intro, steps, hint, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 16
-        stack.edgeInsets = NSEdgeInsets(top: 28, left: 28, bottom: 24, right: 28)
-        stack.setCustomSpacing(24, after: hint)
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 340))
+        stack.spacing = DS.Space.s16
+        stack.setCustomSpacing(DS.Space.s24, after: steps)
+        stack.setCustomSpacing(DS.Space.s24, after: hint)
+        stack.edgeInsets = NSEdgeInsets(top: DS.Space.s24, left: DS.Space.s24, bottom: DS.Space.s24, right: DS.Space.s24)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        buttons.widthAnchor.constraint(equalToConstant: inner).isActive = true
+
+        let root = FillView(color: DS.Color.bgWindow)
         root.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
         ])
-        for v in [intro, hint] { v.preferredMaxLayoutWidth = 464 }
-        for row in steps.arrangedSubviews { (row as? NSStackView)?.arrangedSubviews.last.map { ($0 as? NSTextField)?.preferredMaxLayoutWidth = 440 } }
+        root.layoutSubtreeIfNeeded()
+        root.setFrameSize(NSSize(width: Self.width, height: ceil(stack.fittingSize.height)))
         return root
     }
 

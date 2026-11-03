@@ -30,9 +30,11 @@ Task { @MainActor in
         try await checkOverlayLifecycle()
         try await checkPins()
         try await checkHistory()
+        try await checkHistoryChrome()
         try await checkPrune()
         try await checkImportAndEditorRoundTrip()
         try await checkSettingsWindow()
+        try await checkSmallWindows()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

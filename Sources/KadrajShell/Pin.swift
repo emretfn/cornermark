@@ -69,7 +69,7 @@ final class PinContentView: NSView {
         guard let image = controller?.image else { return }
         NSGraphicsContext.current?.imageInterpolation = .high
         NSImage(cgImage: image, size: bounds.size).draw(in: bounds)
-        NSColor(white: 0.5, alpha: 0.5).setStroke()
+        DS.Color.imageOutline.setStroke()
         let b = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
         b.lineWidth = 1
         b.stroke()

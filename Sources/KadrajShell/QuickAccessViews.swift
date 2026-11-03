@@ -105,18 +105,15 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         chrome.fill()
         strokeInside(chrome, DS.Color.borderSubtle)
 
-        let r = thumbnailRect
-        let image = NSBezierPath.continuous(r, radius: DS.Radius.md)
-        NSGraphicsContext.saveGraphicsState()
-        image.addClip()
-        NSGraphicsContext.current?.imageInterpolation = .high
-        thumbnail.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        // The picture sits in a well, so a capture whose proportions differ from the card's reads as letterboxed, not as empty space.
+        ImageWell.draw(card.thumbnail, in: imageArea)
         if isHovering {
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath.continuous(imageArea, radius: DS.Radius.md).addClip()
             DS.Color.bgScrim.setFill()
-            r.fill()
+            imageArea.fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
-        NSGraphicsContext.restoreGraphicsState()
-        strokeInside(image, DS.Color.imageOutline)
 
         let line = NSRect(x: DS.Space.s12, y: imageArea.maxY + DS.Space.s6, width: bounds.width - 2 * DS.Space.s12, height: DS.Text.readout.lineHeight)
         NSAttributedString(string: card.info, attributes: DS.Text.readout.attributes(color: DS.Color.textSecondary))
@@ -135,7 +132,7 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
 
     override func layout() {
         super.layout()
-        let area = thumbnailRect
+        let area = imageArea
         let pad = DS.Space.s6
         let corner = DS.Size.controlSmall
         buttons[.close]?.frame = NSRect(x: area.minX + pad, y: area.minY + pad, width: corner, height: corner)
