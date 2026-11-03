@@ -22,7 +22,7 @@ Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock 
 3. Open Cornermark from Applications. The app is not notarized, so macOS blocks the first launch. Open System Settings > Privacy & Security, scroll down to the message about Cornermark, and click **Open Anyway**.
 4. [Grant the Screen Recording permission](#grant-the-screen-recording-permission).
 
-A downloaded build is signed ad hoc, not with a developer certificate. macOS ties the Screen Recording permission to the signature, so it asks for the permission again after each update.
+Releases are signed with a self-signed certificate, not an Apple developer certificate. The certificate stays the same between releases, because macOS ties the Screen Recording permission to it.
 
 ## What it does
 
@@ -147,6 +147,8 @@ swift scripts/make-icon.swift docs/logo.png  # regenerates the icon in this READ
 Commits to `main` follow [Conventional Commits](https://www.conventionalcommits.org). Before 1.0, `feat:` raises the minor version and `fix:` raises the patch version. Other types, such as `docs:`, `build:` and `ci:`, and commits that do not follow the format do not trigger a release.
 
 [release-please](https://github.com/googleapis/release-please-action) keeps a release pull request open with the next version in `version.txt` and the changelog. Merge it to publish: it tags `v<version>`, creates the GitHub release, and a macOS job builds `Cornermark.dmg` and attaches it. With squash merges, the pull request title is the commit message that counts.
+
+The release job signs with the certificate in the `CORNERMARK_CERT_P12` and `CORNERMARK_CERT_PASSWORD` secrets. `scripts/make-signing-cert.sh <backup.p12>` creates them. Replace the certificate only if you must, because users then grant Screen Recording again.
 
 ## License
 

@@ -39,10 +39,34 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      # Pull requests from forks get no secrets and fall back to ad-hoc signing. A release must never do that, because it would make users grant Screen Recording again.
+      - name: Import the signing certificate
+        env:
+          CERT_P12: ${{ secrets.CORNERMARK_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.CORNERMARK_CERT_PASSWORD }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            [ "$GITHUB_EVENT_NAME" = pull_request ] && exit 0
+            echo "CORNERMARK_CERT_P12 is not set" >&2
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          # The certificate is self-signed and untrusted, so find-identity -v would hide it.
+          IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/\)/ { print $2; exit }')"
+          echo "CORNERMARK_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
       - name: Build the DMG
         run: scripts/build-dmg.sh
-        env:
-          CORNERMARK_SIGN_IDENTITY: "-"
+      - name: Show the signing requirement
+        run: codesign -d -r- build/Cornermark.app
       - name: Upload the DMG as a workflow artifact
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
