@@ -225,6 +225,10 @@ Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` i
 
 **Görüntü kuyusu.** Oranı değişken görseller `ImageWell` içinde çizilir: `bgSunken` zemin, `Radius.md`, sığdırılmış görsel, `imageOutline`. Hızlı Erişim ve Geçmiş bunu kullanır.
 
+**Menü paneli.** Menü çubuğu simgesi sistem menüsünü değil, 300 noktalık kendi panelini açar. Yakalama kipleri 4×2 nötr karodur: simge, kısa ad ve `readout` fontuyla kısayol. Kullanıcı bir kısayolu kapattıysa karoda yazı olmaz. Panelin tek vurgusu güncelleme satırıdır: `accentWash` zemin ve tek `primary` Update düğmesi. Güncelleme yokken panelde vurgu yoktur. Son yakalamalar en çok üç küçük görseldir, en yenisi başta, geçmiş boşsa bölüm hiç yer almaz. Satırın üzerine gelme dolgusu `bgControl` ve `Radius.sm` kullanır. Panelin köşesi `Radius.lg`, kenar boşluğu 6'dır, bu yüzden satır köşesi panel köşesiyle eşmerkezlidir. Zemin opak `bgRaised`, kenarı `separator` çizgisidir, gölgeyi pencere verir. Malzeme kullanılmadığı için artırılmış kontrast ve azaltılmış saydamlık ek iş istemez. Güncelleme satırının metni `textPrimary` kullanır, çünkü `textSecondary` koyu `accentWash` üzerinde 4,5:1'in altında kalır.
+
+Panel sık açılır, bu yüzden açılış ve kapanışında animasyon yoktur. Klavyeyi alır ama uygulamayı öne çıkarmaz, öndeki uygulama odağını korur. Ok tuşları, Return, Space ve Escape çalışır. Odak halkası ilk ok tuşuna kadar görünmez, böylece fare kullanan biri halka görmez. Bir eylem seçilince panel önce kapanır, eylem sonraki turda çalışır ve panel `sharingType` kapalı olduğu için hiçbir ekran görüntüsüne girmez.
+
 ## Kurallar
 
 - Bileşen dosyasında ham renk, ham font boyutu veya ham köşe değeri bulunmaz. Bir rol eksikse token eklenir.

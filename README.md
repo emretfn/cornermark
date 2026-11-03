@@ -28,7 +28,7 @@ Releases are signed with a self-signed certificate, not an Apple developer certi
 
 ### Update
 
-Cornermark asks GitHub for the latest release when it starts and once a day. When a newer one is ready, a short message says so, the menu bar shows **Update** next to the icon, and the menu item reads **Install Cornermark X…**. You can also choose **Check for Updates…** yourself. **What's New…** in the menu lists what each version brought, in plain language. Cornermark reads the notes from the GitHub releases each time you open it, and it never opens that window by itself. The first launch after an update shows a short "Updated to Cornermark X" message.
+Cornermark asks GitHub for the latest release when it starts and once a day. When a newer one is ready, a short message says so, the menu bar shows **Update** next to the icon, and the menu panel starts with an update row and an **Update** button. You can also choose **Check for Updates…** yourself. **What's New…** in the panel lists what each version brought, in plain language. Cornermark reads the notes from the GitHub releases each time you open it, and it never opens that window by itself. The first launch after an update shows a short "Updated to Cornermark X" message.
 
 When you confirm, Cornermark downloads `Cornermark.dmg`, checks that the app inside is signed with the same certificate as the running one and has the version the release announced, swaps it in for itself, and reopens. You do not repeat step 3, and your Screen Recording permission stays. Cornermark closes open editors first and keeps their edits.
 
@@ -124,9 +124,10 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 
 ## Details
 
+- **Menu bar panel.** Click the icon for a panel with the capture modes and their shortcuts, your latest captures, the overlay controls, pinned screenshots, and Settings. It takes arrow keys, Return, and Escape without taking focus from the app in front.
 - **After capture.** Cornermark can show a Quick Access card, copy to the clipboard, save to a folder (`Cornermark YYYY-MM-DD at HH.MM.SS.png`), or open the editor. Every capture also goes to History.
 - **Quick Access.** Swipe a card toward the screen edge with two fingers to dismiss it, or double-click it to open the editor. The auto-dismiss timer is adjustable and pauses while the pointer is over the card. You can restore the last closed card and hide all cards temporarily.
-- **Pins.** To unlock a locked pin, use the "Pinned Screenshots" list in the menu bar. Escape or the close button removes a pin.
+- **Pins.** To unlock a locked pin, use the "Pinned screenshots" list in the menu bar panel. Escape or the close button removes a pin.
 - **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day.
 - **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state.
 - **Updates.** Cornermark checks GitHub at launch and once a day, and installs a release only after you confirm. See [Update](#update).
