@@ -19,9 +19,11 @@ extension DS {
         public static let controlSmall: CGFloat = 22
         public static let control: CGFloat = 28
         public static let controlLarge: CGFloat = 36
+        public static let controlXLarge: CGFloat = 44
         public static let iconSmall: CGFloat = 12
         public static let icon: CGFloat = 14
         public static let iconLarge: CGFloat = 16
+        public static let iconXLarge: CGFloat = 20
     }
 
     public enum Radius {

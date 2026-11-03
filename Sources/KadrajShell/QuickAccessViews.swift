@@ -33,6 +33,22 @@ extension CardAction {
     }
 }
 
+/// How big the card's buttons are at each card size, so they stay in proportion and easy to hit on a large card.
+struct CardButtonMetrics {
+    let corner: CGFloat, cornerGlyph: CGFloat
+    let action: CGFloat, actionGlyph: CGFloat
+
+    static func forCard(width: CGFloat) -> CardButtonMetrics {
+        if width < 190 {
+            return .init(corner: DS.Size.controlSmall, cornerGlyph: DS.Size.iconSmall, action: DS.Size.control, actionGlyph: DS.Size.icon)
+        }
+        if width < 260 {
+            return .init(corner: DS.Size.control, cornerGlyph: DS.Size.icon, action: DS.Size.controlLarge, actionGlyph: DS.Size.iconLarge)
+        }
+        return .init(corner: DS.Size.controlLarge, cornerGlyph: DS.Size.iconLarge, action: DS.Size.controlXLarge, actionGlyph: DS.Size.iconXLarge)
+    }
+}
+
 /// The thumbnail card. Buttons appear on hover; the whole card drags out as a PNG file.
 final class QuickAccessCardView: NSView, NSDraggingSource {
     private let card: QuickAccessCard
@@ -134,11 +150,14 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         super.layout()
         let area = imageArea
         let pad = DS.Space.s6
-        let corner = DS.Size.controlSmall
+        let metrics = CardButtonMetrics.forCard(width: bounds.width)
+        let corner = metrics.corner
+        buttons[.close]?.glyphSize = metrics.cornerGlyph
+        buttons[.pin]?.glyphSize = metrics.cornerGlyph
         buttons[.close]?.frame = NSRect(x: area.minX + pad, y: area.minY + pad, width: corner, height: corner)
         buttons[.pin]?.frame = NSRect(x: area.maxX - pad - corner, y: area.minY + pad, width: corner, height: corner)
         let middle: [CardAction] = [.copy, .save, .annotate, .ocr]
-        let d = bounds.width < 190 ? DS.Size.controlSmall : DS.Size.control
+        let d = metrics.action
         let gap = DS.Space.s8
         let total = CGFloat(middle.count) * d + CGFloat(middle.count - 1) * gap
         var x = area.midX - total / 2
@@ -146,6 +165,7 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         var y = area.midY - d / 2
         if x < area.minX + pad + corner { y = min(max(y, area.minY + pad + corner + DS.Space.s2), area.maxY - d) }
         for a in middle {
+            buttons[a]?.glyphSize = metrics.actionGlyph
             buttons[a]?.frame = NSRect(x: x, y: y, width: d, height: d)
             x += d + gap
         }

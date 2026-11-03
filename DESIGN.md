@@ -128,7 +128,8 @@ Dört tabanlı ölçek, sıkı araç çubukları için 2 ve 6 eklenmiştir: `Spa
 | `Size.controlSmall` | 22 | Özellik çubuğu kontrolleri |
 | `Size.control` | 28 | Standart kontrol, araç düğmesi |
 | `Size.controlLarge` | 36 | Yakalama araç çubuğu düğmesi |
-| `Size.iconSmall`, `icon`, `iconLarge` | 12, 14, 16 | SF Symbol nokta boyutu |
+| `Size.controlXLarge` | 44 | Büyük Hızlı Erişim kartının düğmeleri |
+| `Size.iconSmall`, `icon`, `iconLarge`, `iconXLarge` | 12, 14, 16, 20 | SF Symbol nokta boyutu |
 
 ## Köşe
 
@@ -213,6 +214,8 @@ Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` i
 **Ayarlar.** Sistem sekmeleri yerine solda kenar çubuğu, sağda kaydırılabilir içerik. Ayarlar gruplu kartlardadır: başlık solda, kontrol sağda, satırlar arasında ayraç. Açıklamalar başlığın altında küçük yazılır.
 
 **Geçmiş.** Üstte filtre, altta eylem çubuğu. Her görsel aynı boyda bir kuyuda durur, böylece farklı oranlar düzensiz görünmez. Seçim yalnızca kuyunun çevresinde vurgu halkasıdır, kartı doldurmaz.
+
+**Hızlı Erişim düğmeleri.** Kartla birlikte büyür: küçük kartta 28, ortada 36, büyükte 44. Köşe düğmeleri bir adım küçüktür.
 
 **Görüntü kuyusu.** Oranı değişken görseller `ImageWell` içinde çizilir: `bgSunken` zemin, `Radius.md`, sığdırılmış görsel, `imageOutline`. Hızlı Erişim ve Geçmiş bunu kullanır.
 

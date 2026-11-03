@@ -151,6 +151,18 @@ func takeSnapshots() async throws {
         snapshot(view, name: "card-dark-hover", dark: true),
     ]
     check((urls + hover).allSatisfy { $0 != nil }, "card snapshots written (light, dark, hovering)")
+    for overlay in OverlaySize.allCases {
+        view.setCardSize(QuickAccessLayout.cardSize(width: overlay.cardWidth))
+        view.layoutSubtreeIfNeeded()
+        let inner = view.bounds.insetBy(dx: DS.Space.s8, dy: 0)
+        let row = [CardAction.copy, .save, .annotate, .ocr].compactMap { view.buttons[$0]?.frame }
+        check(row.count == 4 && row.allSatisfy { $0.minX >= inner.minX && $0.maxX <= inner.maxX }, "\(overlay.title) card keeps its action row inside the card")
+        check(zip(row, row.dropFirst()).allSatisfy { $0.maxX < $1.minX }, "\(overlay.title) card buttons don't touch each other")
+        snapshot(view, name: "card-\(overlay.title.lowercased())-hover")
+    }
+    check(CardButtonMetrics.forCard(width: 160).action < CardButtonMetrics.forCard(width: 220).action
+          && CardButtonMetrics.forCard(width: 220).action < CardButtonMetrics.forCard(width: 300).action, "the action buttons grow with the card")
+    view.setCardSize(QuickAccessLayout.cardSize(width: OverlaySize.medium.cardWidth))
     view.setHovering(false)
 
     let seeded = seedHistory(w)

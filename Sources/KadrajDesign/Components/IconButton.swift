@@ -12,6 +12,11 @@ public final class IconButton: Pressable {
     public let size: ComponentSize
     public let tone: Tone
 
+    /// Replaces the size's own glyph, for a button whose frame is set by its context, such as a card that grows with a setting.
+    public var glyphSize: CGFloat? {
+        didSet { needsDisplay = true }
+    }
+
     public var isSelected = false {
         didSet {
             setAccessibilityValue(isSelected ? "Selected" : "Not selected")
@@ -45,7 +50,7 @@ public final class IconButton: Pressable {
         if let fill = look.fill { Paint.fill(path, fill) }
         if let border = look.border { Paint.strokeInside(path, border) }
         // A circle has less room than a rounded square, so the same glyph needs a smaller size to keep clear of its edge.
-        Paint.symbol(symbol, in: bounds, pointSize: tone == .overlay ? DS.Size.iconSmall : size.iconSize, look.text)
+        Paint.symbol(symbol, in: bounds, pointSize: glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize), look.text)
     }
 
     func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, state) }
