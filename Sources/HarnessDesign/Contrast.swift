@@ -61,6 +61,14 @@ func checkContrast() {
         }
     }
 
+    for (label, appearance) in [("aqua", NSAppearance.Name.aqua), ("darkAqua", .darkAqua)] {
+        let wash = resolve(C.accentWash, appearance).over(resolve(C.bgRaised, appearance))
+        // Only textPrimary: textSecondary falls to 4.3 on the dark wash, so the update row sets all its text in textPrimary.
+        let r = contrastRatio(resolve(C.textPrimary, appearance).over(wash), wash)
+        check(String(format: "[%@] textPrimary on accentWash over bgRaised (the menu's update row) >= 4.5 : %.2f", label, r), r >= 4.5,
+              String(format: "measured %.2f, needs 4.5", r))
+    }
+
     for (backdropName, backdrop) in [("white", RGBA(r: 1, g: 1, b: 1)), ("black", RGBA(r: 0, g: 0, b: 0))] {
         let hud = resolve(C.bgHud, .darkAqua).over(backdrop)
         for fg in [("textPrimary", C.textPrimary), ("textSecondary", C.textSecondary)] {
