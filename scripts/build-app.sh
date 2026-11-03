@@ -1,30 +1,33 @@
 #!/bin/bash
 # Builds build/Cornermark.app.
-#   scripts/build-app.sh [--release] [--no-sign]
+#   scripts/build-app.sh [--release] [--universal] [--no-sign]
+# Version: version.txt. --universal builds arm64 and x86_64 into one binary.
 # Signing identity: CORNERMARK_SIGN_IDENTITY if set, else the first "Apple Development" identity.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG=debug
 SIGN=1
+ARCHS=()
 for arg in "$@"; do
     case "$arg" in
         --release) CONFIG=release ;;
+        --universal) ARCHS=(--arch arm64 --arch x86_64) ;;
         --no-sign) SIGN=0 ;;
-        -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
 
 BUNDLE_ID="local.emretufan.cornermark"
-VERSION="${CORNERMARK_VERSION:-0.1.0}"
+VERSION="$(tr -d '[:space:]' < "$ROOT/version.txt")"
 BUILD_NUMBER="$(date +%Y%m%d%H%M)"
 APP="$ROOT/build/Cornermark.app"
 
 cd "$ROOT"
 echo "==> swift build ($CONFIG)"
-swift build -c "$CONFIG" --product Cornermark
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Cornermark"
+swift build -c "$CONFIG" --product Cornermark ${ARCHS[@]+"${ARCHS[@]}"}
+BIN="$(swift build -c "$CONFIG" ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Cornermark"
 
 echo "==> assembling $APP"
 rm -rf "$APP"
