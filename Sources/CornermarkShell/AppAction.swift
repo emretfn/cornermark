@@ -31,7 +31,7 @@ enum ActionTable {
         ActionSpec(id: .allInOne, title: "Capture All-in-One", symbol: "camera.viewfinder", shortTitle: "All-in-One", hotKey: .ctrlShift(18), urlPath: "all-in-one", menuGroup: 0),
         ActionSpec(id: .area, title: "Capture Area", symbol: "rectangle.dashed", shortTitle: "Area", hotKey: .ctrlShift(19), urlPath: "capture-area", menuGroup: 0),
         ActionSpec(id: .window, title: "Capture Window", symbol: "macwindow", shortTitle: "Window", hotKey: .ctrlShift(20), urlPath: "capture-window", menuGroup: 0),
-        ActionSpec(id: .fullscreen, title: "Capture Fullscreen", symbol: "display", shortTitle: "Screen", hotKey: .ctrlShift(21), urlPath: "capture-fullscreen", menuGroup: 0),
+        ActionSpec(id: .fullscreen, title: "Capture Fullscreen", symbol: "macbook", shortTitle: "Screen", hotKey: .ctrlShift(21), urlPath: "capture-fullscreen", menuGroup: 0),
         ActionSpec(id: .previousArea, title: "Capture Previous Area", symbol: "arrow.counterclockwise", shortTitle: "Previous", hotKey: .ctrlShift(23), urlPath: "previous-area", menuGroup: 0),
         ActionSpec(id: .scrolling, title: "Capture Scrolling", symbol: "arrow.up.and.down.square", shortTitle: "Scroll", hotKey: .ctrlShift(22), urlPath: "scrolling", menuGroup: 0),
         ActionSpec(id: .ocr, title: "Capture Text (OCR)", symbol: "text.viewfinder", shortTitle: "Text", hotKey: .ctrlShift(26), urlPath: "ocr", menuGroup: 0),
