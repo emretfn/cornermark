@@ -1,5 +1,6 @@
 import AppKit
 import KadrajCore
+import KadrajDesign
 import KadrajEditor
 
 func ms(_ block: () -> Void) -> Double {
@@ -115,6 +116,20 @@ func snapshotScenes() {
     rig.driver.type("Editing inline")
     both(rig, "text-editing")
     rig.driver.escape()
+    relayout(rig)
+    both(rig, "text-tool")
+
+    rig.driver.tapKey("b")
+    relayout(rig)
+    both(rig, "blur-tool")
+
+    rig.driver.tapKey("a")
+    if let well = rig.controller.view(identifier: "prop.colorWell") as? NSColorWell {
+        well.color = NSColor(srgbRed: 0.45, green: 0.2, blue: 0.75, alpha: 1)
+        well.sendAction(well.action, to: well.target)
+    }
+    relayout(rig)
+    both(rig, "arrow-custom-colour")
 
     rig.driver.tapKey("g")
     var bg = BackgroundStyle()
@@ -157,7 +172,45 @@ func snapshotScenes() {
     rig.controller.window!.setContentSize(NSSize(width: rig.controller.window!.minSize.width, height: 700))
     relayout(rig)
     both(rig, "crop-min-width")
+    resizePanelSnapshots(rig)
     closeRig(rig)
+}
+
+/// The resize popover's content on the popover's surface, in both appearances.
+func resizePanelSnapshots(_ rig: Rig) {
+    for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+        let content = rig.controller.loadResizePanelView()
+        content.layoutSubtreeIfNeeded()
+        let size = content.fittingSize
+        let host = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        host.appearance = NSAppearance(named: appearance)
+        host.backgroundColor = DS.Color.bgRaised
+        let root = NSView(frame: NSRect(origin: .zero, size: size))
+        root.addSubview(content)
+        content.frame = root.bounds
+        host.contentView = root
+        host.setContentSize(size)
+        root.layoutSubtreeIfNeeded()
+        settle(0.1)
+        let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds)!
+        root.cacheDisplay(in: root.bounds, to: rep)
+        // The popover paints its own surface under the content; stand in for it with the raised colour.
+        let image = NSImage(size: root.bounds.size)
+        image.lockFocus()
+        host.effectiveAppearance.performAsCurrentDrawingAppearance {
+            DS.Color.bgRaised.setFill()
+            NSRect(origin: .zero, size: root.bounds.size).fill()
+        }
+        NSImage(size: rep.size, flipped: false) { _ in rep.draw(); return true }.draw(in: NSRect(origin: .zero, size: root.bounds.size))
+        image.unlockFocus()
+        if let tiff = image.tiffRepresentation, let out = NSBitmapImageRep(data: tiff) {
+            let url = snapshotDir.appendingPathComponent("\(suffix)-resize-panel.png")
+            writePNG(out, to: url)
+            check("snapshot written: \(url.lastPathComponent)", FileManager.default.fileExists(atPath: url.path))
+        }
+        content.removeFromSuperview()
+        root.removeFromSuperview()
+    }
 }
 
 private let toolbarIdentifiers = ["toolbar.tools", "toolbar.geometry", "toolbar.history", "toolbar.dragHandle", "toolbar.actions", "toolbar.copy"]

@@ -54,14 +54,14 @@ final class TrackingSlider: Slider {
 }
 
 /// A bar background that follows light and dark mode.
-class BarView: NSView {
-    enum Edge { case top, bottom, left }
-    var edge: Edge = .bottom
+public class BarView: NSView {
+    public enum Edge { case top, bottom, left }
+    public var edge: Edge = .bottom
 
-    override init(frame: NSRect) { super.init(frame: frame) }
-    required init?(coder: NSCoder) { fatalError() }
+    public override init(frame: NSRect) { super.init(frame: frame) }
+    public required init?(coder: NSCoder) { fatalError() }
 
-    override func draw(_ dirtyRect: NSRect) {
+    public override func draw(_ dirtyRect: NSRect) {
         DS.Color.bgSurface.setFill()
         bounds.fill()
         DS.Color.separator.setFill()

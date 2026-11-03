@@ -240,16 +240,8 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
 
         // An empty toolbar gives the taller title bar with centred window buttons. The controls live in `titleBar` instead of
         // toolbar items, because macOS 26 puts every toolbar item on a glass capsule that no public API removes.
-        window.toolbar = NSToolbar(identifier: "kadraj.editor")
-        let leading = (window.standardWindowButton(.zoomButton)?.frame.maxX ?? 68) + DS.Space.s16
-        // The row is as tall as it takes to sit on the window buttons' centre line, which the system decides.
-        window.layoutIfNeeded()
-        let buttonCentre = window.standardWindowButton(.zoomButton).flatMap { button -> CGFloat? in
-            guard let frame = window.contentView?.superview else { return nil }
-            let rect = button.convert(button.bounds, to: frame)
-            return frame.isFlipped ? rect.midY : frame.bounds.height - rect.midY
-        }
-        titleBar.heightAnchor.constraint(equalToConstant: 2 * (buttonCentre ?? 26)).isActive = true
+        let (rowHeight, leading) = WindowChrome.titleRowMetrics(for: window, toolbarIdentifier: "kadraj.editor")
+        titleBar.heightAnchor.constraint(equalToConstant: rowHeight).isActive = true
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
         let row = NSStackView(views: [toolControl, spacer, geometryControl(), undoControl, dragHandle, actionsView()])

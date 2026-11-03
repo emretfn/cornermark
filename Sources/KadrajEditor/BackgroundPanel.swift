@@ -112,64 +112,6 @@ final class ThumbButton: NSButton {
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
-/// The system colour well, kept for its colour panel. The minimal style draws through a hosted SwiftUI view that `draw` never
-/// reaches, so the tile is an overlay that passes every click through to the well.
-final class SolidWell: NSColorWell {
-    var isCurrent: () -> Bool = { false }
-    fileprivate var hovering = false { didSet { if oldValue != hovering { overlay.needsDisplay = true } } }
-    private let overlay = TileOverlay()
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        // `init(style:)` hands back a plain NSColorWell, never this subclass.
-        colorWellStyle = .minimal
-        overlay.well = self
-        overlay.frame = bounds
-        overlay.autoresizingMask = [.width, .height]
-        addSubview(overlay)
-        TileChrome.trackHover(self)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var color: NSColor {
-        didSet { overlay.needsDisplay = true }
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-    override func draw(_ dirtyRect: NSRect) {}
-
-    override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.md).fill() }
-    override var focusRingMaskBounds: NSRect { bounds }
-
-    func redrawTile() { overlay.needsDisplay = true }
-
-    fileprivate final class TileOverlay: NSView {
-        weak var well: SolidWell?
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func draw(_ dirtyRect: NSRect) {
-            guard let well else { return }
-            // Covers the system swatch, which can reach past the picture when the tile is inset.
-            DS.Color.bgSurface.setFill()
-            bounds.fill()
-            let solid = well.isCurrent()
-            TileChrome.draw(in: bounds, current: solid, hovering: well.hovering) { rect in
-                if solid {
-                    well.color.setFill()
-                    rect.fill()
-                } else {
-                    DS.Color.bgControl.setFill()
-                    rect.fill()
-                    Glyph.draw("paintpalette", in: rect, pointSize: DS.Size.icon, DS.Color.textSecondary)
-                }
-            }
-        }
-    }
-}
-
 final class BackgroundPanel: NSView {
     static let width: CGFloat = 284
     /// Every control ends on this one right edge: the panel width less the s16 inset on each side.
@@ -281,7 +223,7 @@ final class BackgroundPanel: NSView {
             slash.stroke()
         }) { [unowned self] in model.perform(.setBackground(nil)) }
 
-        let well = SolidWell(frame: .zero)
+        let well = SolidWell(shape: .tile)
         well.setAccessibilityIdentifier("bg.solid")
         well.setAccessibilityLabel("Solid colour")
         well.toolTip = "Solid colour"

@@ -111,16 +111,25 @@ final class PropertyBar: BarView {
         var chips: [NSView] = []
         for color in Palette.swatches { chips.append(chip(color)) }
 
-        let well = NSColorWell(style: .minimal)
-        well.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        // The custom colour is one more chip: a circle on the same 22pt grid, ringed when the colour in use is none of the chips.
+        let well = SolidWell(shape: .circle)
+        well.widthAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         well.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         well.toolTip = "Custom colour"
         well.setAccessibilityIdentifier("prop.colorWell")
+        well.setAccessibilityLabel("Custom colour")
+        well.isCurrent = { [unowned self] in
+            let active = model.activeStyle.color
+            return !(Palette.swatches + model.prefs.favoriteColors).contains { active.isClose(to: $0) }
+        }
         well.onAction { [unowned self] w in
             let color = RGBA((w as! NSColorWell).color)
             model.editStyle({ $0.color = color }, key: "color")
         }
-        refreshers.append { [unowned self] in well.color = model.activeStyle.color.nsColor }
+        refreshers.append { [unowned self] in
+            well.color = model.activeStyle.color.nsColor
+            well.redrawTile()
+        }
         refreshers.last?()
         chips.append(well)
 
@@ -210,6 +219,7 @@ final class PropertyBar: BarView {
     private func textStyleControl() -> NSView {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         popup.controlSize = .small
+        popup.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         popup.setAccessibilityIdentifier("prop.textStyle")
         for style in TextStylePreset.allCases { popup.addItem(withTitle: style.rawValue.capitalized) }
         popup.onAction { [unowned self] c in
@@ -229,6 +239,7 @@ final class PropertyBar: BarView {
     private func presetsMenu() -> NSView {
         let popup = NSPopUpButton(frame: .zero, pullsDown: true)
         popup.controlSize = .small
+        popup.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         popup.setAccessibilityIdentifier("prop.presets")
         popup.addItem(withTitle: "Presets")
         let presets = model.stylePresetsForTool
