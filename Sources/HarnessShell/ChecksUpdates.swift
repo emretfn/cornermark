@@ -231,11 +231,10 @@ private func release(_ version: AppVersion, dmg: Bool = true) -> AppRelease {
 private let newer = release(AppVersion(0, 3, 0))
 
 @MainActor
-private func menuItem(_ w: World) -> NSMenuItem? {
-    let menu = NSMenu()
-    StatusMenuBuilder(coordinator: w.coordinator).populate(menu)
-    return menu.items.first { $0.identifier?.rawValue == "checkForUpdates" }
-}
+private func checkRow(_ w: World) -> MenuPanelModel.Row? { panelModel(w).row(.checkForUpdates) }
+
+@MainActor
+private func banner(_ w: World) -> MenuPanelModel.UpdateBanner? { panelModel(w).banner }
 
 @MainActor
 private func openEditedEditor(_ w: World) throws -> CaptureRecord {
@@ -285,7 +284,7 @@ private func checkUpdateFlow() async throws {
         c.hud.show("something else")
         await c.updates.checkAutomatically()
         check(w.updateService.latestCalls == 1 && c.hud.lastMessage == "something else", "later automatic checks neither ask GitHub nor announce again")
-        check(menuItem(w)?.title == "Install Cornermark 0.3.0\u{2026}" && menuItem(w)?.isEnabled == true, "the menu offers the install")
+        check(banner(w)?.title == "Cornermark 0.3.0" && banner(w)?.button == .action(.checkForUpdates) && checkRow(w) == nil, "the panel offers the install")
     }
     do {
         let w = try World(after: [])
@@ -333,7 +332,7 @@ private func checkUpdateFlow() async throws {
         w.updateService.latestDelay = 0.3
         let first = Task { await c.updates.perform() }
         check(await waitUntil { c.updates.state == .checking(manual: true) }, "a manual check shows as checking")
-        check(menuItem(w)?.title == "Checking for Updates\u{2026}" && menuItem(w)?.isEnabled == false, "while checking, the menu item is disabled")
+        check(checkRow(w)?.title == "Checking for Updates\u{2026}" && checkRow(w)?.isEnabled == false && banner(w) == nil, "while checking, the panel row is disabled")
         w.confirmAnswer = false
         await c.updates.perform()
         await c.updates.checkAutomatically()
@@ -358,7 +357,7 @@ private func checkUpdateFlow() async throws {
               detail: "\(String(describing: editorsAtInstall)) \(String(describing: projectAtInstall))")
         check(w.updateService.installed.count == 1 && w.quits == 1, "the app swaps itself and then quits")
         check(c.updates.state == .installing(newer) && w.updateAlerts.isEmpty, "the state stays installing until the app exits")
-        check(menuItem(w)?.title == "Installing Cornermark 0.3.0\u{2026}" && menuItem(w)?.isEnabled == false, "the menu shows the install in progress, disabled")
+        check(banner(w)?.detail == "Installing\u{2026}" && banner(w)?.button == nil && checkRow(w) == nil, "the panel shows the install in progress, with nothing to press")
         await c.updates.perform()
         check(w.updateService.staged.count == 1 && w.quits == 1, "choosing it while installing does nothing")
     }
@@ -382,7 +381,7 @@ private func checkUpdateFlow() async throws {
         w.alertOpensPage = true
         await c.updates.perform()
         check(w.opened == [newer.pageURL], "the alert's button opens the release page", detail: "\(w.opened)")
-        check(menuItem(w)?.title == "Install Cornermark 0.3.0\u{2026}" && menuItem(w)?.isEnabled == true, "the install can be tried again from the menu")
+        check(banner(w)?.button == .action(.checkForUpdates), "the install can be tried again from the panel")
     }
     do {
         let w = try World(after: [])
@@ -410,16 +409,14 @@ private func checkUpdateWiring() async throws {
     do {
         let w = try World(after: [])
         defer { w.cleanup() }
-        let menu = NSMenu()
-        StatusMenuBuilder(coordinator: w.coordinator).populate(menu)
-        let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
-        check(titles.firstIndex(of: "Settings\u{2026}").map { titles[$0 + 1] } == "Check for Updates\u{2026}", "the menu lists it after Settings", detail: "\(titles)")
-        check(titles.firstIndex(of: "Check for Updates\u{2026}").map { titles[$0 + 1] } == "What's New\u{2026}", "and What's New right after Check for Updates", detail: "\(titles)")
-        check(menuItem(w)?.isEnabled == true && menuItem(w)?.keyEquivalent == "", "idle, it is enabled and shows no shortcut")
+        let titles = panelModel(w).footerRows.map(\.title)
+        check(titles.firstIndex(of: "What's New\u{2026}").map { titles[$0 + 1] } == "Check for Updates\u{2026}", "the panel lists it right after What's New", detail: "\(titles)")
+        check(titles.firstIndex(of: "Check for Updates\u{2026}").map { titles[$0 + 1] } == "Settings\u{2026}", "and Settings after it", detail: "\(titles)")
+        check(checkRow(w)?.isEnabled == true, "idle, it is enabled")
         w.updateService.latest = .success(nil)
-        let item = menuItem(w)!
-        _ = item.target?.perform(item.action, with: item)
-        check(await waitUntil { w.coordinator.hud.lastMessage == "Cornermark is up to date" }, "choosing the menu item runs a check")
+        let (_, view) = panelView(w)
+        check(pressMenu(.action(.checkForUpdates), in: view), "the panel has it")
+        check(await waitUntil { w.coordinator.hud.lastMessage == "Cornermark is up to date" }, "choosing the panel row runs a check")
         check(w.coordinator.handle(url: URL(string: "cornermark://check-for-updates")!), "the URL scheme accepts it")
         check(await waitUntil { w.updateService.latestCalls == 2 }, "and runs a check")
     }
@@ -701,12 +698,11 @@ private func checkWhatsNew() async throws {
         defer { w.cleanup() }
         let c = w.coordinator
         w.updateService.history = .success([entry(AppVersion(0, 2, 1)), entry(AppVersion(0, 2, 0))])
-        let menu = NSMenu()
-        StatusMenuBuilder(coordinator: c).populate(menu)
-        let item = menu.items.first { $0.identifier?.rawValue == "whatsNew" }
-        check(item?.title == "What's New\u{2026}" && item?.isEnabled == true && item?.keyEquivalent == "", "the menu row is enabled and shows no shortcut")
-        if let item { _ = item.target?.perform(item.action, with: item) }
-        check(c.whatsNewWindow != nil && w.presented.contains { $0 === c.whatsNewWindow?.window }, "choosing the menu row opens the window")
+        let row = panelModel(w).row(.whatsNew)
+        check(row?.title == "What's New\u{2026}" && row?.isEnabled == true, "the panel row is enabled")
+        let (_, view) = panelView(w)
+        check(pressMenu(.action(.whatsNew), in: view), "the panel has it")
+        check(await waitUntil { c.whatsNewWindow != nil } && w.presented.contains { $0 === c.whatsNewWindow?.window }, "choosing the panel row opens the window")
         check(await waitUntil { w.updateService.historyCalls == 1 }, "and fetches")
         check(c.handle(url: URL(string: "cornermark://whats-new")!), "the URL scheme accepts it")
         check(await waitUntil { w.updateService.historyCalls == 2 }, "and fetches again")
