@@ -1,0 +1,68 @@
+import AppKit
+
+public final class IconButton: Pressable {
+    public enum Tone: CaseIterable {
+        /// Sits on a surface of the shell.
+        case plain
+        /// Circular and always dark, for buttons laid over a screenshot.
+        case overlay
+    }
+
+    public let symbol: String
+    public let size: ComponentSize
+    public let tone: Tone
+
+    public var isSelected = false {
+        didSet {
+            setAccessibilityValue(isSelected ? "Selected" : "Not selected")
+            needsDisplay = true
+        }
+    }
+
+    public init(symbol: String, label: String, size: ComponentSize = .regular, tone: Tone = .plain) {
+        self.symbol = symbol
+        self.size = size
+        self.tone = tone
+        super.init(frame: .zero)
+        toolTip = label
+        setAccessibilityLabel(label)
+        setAccessibilityValue("Not selected")
+        if tone == .overlay { appearance = NSAppearance(named: .darkAqua) }
+        frame.size = intrinsicContentSize
+    }
+
+    public required init?(coder: NSCoder) { fatalError("IconButton is created in code") }
+
+    public override var intrinsicContentSize: NSSize { NSSize(width: size.height, height: size.height) }
+
+    override func shape(in rect: CGRect) -> NSBezierPath {
+        tone == .overlay ? NSBezierPath(ovalIn: rect) : .continuous(rect, radius: size == .small ? DS.Radius.sm : DS.Radius.md)
+    }
+
+    override func paint(_ state: InteractionState) {
+        let look = self.look(state)
+        let path = shape(in: bounds)
+        if let fill = look.fill { Paint.fill(path, fill) }
+        if let border = look.border { Paint.strokeInside(path, border) }
+        Paint.symbol(symbol, in: bounds, pointSize: size.iconSize, look.text)
+    }
+
+    func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, state) }
+
+    static func look(tone: Tone, selected: Bool, _ state: InteractionState) -> ButtonAppearance {
+        let c = DS.Color.self
+        if selected && state != .disabled {
+            return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
+        }
+        switch (tone, state) {
+        case (.plain, .normal): return ButtonAppearance(fill: nil, text: c.textSecondary)
+        case (.plain, .hover): return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
+        case (.plain, .pressed): return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+        case (.plain, .disabled): return ButtonAppearance(fill: nil, text: c.textDisabled)
+        case (.overlay, .normal): return ButtonAppearance(fill: c.bgHud, text: c.textPrimary)
+        case (.overlay, .hover): return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
+        case (.overlay, .pressed): return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+        case (.overlay, .disabled): return ButtonAppearance(fill: c.bgHud, text: c.textDisabled)
+        }
+    }
+}
