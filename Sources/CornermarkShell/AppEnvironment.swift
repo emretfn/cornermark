@@ -12,6 +12,16 @@ protocol LoginItemControlling: AnyObject {
     func setEnabled(_ enabled: Bool) throws
 }
 
+/// Finds, downloads and installs newer releases. The harness swaps in a fake that never touches the network.
+protocol UpdateServicing: AnyObject {
+    var currentVersion: AppVersion? { get }
+    /// Nil when the project has no release yet.
+    func latestRelease() async throws -> AppRelease?
+    func stage(_ release: AppRelease) async throws -> StagedUpdate
+    func installAndRelaunch(_ staged: StagedUpdate) throws
+    func discard(_ staged: StagedUpdate)
+}
+
 /// Every collaborator a feature touches. The app builds the live one, the harness a headless one,
 /// so both run the same feature code.
 @MainActor

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 @testable import CornermarkShell
 
 private let pageURL = "https://github.com/emretfn/cornermark/releases/tag/v0.3.0"
@@ -17,6 +18,7 @@ func checkUpdates() async throws {
     checkVersions()
     checkReleaseParsing()
     checkUpdateState()
+    try checkVerification()
 }
 
 @MainActor
@@ -89,4 +91,109 @@ private func checkUpdateState() {
     for (state, title, enabled) in rows {
         check(state.menuTitle == title && state.menuEnabled == enabled, "\(title) is \(enabled ? "enabled" : "disabled")", detail: "\(state.menuTitle) \(state.menuEnabled)")
     }
+}
+
+private func shell(_ tool: String, _ args: [String]) -> Bool {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: tool)
+    p.arguments = args
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return false }
+    p.waitUntilExit()
+    return p.terminationStatus == 0
+}
+
+/// A real bundle with a copied system executable, ad-hoc signed unless `sign` is false.
+private func makeBundle(in directory: URL, version: String, payload: String, sign: Bool = true) throws -> URL {
+    let fm = FileManager.default
+    let app = directory.appendingPathComponent("Tiny-\(UUID().uuidString).app", isDirectory: true)
+    let contents = app.appendingPathComponent("Contents", isDirectory: true)
+    try fm.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: contents.appendingPathComponent("Resources"), withIntermediateDirectories: true)
+    try fm.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: contents.appendingPathComponent("MacOS/Tiny"))
+    try Data(payload.utf8).write(to: contents.appendingPathComponent("Resources/data.txt"))
+    let plist: [String: Any] = ["CFBundleExecutable": "Tiny", "CFBundleIdentifier": "local.test.tiny", "CFBundlePackageType": "APPL",
+                                "CFBundleShortVersionString": version, "CFBundleVersion": "1"]
+    try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
+    if sign, !shell("/usr/bin/codesign", ["--force", "--sign", "-", app.path]) { throw CocoaError(.fileWriteUnknown) }
+    return app
+}
+
+private func requirement(of bundle: URL) -> SecRequirement? {
+    var code: SecStaticCode?
+    var req: SecRequirement?
+    guard SecStaticCodeCreateWithPath(bundle as CFURL, [], &code) == errSecSuccess, let code,
+          SecCodeCopyDesignatedRequirement(code, [], &req) == errSecSuccess else { return nil }
+    return req
+}
+
+private func outcome(_ body: () throws -> Void) -> UpdateError? {
+    do { try body() } catch { return error as? UpdateError }
+    return nil
+}
+
+@MainActor
+private func checkVerification() throws {
+    section("update verification on real signed bundles")
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory.appendingPathComponent("CornermarkUpdateVerify-\(UUID().uuidString)", isDirectory: true)
+    try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    let v030 = AppVersion(0, 3, 0), v021 = AppVersion(0, 2, 1)
+    let good = try makeBundle(in: dir, version: "0.3.0", payload: "original")
+    guard let req = requirement(of: good) else { return check(false, "reads the designated requirement of a signed bundle") }
+    check(outcome { try UpdateVerifier.verify(bundle: good, against: req, announced: v030, current: v021) } == nil, "a validly signed newer bundle passes")
+
+    let other = try makeBundle(in: dir, version: "0.3.0", payload: "a different build")
+    check(outcome { try UpdateVerifier.verify(bundle: other, against: req, announced: v030, current: v021) } == .signatureMismatch,
+          "a bundle signed as something else is refused")
+    var stranger: SecRequirement?
+    if SecRequirementCreateWithString(#"identifier "local.test.someone-else""# as CFString, [], &stranger) == errSecSuccess, let stranger {
+        check(outcome { try UpdateVerifier.verify(bundle: good, against: stranger, announced: v030, current: v021) } == .signatureMismatch,
+              "a requirement the bundle does not satisfy is refused")
+    } else { check(false, "builds a requirement the bundle cannot meet") }
+
+    let unsigned = try makeBundle(in: dir, version: "0.3.0", payload: "original", sign: false)
+    check(outcome { try UpdateVerifier.verify(bundle: unsigned, against: req, announced: v030, current: v021) } == .signatureMismatch, "an unsigned bundle is refused")
+
+    let tampered = dir.appendingPathComponent("Tampered.app", isDirectory: true)
+    try fm.copyItem(at: good, to: tampered)
+    check(outcome { try UpdateVerifier.verify(bundle: tampered, against: req, announced: v030, current: v021) } == nil, "an untouched copy still passes")
+    try Data("changed after signing".utf8).write(to: tampered.appendingPathComponent("Contents/Resources/data.txt"))
+    check(outcome { try UpdateVerifier.verify(bundle: tampered, against: req, announced: v030, current: v021) } == .signatureMismatch, "changing a resource after signing is refused")
+    let extra = dir.appendingPathComponent("Extra.app", isDirectory: true)
+    try fm.copyItem(at: good, to: extra)
+    try Data("new".utf8).write(to: extra.appendingPathComponent("Contents/Resources/added.txt"))
+    check(outcome { try UpdateVerifier.verify(bundle: extra, against: req, announced: v030, current: v021) } == .signatureMismatch, "adding a file after signing is refused")
+    let patched = dir.appendingPathComponent("Patched.app", isDirectory: true)
+    try fm.copyItem(at: good, to: patched)
+    let exe = patched.appendingPathComponent("Contents/MacOS/Tiny")
+    var bytes = try Data(contentsOf: exe)
+    bytes.append(0)
+    try bytes.write(to: exe)
+    check(outcome { try UpdateVerifier.verify(bundle: patched, against: req, announced: v030, current: v021) } == .signatureMismatch, "changing the executable after signing is refused")
+    check(outcome { try UpdateVerifier.verify(bundle: dir.appendingPathComponent("missing.app"), against: req, announced: v030, current: v021) } == .signatureMismatch,
+          "a path with no bundle is refused")
+
+    check(outcome { try UpdateVerifier.verify(bundle: good, against: req, announced: AppVersion(0, 4, 0), current: v021) } == .versionMismatch,
+          "a bundle whose version differs from the release is refused")
+    check(outcome { try UpdateVerifier.verify(bundle: good, against: req, announced: v030, current: v030) } == .versionMismatch, "the same version is not an update")
+    check(outcome { try UpdateVerifier.verify(bundle: good, against: req, announced: v030, current: AppVersion(0, 10, 0)) } == .versionMismatch, "an older version is not an update")
+    check(outcome { try UpdateVerifier.verify(bundle: good, against: req, announced: v030, current: nil) } == .versionMismatch, "an unknown running version refuses to install")
+
+    check(outcome { _ = try UpdateVerifier.runningRequirement() } == .selfNotReleaseSigned, "the ad-hoc harness binary is not release signed")
+
+    section("update bundle swap")
+    let a = dir.appendingPathComponent("A", isDirectory: true), b = dir.appendingPathComponent("B", isDirectory: true)
+    for (d, text) in [(a, "old"), (b, "new")] {
+        try fm.createDirectory(at: d, withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: d.appendingPathComponent("id"))
+    }
+    try UpdateInstaller.swap(b, with: a)
+    check((try? String(contentsOf: a.appendingPathComponent("id"), encoding: .utf8)) == "new"
+          && (try? String(contentsOf: b.appendingPathComponent("id"), encoding: .utf8)) == "old", "swap exchanges the two folders in one step")
+    check((try? UpdateInstaller.swap(dir.appendingPathComponent("nope"), with: a)) == nil
+          && (try? String(contentsOf: a.appendingPathComponent("id"), encoding: .utf8)) == "new", "swap with a missing path fails and leaves the target alone")
 }
