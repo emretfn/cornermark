@@ -29,6 +29,9 @@ func checkSettingsWindow() async throws {
     format.selectItem(at: 0); fire(format)
     check(c.settings.value.imageFormat == .png, "and back to PNG")
     check(click("general.sound", in: pane(0)) && c.settings.value.playSound, "sound checkbox turns sound on")
+    check(click("general.checkForUpdates", in: pane(0)) && !c.settings.value.checkForUpdatesAutomatically, "unticking Check for updates automatically turns it off")
+    check(collectText(pane(0)).contains { $0.contains("Version 0.2.1.") && $0.contains("sends no personal data") }, "the pane shows the running version and what the check sends")
+    check(click("general.checkForUpdates", in: pane(0)) && c.settings.value.checkForUpdatesAutomatically, "and ticking it turns it back on")
     let picked = w.root.appendingPathComponent("picked", isDirectory: true)
     w.pickedFolder = picked
     check(click("general.chooseFolder", in: pane(0)) && c.settings.value.saveFolder == picked.path, "Choose folder stores the picked path")
