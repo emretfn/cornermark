@@ -3,11 +3,13 @@ import KadrajCore
 
 extension CanvasView {
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        Self.images(in: sender.draggingPasteboard).isEmpty ? [] : .copy
+        guard sender.draggingSourceOperationMask.contains(.copy) else { return [] }
+        return Self.images(in: sender.draggingPasteboard).isEmpty ? [] : .copy
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        handleDrop(sender.draggingPasteboard, atViewPoint: convert(sender.draggingLocation, from: nil))
+        guard sender.draggingSourceOperationMask.contains(.copy) else { return false }
+        return handleDrop(sender.draggingPasteboard, atViewPoint: convert(sender.draggingLocation, from: nil))
     }
 
     private static func images(in pasteboard: NSPasteboard) -> [Data] {

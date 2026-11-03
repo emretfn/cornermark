@@ -259,7 +259,11 @@ func toolbarMetrics(_ rig: Rig) {
     print(String(format: "INFO window width %.1f, toolbar content ends at %.1f", frame.bounds.width, right))
     check("every toolbar control is found", ends.count == toolbarIdentifiers.count, "\(ends.map(\.0))")
     check("the toolbar fits the window at its minimum width", right <= frame.bounds.width, String(format: "%.1f of %.1f", right, frame.bounds.width))
-    for (id, rect) in ends where id != "toolbar.dragHandle" {
+    for (id, _) in ends {
+        let control = rig.controller.view(identifier: id)!
+        check("a press on \(id) stays with it instead of moving the window", !control.mouseDownCanMoveWindow)
+    }
+    for (id, rect) in ends {
         let hit = frame.hitTest(NSPoint(x: rect.midX, y: rect.midY))
         check("a click on \(id) reaches it through the title bar", hit?.isDescendant(of: rig.controller.view(identifier: id)!) == true, "hit \(String(describing: hit))")
     }

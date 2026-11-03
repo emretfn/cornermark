@@ -180,11 +180,37 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         statusBar.zoomIn = { [unowned self] in scroll.zoomBy(1.25) }
         statusBar.zoomOut = { [unowned self] in scroll.zoomBy(0.8) }
         statusBar.fit = { [unowned self] in scroll.fit() }
+        dragHandle.onDragBegan = { [unowned self] in dragHandleDidBegin() }
+        dragHandle.onEscape = { [unowned self] in dragHandleDidEnd(dropped: false) }
+        dragHandle.onDragEnded = { [unowned self] in dragHandleDidEnd(dropped: $0) }
         dragHandle.provider = { [unowned self] in
             guard let url = try? makeDragFile() else { return nil }
             let cg = renderedImage()
             return (url, NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
         }
+    }
+
+    /// The image is on its way to another app, so the editor must not cover it. Whatever lies behind, or the next stage under
+    /// Stage Manager, becomes reachable without switching apps mid-drag.
+    public func dragHandleDidBegin() { window?.orderOut(nil) }
+
+    /// A drop leaves the receiving app in front with the editor behind it; a cancelled drag returns to the editor.
+    public func dragHandleDidEnd(dropped: Bool) {
+        guard let window else { return }
+        if dropped {
+            window.orderBack(nil)
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// Runs what Esc does during a drag carrying `pasteboard`, for automation; returns whether the drag now refuses every target.
+    public func pressEscapeDuringDrag(carrying pasteboard: NSPasteboard) -> Bool {
+        dragHandle.beginPhaseForTesting(pasteboard: pasteboard)
+        dragHandleDidBegin()
+        dragHandle.escape()
+        return dragHandle.refusesDrops
     }
 
     func refreshUI(_ change: Change) {

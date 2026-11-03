@@ -104,6 +104,27 @@ func checkOutputs() {
     try? FileManager.default.removeItem(at: dir)
 
     let drag = try? c.makeDragFile()
+    let window = c.window!
+    window.orderFront(nil)
+    settle()
+    c.dragHandleDidBegin()
+    check("dragging the image takes the editor off screen", !window.isVisible)
+    c.dragHandleDidEnd(dropped: false)
+    check("a cancelled drag brings the editor back", window.isVisible)
+    c.dragHandleDidBegin()
+    c.dragHandleDidEnd(dropped: true)
+    check("a drop keeps the editor open behind the receiving app", window.isVisible)
+    window.orderOut(nil)
+    window.orderFront(nil)
+    let dragged = NSPasteboard(name: NSPasteboard.Name("kadraj.harness.escapedDrag"))
+    dragged.clearContents()
+    if let drag { dragged.writeObjects([drag as NSURL]) }
+    check("Esc during a drag makes every target refuse the image", c.pressEscapeDuringDrag(carrying: dragged))
+    check("Esc during a drag brings the editor back at once", window.isVisible)
+    let before = rig.doc.annotations.count
+    let dropped = c.drop(dragged, atWindowPoint: rig.driver.windowPoint(source: CGPoint(x: 600, y: 400)))
+    check("releasing an escaped drag over the editor adds nothing", !dropped && rig.doc.annotations.count == before, "dropped \(dropped), \(rig.doc.annotations.count) vs \(before)")
+    window.orderOut(nil)
     check("Drag me writes a PNG file equal to the render",
           drag.flatMap { try? Data(contentsOf: $0) }.flatMap(cgImage(from:)).map { samePixels($0, c.renderedImage()) } ?? false)
     drag.map { try? FileManager.default.removeItem(at: $0) }
