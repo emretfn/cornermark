@@ -144,7 +144,7 @@ swift scripts/make-icon.swift docs/logo.png  # regenerates the icon in this READ
 
 ## Release
 
-Commits to `main` follow [Conventional Commits](https://www.conventionalcommits.org). Before 1.0, `feat:` raises the minor version and `fix:` raises the patch version. Other types, such as `docs:`, `build:` and `ci:`, and commits that do not follow the format do not trigger a release.
+Commits to `main` follow [Conventional Commits](https://www.conventionalcommits.org), and a check on each pull request validates its title. Before 1.0, `feat:` raises the minor version and `fix:` raises the patch version. Other types, such as `docs:`, `build:` and `ci:`, and commits that do not follow the format do not trigger a release.
 
 [release-please](https://github.com/googleapis/release-please-action) keeps a release pull request open with the next version in `version.txt` and the changelog. Merge it to publish: it tags `v<version>`, creates the GitHub release, and a macOS job builds `Cornermark.dmg` and attaches it. With squash merges, the pull request title is the commit message that counts.
 
