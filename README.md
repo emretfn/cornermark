@@ -6,14 +6,14 @@
 
 <p align="center">
   A local screenshot app for the macOS menu bar.<br>
-  Capture, annotate, copy. Nothing leaves your Mac.
+  Capture, annotate, copy. Your captures never leave your Mac.
 </p>
 
 <p align="center">
   <img src="docs/screenshots/hero.png" alt="The editor showing a sales dashboard with a highlighted card, an arrow to the chart's peak, and a pixelated email column">
 </p>
 
-Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock icon, no account, and no cloud connection. It requires macOS 14 or later, runs on Apple silicon and Intel Macs, and you can install a release or build it from source with Swift Package Manager.
+Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock icon, no account, and no cloud storage, and it never uploads a capture. The one network request it makes is the update check, which asks GitHub for the latest release and sends no personal data. You can turn it off in Settings > General. Cornermark requires macOS 14 or later, runs on Apple silicon and Intel Macs, and you can install a release or build it from source with Swift Package Manager.
 
 ## Install
 
@@ -22,7 +22,17 @@ Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock 
 3. Open Cornermark from Applications. The app is not notarized, so macOS blocks the first launch. Open System Settings > Privacy & Security, scroll down to the message about Cornermark, and click **Open Anyway**.
 4. [Grant the Screen Recording permission](#grant-the-screen-recording-permission).
 
+Steps 1 to 3 are for the first install only. After that, Cornermark updates itself from the menu bar.
+
 Releases are signed with a self-signed certificate, not an Apple developer certificate. The certificate stays the same between releases, because macOS ties the Screen Recording permission to it.
+
+### Update
+
+Cornermark asks GitHub for the latest release when it starts and once a day. When a newer one is ready, a short message says so and the menu item reads **Install Cornermark X…**. You can also choose **Check for Updates…** yourself.
+
+When you confirm, Cornermark downloads `Cornermark.dmg`, checks that the app inside is signed with the same certificate as the running one and has the version the release announced, swaps it in for itself, and reopens. You do not repeat step 3, and your Screen Recording permission stays. Cornermark closes open editors first and keeps their edits.
+
+If anything fails, an alert says why and offers the release page, where you can download the DMG by hand. That happens for a copy you built with another certificate, and for a copy that sits where Cornermark cannot write, such as a mounted DMG. Turn off the automatic check in Settings > General. The request carries the app name and version in its `User-Agent`, and GitHub sees your IP address as it does for any request.
 
 ## What it does
 
@@ -118,15 +128,16 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 - **Quick Access.** Swipe a card toward the screen edge with two fingers to dismiss it, or double-click it to open the editor. The auto-dismiss timer is adjustable and pauses while the pointer is over the card. You can restore the last closed card and hide all cards temporarily.
 - **Pins.** To unlock a locked pin, use the "Pinned Screenshots" list in the menu bar. Escape or the close button removes a pin.
 - **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day.
-- **Settings.** Launch at login, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state.
+- **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state.
+- **Updates.** Cornermark checks GitHub at launch and once a day, and installs a release only after you confirm. See [Update](#update).
 - **Open from Finder.** "Open With" opens PNG, JPEG, and HEIC files in the editor.
-- **URL scheme.** `cornermark://capture-area`, `capture-window`, `capture-fullscreen`, `all-in-one`, `previous-area`, `scrolling`, `ocr`, `timer?seconds=5`, `history`, `settings`, `restore-overlay`, `hide-overlays`, `open?path=/full/path/image.png`. The `open` path must be an existing image file. Cornermark logs and ignores unknown paths.
+- **URL scheme.** `cornermark://capture-area`, `capture-window`, `capture-fullscreen`, `all-in-one`, `previous-area`, `scrolling`, `ocr`, `timer?seconds=5`, `history`, `settings`, `check-for-updates`, `restore-overlay`, `hide-overlays`, `open?path=/full/path/image.png`. The `open` path must be an existing image file. Cornermark logs and ignores unknown paths.
 
 ## What it leaves out
 
 - No cloud, accounts, or share links.
 - No video or GIF recording.
-- No App Store version, notarization, or automatic updates. You download each new release yourself, or build it on your own Mac.
+- No App Store version or notarization.
 
 ## Develop
 
@@ -146,9 +157,9 @@ swift scripts/make-icon.swift docs/logo.png  # regenerates the icon in this READ
 
 Commits to `main` follow [Conventional Commits](https://www.conventionalcommits.org), and a check on each pull request validates its title. Before 1.0, `feat:` raises the minor version and `fix:` raises the patch version. Other types, such as `docs:`, `build:` and `ci:`, and commits that do not follow the format do not trigger a release.
 
-[release-please](https://github.com/googleapis/release-please-action) keeps a release pull request open with the next version in `version.txt` and the changelog. Merge it to publish: it tags `v<version>`, creates the GitHub release, and a macOS job builds `Cornermark.dmg` and attaches it. With squash merges, the pull request title is the commit message that counts.
+[release-please](https://github.com/googleapis/release-please-action) keeps a release pull request open with the next version in `version.txt` and the changelog. Merge it to publish: it tags `v<version>`, creates the GitHub release, and a macOS job builds `Cornermark.dmg` and attaches it. Until it does, the app does not offer the release. With squash merges, the pull request title is the commit message that counts.
 
-The release job signs with the certificate in the `CORNERMARK_CERT_P12` and `CORNERMARK_CERT_PASSWORD` secrets. `scripts/make-signing-cert.sh <backup.p12>` creates them. Replace the certificate only if you must, because users then grant Screen Recording again.
+The release job signs with the certificate in the `CORNERMARK_CERT_P12` and `CORNERMARK_CERT_PASSWORD` secrets. `scripts/make-signing-cert.sh <backup.p12>` creates them. Replace the certificate only if you must. Users then grant Screen Recording again, and the updater refuses a release signed with a different certificate, so they install that release by hand.
 
 ## License
 
