@@ -7,7 +7,10 @@ final class UpdateController {
     private let hud: HUD
     /// Closes every editor so its edits reach the history folder before the app is replaced.
     var closeEditors: () -> Void = {}
-    private(set) var state: UpdateState = .idle
+    private(set) var state: UpdateState = .idle {
+        didSet { if state != oldValue { onStateChange(state) } }
+    }
+    var onStateChange: (UpdateState) -> Void = { _ in }
 
     init(env: AppEnvironment, hud: HUD) {
         self.env = env

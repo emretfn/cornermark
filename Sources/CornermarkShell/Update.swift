@@ -99,6 +99,15 @@ enum UpdateState: Equatable {
         }
     }
 
+    /// The short text beside the menu bar icon, nil when there is nothing to point out.
+    var statusLabel: String? {
+        switch self {
+        case .available: return "Update"
+        case .installing: return "Updating\u{2026}"
+        case .idle, .checking: return nil
+        }
+    }
+
     var menuEnabled: Bool {
         switch self {
         case .idle, .available: return true

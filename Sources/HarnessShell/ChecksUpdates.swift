@@ -96,6 +96,21 @@ private func checkUpdateState() {
     for (state, title, enabled) in rows {
         check(state.menuTitle == title && state.menuEnabled == enabled, "\(title) is \(enabled ? "enabled" : "disabled")", detail: "\(state.menuTitle) \(state.menuEnabled)")
     }
+    let labels: [(UpdateState, String?)] = [
+        (.idle, nil), (.checking(manual: true), nil), (.checking(manual: false), nil),
+        (.available(release), "Update"), (.installing(release), "Updating\u{2026}"),
+    ]
+    for (state, label) in labels {
+        check(state.statusLabel == label, "\(state.menuTitle) shows \(label.map { "\"\($0)\"" } ?? "no label") in the menu bar", detail: "\(String(describing: state.statusLabel))")
+    }
+    let button = NSStatusBarButton()
+    applyStatusLabel(.available(release), to: button)
+    check(button.title == "Update" && button.imagePosition == .imageLeading && button.accessibilityLabel() == "Cornermark, update available",
+          "an available update puts the label beside the icon and tells VoiceOver", detail: "\(button.title) \(button.imagePosition.rawValue) \(String(describing: button.accessibilityLabel()))")
+    applyStatusLabel(.installing(release), to: button)
+    check(button.title == "Updating\u{2026}" && button.imagePosition == .imageLeading, "installing changes the label")
+    applyStatusLabel(.idle, to: button)
+    check(button.title == "" && button.imagePosition == .imageOnly && button.accessibilityLabel() == "Cornermark", "idle goes back to the bare icon")
 }
 
 private func shell(_ tool: String, _ args: [String]) -> Bool {
@@ -253,7 +268,12 @@ private func checkUpdateFlow() async throws {
         defer { w.cleanup() }
         let c = w.coordinator
         w.updateService.latest = .success(newer)
+        var changes: [UpdateState] = []
+        c.updates.onStateChange = { changes.append($0) }
         await c.updates.checkAutomatically()
+        check(changes == [.checking(manual: false), .available(newer)], "state changes are reported once each, idle to checking to available", detail: "\(changes)")
+        await c.updates.checkAutomatically()
+        check(changes.count == 2, "a repeated state is not reported again")
         check(c.updates.state == .available(newer), "an automatic check finds a newer release")
         check(c.hud.lastMessage?.hasPrefix("Cornermark 0.3.0 is available") == true && c.hud.lastMessage?.contains("menu") == true, "and tells the user through the HUD", detail: c.hud.lastMessage ?? "nil")
         check(w.confirmations.isEmpty && w.updateAlerts.isEmpty, "an automatic find asks nothing")
@@ -345,7 +365,10 @@ private func checkUpdateFlow() async throws {
         w.updateService.latest = .success(newer)
         w.updateService.staging = .failure(UpdateError.signatureMismatch)
         await c.updates.checkAutomatically()
+        var changes: [UpdateState] = []
+        c.updates.onStateChange = { changes.append($0) }
         await c.updates.perform()
+        check(changes == [.installing(newer), .available(newer)], "a failed install is reported as installing, then back to available", detail: "\(changes)")
         check(c.updates.state == .available(newer), "a failed download goes back to available")
         check(w.updateAlerts.count == 1 && w.updateAlerts[0].message == UpdateError.signatureMismatch.message && w.updateAlerts[0].offersReleasePage,
               "the user sees why, with a way to the release page", detail: "\(w.updateAlerts)")

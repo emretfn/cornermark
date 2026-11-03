@@ -28,7 +28,7 @@ Releases are signed with a self-signed certificate, not an Apple developer certi
 
 ### Update
 
-Cornermark asks GitHub for the latest release when it starts and once a day. When a newer one is ready, a short message says so and the menu item reads **Install Cornermark X…**. You can also choose **Check for Updates…** yourself.
+Cornermark asks GitHub for the latest release when it starts and once a day. When a newer one is ready, a short message says so, the menu bar shows **Update** next to the icon, and the menu item reads **Install Cornermark X…**. You can also choose **Check for Updates…** yourself.
 
 When you confirm, Cornermark downloads `Cornermark.dmg`, checks that the app inside is signed with the same certificate as the running one and has the version the release announced, swaps it in for itself, and reopens. You do not repeat step 3, and your Screen Recording permission stays. Cornermark closes open editors first and keeps their edits.
 
