@@ -1,4 +1,5 @@
 import AppKit
+import KadrajDesign
 
 @MainActor
 protocol OverlayHost: AnyObject {
@@ -42,6 +43,8 @@ class OverlayWindow: NSPanel {
 
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        // The overlay always sits over arbitrary screen content, so it is dark in every system appearance and its views use the same tokens.
+        appearance = NSAppearance(named: .darkAqua)
         level = .screenSaver
         isOpaque = false
         backgroundColor = .clear
@@ -284,55 +287,50 @@ final class ChromeView: NSView {
         let path = NSBezierPath(rect: bounds)
         if let hole { path.appendRect(hole) }
         path.windingRule = .evenOdd
-        NSColor.black.withAlphaComponent(0.5).setFill()
+        DS.Color.bgScrim.setFill()
         path.fill()
     }
 
     private func drawSelection(_ r: CGRect, handles: Bool) {
         let outer = NSBezierPath(rect: r.insetBy(dx: -1.5, dy: -1.5))
         outer.lineWidth = 1
-        NSColor.black.withAlphaComponent(0.35).setStroke()
+        DS.Color.selectionHalo.setStroke()
         outer.stroke()
         let line = NSBezierPath(rect: r.insetBy(dx: -0.5, dy: -0.5))
         line.lineWidth = 1
-        NSColor.white.setStroke()
+        DS.Color.selectionStroke.setStroke()
         line.stroke()
         guard handles else { return }
         for h in Handle.allCases {
             let c = h.position(on: r)
             let dotRect = CGRect(x: c.x - 4.5, y: c.y - 4.5, width: 9, height: 9)
             guard dotRect.intersects(bounds) else { continue }
-            let dot = NSBezierPath(ovalIn: dotRect)
-            NSGraphicsContext.saveGraphicsState()
-            let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
-            shadow.shadowBlurRadius = 3
-            shadow.shadowOffset = NSSize(width: 0, height: -1)
-            shadow.set()
-            NSColor.white.setFill()
-            dot.fill()
-            NSGraphicsContext.restoreGraphicsState()
-            NSColor.black.withAlphaComponent(0.3).setStroke()
-            dot.lineWidth = 0.75
-            dot.stroke()
+            DS.Color.selectionHalo.setFill()
+            NSBezierPath(ovalIn: dotRect.insetBy(dx: -1, dy: -1)).fill()
+            DS.Color.selectionStroke.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
         }
     }
 
-    private static let pillFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    private static let pillStyle = DS.Text.readout
+
+    private func pillSize(_ text: String) -> CGSize {
+        let width = NSAttributedString(string: text, attributes: Self.pillStyle.attributes(color: DS.Color.textPrimary)).size().width
+        return CGSize(width: ceil(width) + 2 * DS.Space.s8, height: DS.Size.controlSmall)
+    }
 
     @discardableResult
-    private func drawPill(_ text: String, at origin: CGPoint, tint: NSColor = NSColor.black.withAlphaComponent(0.78)) -> CGRect {
-        let attrs: [NSAttributedString.Key: Any] = [.font: Self.pillFont, .foregroundColor: NSColor.white]
-        let size = (text as NSString).size(withAttributes: attrs)
-        let rect = CGRect(x: origin.x, y: origin.y, width: ceil(size.width) + 16, height: 22)
-        tint.setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 11, yRadius: 11).fill()
-        (text as NSString).draw(at: CGPoint(x: rect.minX + 8, y: rect.minY + (rect.height - size.height) / 2), withAttributes: attrs)
+    private func drawPill(_ text: String, at origin: CGPoint, tint: NSColor = DS.Color.bgHud) -> CGRect {
+        let rect = CGRect(origin: origin, size: pillSize(text))
+        DS.Elevation.raised.draw(NSBezierPath.continuous(rect, radius: DS.Radius.sm), fill: tint)
+        let line = CGRect(x: rect.minX + DS.Space.s8, y: rect.midY - Self.pillStyle.lineHeight / 2, width: rect.width - 2 * DS.Space.s8, height: Self.pillStyle.lineHeight)
+        NSAttributedString(string: text, attributes: Self.pillStyle.attributes(color: DS.Color.textPrimary))
+            .draw(with: line, options: [.usesLineFragmentOrigin])
         return rect
     }
 
     private func drawBadge(text: String, anchoredTo r: CGRect) {
-        let size = CGSize(width: (text as NSString).size(withAttributes: [.font: Self.pillFont]).width + 16, height: 22)
+        let size = pillSize(text)
         let avoid = host?.toolbarPill.map { local($0).insetBy(dx: -6, dy: -6) }
         let x = min(max(r.minX, bounds.minX + 4), bounds.maxX - size.width - 4)
         let candidates = [CGPoint(x: x, y: r.maxY + 7), CGPoint(x: x, y: r.minY - 7 - size.height), CGPoint(x: x + 6, y: r.maxY - 28)]
@@ -344,23 +342,27 @@ final class ChromeView: NSView {
     }
 
     private func drawWindowHighlight(_ r: CGRect, window w: WindowSnapshot) {
-        NSColor.controlAccentColor.withAlphaComponent(0.28).setFill()
+        DS.Color.accentWash.setFill()
         r.fill()
+        let halo = NSBezierPath(rect: r.insetBy(dx: -0.5, dy: -0.5))
+        halo.lineWidth = 1
+        DS.Color.selectionHalo.setStroke()
+        halo.stroke()
         let border = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1))
         border.lineWidth = 2
-        NSColor.controlAccentColor.setStroke()
+        DS.Color.accentSolid.setStroke()
         border.stroke()
         let text = [w.appName, "\(Int(w.frame.width.rounded())) × \(Int(w.frame.height.rounded()))"].filter { !$0.isEmpty }.joined(separator: "  ")
-        let width = (text as NSString).size(withAttributes: [.font: Self.pillFont]).width + 16
-        drawPill(text, at: CGPoint(x: r.midX - width / 2, y: r.midY - 11))
+        let size = pillSize(text)
+        drawPill(text, at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2))
     }
 
     private func drawCrosshair(_ c: CGPoint) {
         let h = NSBezierPath(), v = NSBezierPath()
         h.move(to: CGPoint(x: bounds.minX, y: c.y)); h.line(to: CGPoint(x: bounds.maxX, y: c.y))
         v.move(to: CGPoint(x: c.x, y: bounds.minY)); v.line(to: CGPoint(x: c.x, y: bounds.maxY))
-        for (path, color, width) in [(h, NSColor.black.withAlphaComponent(0.28), 3.0), (v, NSColor.black.withAlphaComponent(0.28), 3.0),
-                                     (h, NSColor.white.withAlphaComponent(0.85), 1.0), (v, NSColor.white.withAlphaComponent(0.85), 1.0)] {
+        for (path, color, width) in [(h, DS.Color.selectionHalo, 3.0), (v, DS.Color.selectionHalo, 3.0),
+                                     (h, DS.Color.selectionStroke, 1.0), (v, DS.Color.selectionStroke, 1.0)] {
             path.lineWidth = CGFloat(width)
             color.setStroke()
             path.stroke()
@@ -381,17 +383,9 @@ final class ChromeView: NSView {
         origin.y = min(origin.y, bounds.maxY - side - infoH - 6)
         let total = CGRect(x: origin.x, y: origin.y, width: side, height: side + infoH)
         let picture = CGRect(x: origin.x, y: origin.y + infoH, width: side, height: side)
-        let shape = NSBezierPath(roundedRect: total, xRadius: 12, yRadius: 12)
-
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
-        shadow.shadowBlurRadius = 14
-        shadow.shadowOffset = NSSize(width: 0, height: -4)
-        shadow.set()
-        NSColor(white: 0.1, alpha: 1).setFill()
-        shape.fill()
-        NSGraphicsContext.restoreGraphicsState()
+        let shape = NSBezierPath.continuous(total, radius: DS.Radius.lg)
+        // The magnified patch sits on this surface, so unlike the toolbar it must not let the screen show through.
+        DS.Elevation.hud.draw(shape, fill: DS.Color.bgHud.withAlphaComponent(1))
 
         ctx.saveGState()
         shape.addClip()
@@ -405,29 +399,30 @@ final class ChromeView: NSView {
             for p in [v, h] { p.lineWidth = 0.5; NSColor.black.withAlphaComponent(0.22).setStroke(); p.stroke() }
         }
         let centerCell = CGRect(x: picture.minX + CGFloat(Loupe.radius) * cell, y: picture.minY + CGFloat(Loupe.radius) * cell, width: cell, height: cell)
-        let dark = NSBezierPath(rect: centerCell.insetBy(dx: -1, dy: -1)); dark.lineWidth = 1
-        NSColor.black.setStroke(); dark.stroke()
+        let dark = NSBezierPath(rect: centerCell.insetBy(dx: -1, dy: -1)); dark.lineWidth = 1.5
+        DS.Color.selectionHalo.setStroke(); dark.stroke()
         let light = NSBezierPath(rect: centerCell); light.lineWidth = 1.5
-        NSColor.white.setStroke(); light.stroke()
+        DS.Color.selectionStroke.setStroke(); light.stroke()
         ctx.restoreGState()
 
-        let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: mono, .foregroundColor: NSColor.white.withAlphaComponent(0.92)]
+        let attrs = DS.Text.readout.attributes(color: DS.Color.textPrimary)
+        let lineHeight = DS.Text.readout.lineHeight
         let coords = "\(Int(c.x)), \(Int(bounds.height - c.y))"
-        let coordSize = (coords as NSString).size(withAttributes: attrs)
-        (coords as NSString).draw(at: CGPoint(x: total.midX - coordSize.width / 2, y: origin.y + infoH - 4 - coordSize.height), withAttributes: attrs)
+        let coordWidth = ceil((coords as NSString).size(withAttributes: attrs).width)
+        (coords as NSString).draw(with: CGRect(x: total.midX - coordWidth / 2, y: origin.y + infoH - DS.Space.s4 - lineHeight, width: coordWidth, height: lineHeight),
+                                  options: .usesLineFragmentOrigin, attributes: attrs)
 
-        let hexSize = (sample.hex as NSString).size(withAttributes: attrs)
-        let rowWidth = 14 + 6 + hexSize.width
+        let hexWidth = ceil((sample.hex as NSString).size(withAttributes: attrs).width)
+        let rowWidth = 14 + DS.Space.s6 + hexWidth
         let rowX = total.midX - rowWidth / 2, rowY = origin.y + 7
-        let swatch = NSBezierPath(roundedRect: CGRect(x: rowX, y: rowY + (hexSize.height - 14) / 2, width: 14, height: 14), xRadius: 3, yRadius: 3)
+        let swatch = NSBezierPath.continuous(CGRect(x: rowX, y: rowY + (lineHeight - 14) / 2, width: 14, height: 14), radius: DS.Radius.xs)
         sample.color.setFill(); swatch.fill()
-        NSColor.white.withAlphaComponent(0.6).setStroke(); swatch.lineWidth = 1; swatch.stroke()
-        (sample.hex as NSString).draw(at: CGPoint(x: rowX + 20, y: rowY), withAttributes: attrs)
+        DS.Color.borderStrong.setStroke(); swatch.lineWidth = 1; swatch.stroke()
+        (sample.hex as NSString).draw(with: CGRect(x: rowX + 14 + DS.Space.s6, y: rowY, width: hexWidth, height: lineHeight), options: .usesLineFragmentOrigin, attributes: attrs)
 
-        let rim = NSBezierPath(roundedRect: total.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
+        let rim = NSBezierPath.continuous(total.insetBy(dx: 0.5, dy: 0.5), radius: DS.Radius.lg)
         rim.lineWidth = 1
-        NSColor.white.withAlphaComponent(0.55).setStroke()
+        DS.Color.border.setStroke()
         rim.stroke()
     }
 }

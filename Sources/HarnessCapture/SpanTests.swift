@@ -218,7 +218,7 @@ func runSpanTests() async {
         let hosts = a.overlayWindows.compactMap { w -> (NSWindow, CGRect)? in
             guard var v = findView("kadraj.toolbar.capture", in: w.contentView), let root = w.contentView else { return nil }
             while let up = v.superview, up !== root { v = up }
-            return (w, v.frame.insetBy(dx: 16, dy: 16))
+            return (w, v.frame.insetBy(dx: 32, dy: 32))
         }
         return hosts.count == 1 ? hosts[0] : nil
     }

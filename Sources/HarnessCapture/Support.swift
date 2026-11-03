@@ -1,8 +1,8 @@
 import AppKit
 import KadrajCapture
 
-let scratch = "/private/tmp/claude-501/-Users-emretufan-Documents-test-projects-cornermark/c5db439d-4599-415b-bcac-b995a06e3ad7/scratchpad/capture/"
-let multiScratch = "/private/tmp/claude-501/-Users-emretufan-Documents-test-projects-cornermark/c5db439d-4599-415b-bcac-b995a06e3ad7/scratchpad/multi/"
+let scratch = "build/harness/capture/"
+let multiScratch = "build/harness/multi/"
 
 @MainActor
 final class Checks {

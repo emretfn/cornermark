@@ -1,12 +1,13 @@
 import AppKit
 import KadrajCore
+import KadrajDesign
 
 /// Large countdown digits centred on a display. Keys still reach the session so Escape cancels.
 final class CountdownPanel: OverlayWindow {
     private let view: CountdownView
 
     init(display: DisplayGeometry, host: OverlayHost) {
-        let size = CGSize(width: 220, height: 240)
+        let size = CountdownView.size
         let frame = CGRect(x: display.frame.midX - size.width / 2, y: display.frame.midY - size.height / 2, width: size.width, height: size.height)
         view = CountdownView(frame: CGRect(origin: .zero, size: size))
         super.init(frame: frame)
@@ -20,39 +21,28 @@ final class CountdownPanel: OverlayWindow {
 }
 
 private final class CountdownView: NSView {
+    /// The card plus the transparent margin that holds the `hud` elevation's shadow.
+    static let inset = DS.Space.s32
+    static let card = CGSize(width: 160, height: 160)
+    static let size = CGSize(width: card.width + 2 * inset, height: card.height + 2 * inset)
+
     var remaining = 0 { didSet { needsDisplay = true } }
 
     override func draw(_ dirtyRect: NSRect) {
-        let card = bounds.insetBy(dx: 16, dy: 16)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
-        shadow.shadowBlurRadius = 16
-        shadow.shadowOffset = NSSize(width: 0, height: -5)
-        shadow.set()
-        NSColor(white: 0.1, alpha: 0.92).setFill()
-        NSBezierPath(roundedRect: card, xRadius: 28, yRadius: 28).fill()
-        NSGraphicsContext.restoreGraphicsState()
+        let card = bounds.insetBy(dx: Self.inset, dy: Self.inset)
+        DS.Elevation.hud.draw(NSBezierPath.continuous(card, radius: DS.Radius.xl), fill: DS.Color.bgHud)
 
-        let digit = NSAttributedString(string: "\(remaining)", attributes: [
-            .font: NSFont.systemFont(ofSize: 112, weight: .semibold).rounded,
-            .foregroundColor: NSColor.white,
-        ])
-        let ds = digit.size()
-        digit.draw(at: CGPoint(x: bounds.midX - ds.width / 2, y: bounds.midY - ds.height / 2 + 12))
-
-        let hint = NSAttributedString(string: "Esc to cancel", attributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.55),
-        ])
-        hint.draw(at: CGPoint(x: bounds.midX - hint.size().width / 2, y: card.minY + 16))
-    }
-}
-
-private extension NSFont {
-    var rounded: NSFont {
-        guard let d = fontDescriptor.withDesign(.rounded) else { return self }
-        return NSFont(descriptor: d, size: pointSize) ?? self
+        let hint = DS.Text.label
+        let hintBox = CGRect(x: card.minX, y: card.minY + DS.Space.s16, width: card.width, height: hint.lineHeight)
+        let digit = DS.Text.numeral
+        let digitBox = CGRect(x: card.minX, y: hintBox.maxY + DS.Space.s8, width: card.width, height: digit.lineHeight)
+        for (text, style, color, box) in [("\(remaining)", digit, DS.Color.textPrimary, digitBox), ("Esc to cancel", hint, DS.Color.textSecondary, hintBox)] {
+            var attributes = style.attributes(color: color)
+            let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
+            paragraph.alignment = .center
+            attributes[.paragraphStyle] = paragraph
+            (text as NSString).draw(with: box, options: .usesLineFragmentOrigin, attributes: attributes)
+        }
     }
 }
 
@@ -69,10 +59,14 @@ final class ScrollFramePanel: OverlayWindow {
 
 private final class ScrollFrameView: NSView {
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), xRadius: 3, yRadius: 3)
-        path.lineWidth = 3
-        NSColor.controlAccentColor.setStroke()
-        path.stroke()
+        let halo = NSBezierPath.continuous(bounds.insetBy(dx: 1.5, dy: 1.5), radius: DS.Radius.xs)
+        halo.lineWidth = 3
+        DS.Color.selectionHalo.setStroke()
+        halo.stroke()
+        let line = NSBezierPath.continuous(bounds.insetBy(dx: 2, dy: 2), radius: DS.Radius.xs)
+        line.lineWidth = 2
+        DS.Color.accentSolid.setStroke()
+        line.stroke()
     }
 }
 
@@ -80,41 +74,64 @@ final class ScrollHUDPanel: OverlayWindow {
     let hud: ScrollHUDView
 
     init(near area: CGRect, on display: DisplayGeometry, host: OverlayHost) {
-        hud = ScrollHUDView(frame: CGRect(x: 0, y: 0, width: ScrollHUDView.size.width, height: ScrollHUDView.size.height))
-        let size = ScrollHUDView.size
+        let view = ScrollHUDView(frame: .zero)
+        hud = view
+        let card = ScrollHUDView.card
         let b = display.frame
-        var origin = CGPoint(x: area.midX - size.width / 2, y: area.minY - 14 - size.height)
-        if origin.y < b.minY + 8 { origin.y = area.maxY + 14 }
-        if origin.y + size.height > b.maxY - 8 { origin.y = area.minY + 14 }
-        origin.x = min(max(origin.x, b.minX + 8), b.maxX - size.width - 8)
-        super.init(frame: CGRect(origin: origin, size: size))
+        // The gap equals the shadow margin, so the window never lies over the area and swallows its scroll events.
+        let gap = ScrollHUDView.inset
+        var origin = CGPoint(x: area.midX - card.width / 2, y: area.minY - gap - card.height)
+        if origin.y < b.minY + 8 { origin.y = area.maxY + gap }
+        if origin.y + card.height > b.maxY - 8 { origin.y = area.minY + gap }
+        origin.x = min(max(origin.x, b.minX + 8), b.maxX - card.width - 8)
+        // The window carries the shadow margin, and a window must not straddle displays, so the margin is clamped too.
+        let margin = ScrollHUDView.inset, size = view.frame.size
+        let window = CGPoint(x: min(max(origin.x - margin, b.minX), b.maxX - size.width), y: min(max(origin.y - margin, b.minY), b.maxY - size.height))
+        super.init(frame: CGRect(origin: window, size: size))
         keyHost = host
-        contentView = hud
+        contentView = view
     }
 }
 
-final class ScrollHUDView: NSView {
-    static let size = CGSize(width: 340, height: 150)
+final class ScrollHUDView: Surface {
+    static let inset = DS.Space.s32
+    static let card = CGSize(width: 340, height: 124)
+    static let size = CGSize(width: card.width + 2 * inset, height: card.height + 2 * inset)
 
     var onDone: (() -> Void)?
     var onCancel: (() -> Void)?
-    private var lines = 0
-    private var hint = ScrollHint.clear
     private var preview: CGImage?
-    private let done = PillButton(title: "Done", prominent: true)
-    private let cancel = PillButton(title: "Cancel", prominent: false)
+    private let done = Button(title: "Done", variant: .primary)
+    private let cancel = Button(title: "Cancel", variant: .secondary)
+    private let title = NSTextField.label("Scrolling capture", style: DS.Text.captionStrong, color: DS.Color.textSecondary)
+    private let height = NSTextField.label("", style: DS.Text.readoutLarge, color: DS.Color.textPrimary)
+    private let hintIcon = NSImageView()
+    private let hintText = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
+    private var well: CGRect { contentRect.insetBy(dx: DS.Space.s12, dy: DS.Space.s12).divided(atDistance: 52, from: .minXEdge).slice }
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        appearance = NSAppearance(named: .darkAqua)
-        done.frame = CGRect(x: frameRect.width - 16 - 76, y: 18, width: 76, height: 28)
+    init(frame frameRect: NSRect) {
+        super.init(style: .hud, shadowInset: Self.inset)
+        setFrameSize(Self.size)
+
+        let card = contentRect
+        let textX = well.maxX + DS.Space.s12
+        let textWidth = card.maxX - DS.Space.s12 - textX
+        title.frame = CGRect(x: textX, y: card.maxY - DS.Space.s12 - DS.Text.captionStrong.lineHeight, width: textWidth, height: DS.Text.captionStrong.lineHeight)
+        height.frame = CGRect(x: textX, y: title.frame.minY - DS.Space.s2 - DS.Text.readoutLarge.lineHeight, width: textWidth, height: DS.Text.readoutLarge.lineHeight)
+        hintIcon.symbolConfiguration = .init(pointSize: DS.Size.iconSmall, weight: .medium)
+        hintIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Warning")
+        hintIcon.contentTintColor = DS.Color.warningText
+        hintIcon.frame = CGRect(x: textX, y: height.frame.minY - DS.Space.s4 - DS.Text.caption.lineHeight, width: DS.Size.iconSmall, height: DS.Text.caption.lineHeight)
+        hintText.frame = CGRect(x: textX, y: hintIcon.frame.minY, width: textWidth, height: DS.Text.caption.lineHeight)
+
+        done.frame.origin = CGPoint(x: card.maxX - DS.Space.s12 - done.frame.width, y: card.minY + DS.Space.s12)
         done.target = self; done.action = #selector(doneTapped)
         done.setAccessibilityIdentifier("kadraj.scroll.done")
-        cancel.frame = CGRect(x: done.frame.minX - 8 - 76, y: 18, width: 76, height: 28)
+        cancel.frame.origin = CGPoint(x: done.frame.minX - DS.Space.s8 - cancel.frame.width, y: done.frame.minY)
         cancel.target = self; cancel.action = #selector(cancelTapped)
         cancel.setAccessibilityIdentifier("kadraj.scroll.cancel")
-        addSubview(done)
-        addSubview(cancel)
+        for v in [title, height, hintIcon, hintText, done, cancel] as [NSView] { addSubview(v) }
+        apply(ScrollProgress(), preview: nil)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -126,49 +143,29 @@ final class ScrollHUDView: NSView {
     @objc private func cancelTapped() { onCancel?() }
 
     func apply(_ progress: ScrollProgress, preview: CGImage?) {
-        lines = progress.lines
-        hint = progress.hint
         if let preview { self.preview = preview }
+        height.stringValue = Self.format(progress.lines)
+        let warning = progress.hint == .scrollSlower
+        // The warning never rides on colour alone: it keeps its own symbol and wording.
+        hintIcon.isHidden = !warning
+        hintText.textColor = warning ? DS.Color.warningText : DS.Color.textSecondary
+        hintText.stringValue = warning ? "Scroll slower, or back up a little" : (progress.lines == 0 ? "Starting" : "Keep scrolling down")
+        hintText.frame.origin.x = (warning ? hintIcon.frame.maxX + DS.Space.s4 : hintIcon.frame.minX)
+        hintText.frame.size.width = contentRect.maxX - DS.Space.s12 - hintText.frame.minX
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let card = bounds.insetBy(dx: 8, dy: 8)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
-        shadow.shadowBlurRadius = 14
-        shadow.shadowOffset = NSSize(width: 0, height: -4)
-        shadow.set()
-        NSColor(white: 0.12, alpha: 0.95).setFill()
-        NSBezierPath(roundedRect: card, xRadius: 14, yRadius: 14).fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        let well = CGRect(x: card.minX + 12, y: card.minY + 12, width: 52, height: card.height - 24)
-        NSColor.white.withAlphaComponent(0.08).setFill()
-        NSBezierPath(roundedRect: well, xRadius: 6, yRadius: 6).fill()
+        super.draw(dirtyRect)
+        let well = self.well
+        DS.Color.bgControl.setFill()
+        NSBezierPath.continuous(well, radius: DS.Radius.sm).fill()
         if let preview, let ctx = NSGraphicsContext.current?.cgContext {
             let k = min((well.width - 6) / CGFloat(preview.width), (well.height - 6) / CGFloat(preview.height))
             let size = CGSize(width: CGFloat(preview.width) * k, height: CGFloat(preview.height) * k)
             ctx.interpolationQuality = .medium
             ctx.draw(preview, in: CGRect(x: well.midX - size.width / 2, y: well.maxY - 3 - size.height, width: size.width, height: size.height))
         }
-
-        let textX = well.maxX + 14
-        NSAttributedString(string: "SCROLLING CAPTURE", attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: NSColor.white.withAlphaComponent(0.5), .kern: 0.6,
-        ]).draw(at: CGPoint(x: textX, y: card.maxY - 26))
-
-        let height = NSAttributedString(string: Self.format(lines), attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .semibold), .foregroundColor: NSColor.white,
-        ])
-        height.draw(at: CGPoint(x: textX, y: card.maxY - 58))
-
-        let (text, color): (String, NSColor) = hint == .scrollSlower
-            ? ("Scroll slower, or back up a little", .systemOrange)
-            : (lines == 0 ? "Starting" : "Keep scrolling down", NSColor.white.withAlphaComponent(0.55))
-        NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 11.5, weight: .medium), .foregroundColor: color])
-            .draw(at: CGPoint(x: textX, y: card.maxY - 78))
     }
 
     private static func format(_ lines: Int) -> String {
