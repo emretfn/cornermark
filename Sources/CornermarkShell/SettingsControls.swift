@@ -23,9 +23,26 @@ extension NSControl {
 final class ShortcutRecorderView: NSView {
     var hotKey: HotKey? { didSet { needsDisplay = true } }
     var onChange: (HotKey?) -> Void = { _ in }
-    private(set) var isRecording = false { didSet { needsDisplay = true } }
+    private enum Phase: Equatable {
+        case idle
+        case listening(held: UInt32)
+        case refused
+    }
+    private var phase = Phase.idle { didSet { needsDisplay = true } }
+    var isRecording: Bool { phase != .idle }
 
     static let width: CGFloat = 140
+    static let waitingPrompt = "Type shortcut\u{2026}"
+    static let modifierHint = "Add \u{2303} \u{2325} \u{21E7} or \u{2318}"
+
+    var recordingPrompt: String? {
+        switch phase {
+        case .idle: return nil
+        case .listening(held: 0): return Self.waitingPrompt
+        case .listening(let held): return HotKey.modifierSymbols(held) + "\u{2026}"
+        case .refused: return Self.modifierHint
+        }
+    }
 
     override var acceptsFirstResponder: Bool { true }
     override var intrinsicContentSize: NSSize { NSSize(width: Self.width, height: DS.Size.control) }
@@ -42,15 +59,15 @@ final class ShortcutRecorderView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        isRecording = true
+        beginRecording()
     }
 
     override func resignFirstResponder() -> Bool {
-        isRecording = false
+        phase = .idle
         return super.resignFirstResponder()
     }
 
-    func beginRecording() { isRecording = true }
+    func beginRecording() { phase = .listening(held: 0) }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard isRecording else { return false }
@@ -62,15 +79,23 @@ final class ShortcutRecorderView: NSView {
         guard isRecording else { return super.keyDown(with: event) }
         switch event.keyCode {
         case 53:
-            isRecording = false
+            phase = .idle
         case 51, 117:
-            isRecording = false
+            phase = .idle
             onChange(nil)
         default:
-            guard let key = HotKey(event: event) else { return NSSound.beep() }
-            isRecording = false
+            guard let key = HotKey(event: event) else {
+                phase = .refused
+                return NSSound.beep()
+            }
+            phase = .idle
             onChange(key)
         }
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        guard isRecording else { return super.flagsChanged(with: event) }
+        phase = .listening(held: HotKey.carbonModifiers(event.modifierFlags))
     }
 
     override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.md).fill() }
@@ -88,7 +113,7 @@ final class ShortcutRecorderView: NSView {
         NSGraphicsContext.restoreGraphicsState()
 
         let text: String, color: NSColor
-        if isRecording { text = "Type shortcut\u{2026}"; color = DS.Color.textSecondary }
+        if let recordingPrompt { text = recordingPrompt; color = DS.Color.textSecondary }
         else if let hotKey { text = hotKey.displayString; color = DS.Color.textPrimary }
         else { text = "Not set"; color = DS.Color.textDisabled }
         let style = DS.Text.bodyStrong
