@@ -30,41 +30,17 @@ func checkActionTable() async throws {
 
     let w = try World(after: [])
     defer { w.cleanup() }
-    let builder = StatusMenuBuilder(coordinator: w.coordinator)
-    let menu = NSMenu()
-    builder.populate(menu)
-    let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
-    let expected = specs.filter { $0.menuGroup != nil }.map(\.title)
-    check(titles == expected, "status menu lists the table's menu actions in table order", detail: "\(titles)")
-    check(menu.items.filter(\.isSeparatorItem).count == 3, "menu groups are separated (captures, overlays, windows, quit)")
-    let all = menu.items.first { $0.identifier?.rawValue == "allInOne" }
-    check(all?.keyEquivalent == "1" && all?.keyEquivalentModifierMask == [.control, .shift], "menu item shows the hotkey as key equivalent")
-    let hotkeyItems = menu.items.filter { !$0.keyEquivalent.isEmpty }
-    check(hotkeyItems.count == 8, "eight menu items show a hotkey", detail: "\(hotkeyItems.count)")
-    let restore = menu.items.first { $0.identifier?.rawValue == "restoreOverlay" }
-    check(restore?.isEnabled == false, "Restore Last Overlay is disabled while nothing was closed")
-
-    w.settings.update { $0.customShortcuts["area"] = HotKey(keyCode: 40, modifiers: UInt32(controlKey | optionKey)) }
-    builder.populate(menu)
-    let area = menu.items.first { $0.identifier?.rawValue == "area" }
-    check(area?.keyEquivalent == "k" && area?.keyEquivalentModifierMask == [.control, .option], "menu follows a customized hotkey after rebuild")
-    w.settings.update { $0.disabledShortcuts.insert("window") }
-    builder.populate(menu)
-    check(menu.items.first { $0.identifier?.rawValue == "window" }?.keyEquivalent == "", "a disabled shortcut disappears from the menu item")
-
-    let history = menu.items.first { $0.identifier?.rawValue == "history" }!
-    _ = history.target?.perform(history.action, with: history)
-    check(w.coordinator.history != nil, "menu item History dispatches through AppAction (history window built)")
+    let (_, view) = panelView(w)
+    check(pressMenu(.action(.history), in: view), "the panel has a way to the history")
+    check(await waitUntil { w.coordinator.history != nil }, "panel item History dispatches through AppAction (history window built)")
     check(w.presented.contains { $0 === w.coordinator.history?.window }, "history window was asked to present")
-    check(nothingOnScreen(), "menu dispatch ordered nothing on screen")
+    check(nothingOnScreen(), "panel dispatch ordered nothing on screen")
 
-    let fs = menu.items.first { $0.identifier?.rawValue == "fullscreen" }!
-    _ = fs.target?.perform(fs.action, with: fs)
-    check(await waitUntil { w.store.list().count == 1 }, "menu item Capture Fullscreen reaches the capture store")
+    check(pressMenu(.action(.fullscreen), in: view), "the panel has Screen")
+    check(await waitUntil { w.store.list().count == 1 }, "panel item Screen reaches the capture store")
 
-    let quit = menu.items.first { $0.identifier?.rawValue == "quit" }!
-    _ = quit.target?.perform(quit.action, with: quit)
-    check(w.quits == 1, "menu Quit calls the injected quit")
+    check(pressMenu(.action(.quit), in: view), "the panel has Quit")
+    check(await waitUntil { w.quits == 1 }, "panel Quit calls the injected quit")
 }
 
 @MainActor

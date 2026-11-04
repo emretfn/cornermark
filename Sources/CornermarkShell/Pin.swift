@@ -225,6 +225,12 @@ final class PinController: NSObject, NSWindowDelegate {
     }
 }
 
+struct PinSummary: Equatable {
+    let id: UUID
+    let title: String
+    let isLocked: Bool
+}
+
 @MainActor
 final class PinManager {
     private let env: AppEnvironment
@@ -251,25 +257,15 @@ final class PinManager {
     func unlockAll() { pins.forEach { $0.setLocked(false) } }
     var hasLocked: Bool { pins.contains { $0.isLocked } }
 
-    /// Entries for the menu bar: one submenu per pin, so a click-through pin can be unlocked or closed.
-    func menuItems() -> [NSMenuItem] {
-        var items: [NSMenuItem] = []
-        for (i, pin) in pins.enumerated() {
-            let item = NSMenuItem(title: "Pin \(i + 1) \u{2013} \(pin.sizeText)", action: nil, keyEquivalent: "")
-            if pin.isLocked { item.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Locked") }
-            let sub = NSMenu()
-            let lock = BlockMenuItem(pin.isLocked ? "Unlock" : "Lock Mode") { [weak pin] in pin?.setLocked(!(pin?.isLocked ?? false)) }
-            lock.identifier = NSUserInterfaceItemIdentifier("pin.lock")
-            sub.addItem(lock)
-            sub.addItem(BlockMenuItem("Close") { [weak pin] in pin?.close() })
-            item.submenu = sub
-            items.append(item)
-        }
-        if pins.count > 1 {
-            items.append(.separator())
-            items.append(BlockMenuItem("Unlock All") { [weak self] in self?.unlockAll() })
-            items.append(BlockMenuItem("Close All Pins") { [weak self] in self?.closeAll() })
-        }
-        return items
+    /// What the menu bar panel lists, in the order the pins were made.
+    var summaries: [PinSummary] {
+        pins.enumerated().map { PinSummary(id: $1.id, title: "Pin \($0 + 1) \u{2013} \($1.sizeText)", isLocked: $1.isLocked) }
     }
+
+    func toggleLock(_ id: UUID) {
+        guard let pin = pins.first(where: { $0.id == id }) else { return }
+        pin.setLocked(!pin.isLocked)
+    }
+
+    func close(_ id: UUID) { pins.first { $0.id == id }?.close() }
 }

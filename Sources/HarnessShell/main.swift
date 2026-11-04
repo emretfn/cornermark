@@ -34,6 +34,7 @@ Task { @MainActor in
         try await checkPrune()
         try await checkImportAndEditorRoundTrip()
         try await checkUpdates()
+        try await checkMenuPanel()
         try await checkSettingsWindow()
         try await checkSmallWindows()
         try await takeSnapshots()

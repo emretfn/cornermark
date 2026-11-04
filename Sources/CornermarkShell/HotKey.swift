@@ -27,22 +27,7 @@ struct HotKey: Codable, Hashable {
         return UInt32(m)
     }
 
-    var modifierFlags: NSEvent.ModifierFlags {
-        var f: NSEvent.ModifierFlags = []
-        if modifiers & UInt32(cmdKey) != 0 { f.insert(.command) }
-        if modifiers & UInt32(shiftKey) != 0 { f.insert(.shift) }
-        if modifiers & UInt32(optionKey) != 0 { f.insert(.option) }
-        if modifiers & UInt32(controlKey) != 0 { f.insert(.control) }
-        return f
-    }
-
     var keyName: String { Self.keyNames[keyCode] ?? "Key \(keyCode)" }
-
-    /// The character a menu item uses as key equivalent, when the key has one.
-    var menuCharacter: String? {
-        guard let name = Self.keyNames[keyCode], name.count == 1 else { return nil }
-        return name.lowercased()
-    }
 
     var displayString: String { Self.modifierSymbols(modifiers) + keyName }
 

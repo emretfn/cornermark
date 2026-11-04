@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkDesign
 @testable import CornermarkShell
 
 @MainActor
@@ -216,16 +217,14 @@ func checkPins() async throws {
     pin.setLocked(true)
     check(win.ignoresMouseEvents && pin.isLocked, "Lock Mode sets ignoresMouseEvents (click-through)")
     check(pins.hasLocked, "manager knows a pin is locked")
-    let builder = StatusMenuBuilder(coordinator: w.coordinator)
-    let status = NSMenu()
-    builder.populate(status)
-    let pinned = status.items.first { $0.title.hasPrefix("Pin 1") }
-    check(status.items.contains { $0.title == "Pinned Screenshots" } && pinned != nil, "menu bar menu lists pinned items")
-    check(pinned?.image != nil, "locked pin shows a lock icon in the menu")
-    let unlock = pinned?.submenu?.items.first { $0.title == "Unlock" }
-    check(unlock != nil, "the pinned item offers Unlock")
-    if let unlock { _ = unlock.target?.perform(unlock.action, with: unlock) }
-    check(!win.ignoresMouseEvents && !pin.isLocked, "Unlock from the menu bar restores mouse events")
+    let lockedPins = panelModel(w).pinSection
+    check(lockedPins?.header == "Pinned screenshots" && lockedPins?.pins.first?.title.hasPrefix("Pin 1") == true, "menu bar panel lists pinned items")
+    check(lockedPins?.pins.first?.isLocked == true, "a locked pin is marked locked in the panel")
+    let (_, lockView) = panelView(w)
+    check((lockView.part(for: .togglePinLock(pin.id)) as? IconButton)?.symbol == "lock.fill", "and shows a closed lock")
+    check(pressMenu(.togglePinLock(pin.id), in: lockView), "the panel offers a lock button for the pin")
+    check(await waitUntil { !pin.isLocked }, "Unlock from the menu bar restores mouse events")
+    check(!win.ignoresMouseEvents, "the pin window takes mouse events again")
 
     pin.setLocked(true)
     pins.unlockAll()
@@ -248,8 +247,8 @@ func checkPins() async throws {
 
     let pin3 = pins.pin(image), pin4 = pins.pin(image)
     pin3.setLocked(true)
-    builder.populate(status)
-    check(status.items.contains { $0.title == "Close All Pins" } && status.items.contains { $0.title == "Unlock All" }, "with two pins the menu offers Unlock All and Close All Pins")
+    let bulk = panelModel(w).pinSection?.bulk.map(\.title)
+    check(bulk == ["Unlock all", "Close all"], "with two pins the panel offers Unlock all and Close all", detail: "\(String(describing: bulk))")
     _ = pin4
     pins.closeAll()
     check(pins.pins.isEmpty && nothingOnScreen(), "pins closed; nothing ever on screen")

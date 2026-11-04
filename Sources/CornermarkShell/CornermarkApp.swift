@@ -5,7 +5,7 @@ import CornermarkCapture
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: AppCoordinator?
     private var statusItem: NSStatusItem?
-    private var menuBuilder: StatusMenuBuilder?
+    private var menuPanel: MenuPanelController?
     private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -42,21 +42,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installStatusItem(_ coordinator: AppCoordinator) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let panel = MenuPanelController(coordinator: coordinator)
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Cornermark")
+            button.target = self
+            button.action = #selector(toggleMenuPanel)
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+            panel.onOpenChange = { [weak button] open in button?.highlight(open) }
             // An image-only variable-length item is 10pt wider than the square one, so the length follows the label.
             let apply: (UpdateState) -> Void = { [weak item] state in
                 guard let item, let button = item.button else { return }
                 applyStatusLabel(state, to: button)
                 item.length = state.statusLabel == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+                panel.refresh()
             }
             apply(coordinator.updates.state)
             coordinator.updates.onStateChange = apply
         }
-        let builder = StatusMenuBuilder(coordinator: coordinator)
-        item.menu = builder.build()
         statusItem = item
-        menuBuilder = builder
+        menuPanel = panel
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CORNERMARK_OPEN_MENU"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.toggleMenuPanel()
+                if let frame = self?.menuPanel?.panel?.frame { Log.shell.info("menu panel frame \(NSStringFromRect(frame), privacy: .public)") }
+            }
+        }
+        #endif
+    }
+
+    @objc private func toggleMenuPanel() {
+        guard let button = statusItem?.button, let anchor = MenuAnchor(button: button) else { return }
+        menuPanel?.toggle(anchor: anchor)
     }
 
     /// Accessory apps still need an Edit menu for Cmd+C/V in text fields and Cmd+W in windows.
