@@ -65,6 +65,9 @@ struct Settings: Codable, Equatable {
     var windowShadow = true
     var timerSeconds = 5
     var retentionDays = 30
+    var checkForUpdatesAutomatically = true
+    /// The version that last ran, so the first launch after an update can say so. Nil before the first run.
+    var lastRunVersion: String?
 
     var overlayAutoClose: Double? {
         get { autoCloseSeconds > 0 ? autoCloseSeconds : nil }
@@ -93,6 +96,8 @@ struct Settings: Codable, Equatable {
         windowShadow = get(.windowShadow, d.windowShadow)
         timerSeconds = get(.timerSeconds, d.timerSeconds)
         retentionDays = get(.retentionDays, d.retentionDays)
+        checkForUpdatesAutomatically = get(.checkForUpdatesAutomatically, d.checkForUpdatesAutomatically)
+        lastRunVersion = get(.lastRunVersion, d.lastRunVersion)
         self = normalized()
     }
 

@@ -42,7 +42,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installStatusItem(_ coordinator: AppCoordinator) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Cornermark")
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Cornermark")
+            // An image-only variable-length item is 10pt wider than the square one, so the length follows the label.
+            let apply: (UpdateState) -> Void = { [weak item] state in
+                guard let item, let button = item.button else { return }
+                applyStatusLabel(state, to: button)
+                item.length = state.statusLabel == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            }
+            apply(coordinator.updates.state)
+            coordinator.updates.onStateChange = apply
+        }
         let builder = StatusMenuBuilder(coordinator: coordinator)
         item.menu = builder.build()
         statusItem = item
@@ -92,4 +102,13 @@ public enum CornermarkApp {
             app.run()
         }
     }
+}
+
+/// Shows the update label next to the icon, or the bare icon when there is none.
+@MainActor
+func applyStatusLabel(_ state: UpdateState, to button: NSStatusBarButton) {
+    let label = state.statusLabel
+    button.title = label ?? ""
+    button.imagePosition = label == nil ? .imageOnly : .imageLeading
+    button.setAccessibilityLabel(label == nil ? "Cornermark" : "Cornermark, update available")
 }

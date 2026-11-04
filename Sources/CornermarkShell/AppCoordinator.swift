@@ -13,11 +13,13 @@ final class AppCoordinator {
     let overlay: QuickAccessManager
     let pins: PinManager
     let hud: HUD
+    let updates: UpdateController
     let thumbnails = ThumbnailCache()
     private(set) var hotKeys: HotKeyManager?
     private(set) var history: HistoryWindowController?
     private(set) var settingsWindow: SettingsWindowController?
     private(set) var permissionWindow: PermissionWindowController?
+    private(set) var whatsNewWindow: WhatsNewWindowController?
     private(set) var editors: [UUID: EditorWindowController] = [:]
     private(set) var loginError: String?
     private var maintenanceTimer: Timer?
@@ -30,9 +32,11 @@ final class AppCoordinator {
         overlay = QuickAccessManager(env: env) { store.value }
         pins = PinManager(env: env)
         hud = HUD(env: env)
+        updates = UpdateController(env: env, hud: hud)
 
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
+        updates.closeEditors = { [unowned self] in closeAllEditors() }
         settings.observe { [unowned self] old, new in settingsChanged(from: old, to: new) }
         applyCaptureSettings()
     }
@@ -45,6 +49,8 @@ final class AppCoordinator {
         case .captureOCR: beginCapture(.area) { [unowned self] out in runOCR(on: out.image) }
         case .openHistory: showHistory()
         case .openSettings: showSettings()
+        case .checkForUpdates: Task { await updates.perform() }
+        case .whatsNew: showWhatsNew()
         case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
@@ -253,6 +259,11 @@ final class AppCoordinator {
         env.present(history?.window)
     }
 
+    /// Each editor stores unsaved edits as it closes.
+    func closeAllEditors() {
+        for editor in Array(editors.values) { editor.window?.close() }
+    }
+
     func deleteRecord(_ record: CaptureRecord) {
         overlay.card(forRecord: record.id).map(overlay.close)
         editors[record.id]?.close()
@@ -269,6 +280,12 @@ final class AppCoordinator {
         }
         settingsWindow?.refreshAll()
         env.present(settingsWindow?.window)
+    }
+
+    func showWhatsNew() {
+        if whatsNewWindow == nil { whatsNewWindow = WhatsNewWindowController(env: env) }
+        whatsNewWindow?.reload()
+        env.present(whatsNewWindow?.window)
     }
 
     func showPermissionWindow() {
@@ -326,11 +343,30 @@ final class AppCoordinator {
         return removed.count
     }
 
+    func checkForUpdatesIfWanted() {
+        guard settings.value.checkForUpdatesAutomatically else { return }
+        Task { await updates.checkAutomatically() }
+    }
+
+    /// Says so after an update, then remembers the running version. A first run has nothing to compare with.
+    func announceUpdateIfNeeded() {
+        guard let current = env.updateService.currentVersion else { return }
+        if let previous = settings.value.lastRunVersion.flatMap(AppVersion.init), current > previous {
+            hud.show("Updated to Cornermark \(current)")
+        }
+        settings.update { $0.lastRunVersion = current.description }
+    }
+
     func startMaintenance() {
+        announceUpdateIfNeeded()
         prune()
+        checkForUpdatesIfWanted()
         guard env.isOnscreen else { return }
         maintenanceTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { _ = self?.prune() }
+            MainActor.assumeIsolated {
+                _ = self?.prune()
+                self?.checkForUpdatesIfWanted()
+            }
         }
     }
 }

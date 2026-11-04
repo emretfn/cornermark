@@ -54,6 +54,49 @@ final class FakeLoginItem: LoginItemControlling {
     }
 }
 
+final class FakeUpdateService: UpdateServicing {
+    var currentVersion: AppVersion? = AppVersion(0, 2, 1)
+    var latest: Result<AppRelease?, Error> = .success(nil)
+    var history: Result<[ReleaseEntry], Error> = .success([])
+    var staging: Result<Void, Error> = .success(())
+    var installing: Result<Void, Error> = .success(())
+    var onInstall: () -> Void = {}
+    var latestDelay: TimeInterval = 0
+    var historyDelay: TimeInterval = 0
+    private(set) var latestCalls = 0
+    private(set) var historyCalls = 0
+    private(set) var staged: [AppRelease] = []
+    private(set) var installed: [StagedUpdate] = []
+    private(set) var discarded: [StagedUpdate] = []
+
+    func latestRelease() async throws -> AppRelease? {
+        latestCalls += 1
+        if latestDelay > 0 { try? await Task.sleep(nanoseconds: UInt64(latestDelay * 1_000_000_000)) }
+        return try latest.get()
+    }
+
+    func releaseHistory() async throws -> [ReleaseEntry] {
+        historyCalls += 1
+        if historyDelay > 0 { try? await Task.sleep(nanoseconds: UInt64(historyDelay * 1_000_000_000)) }
+        return try history.get()
+    }
+
+    func stage(_ release: AppRelease) async throws -> StagedUpdate {
+        staged.append(release)
+        try staging.get()
+        let dir = URL(fileURLWithPath: "/nonexistent/staging")
+        return StagedUpdate(release: release, directory: dir, app: dir.appendingPathComponent("Cornermark.app"))
+    }
+
+    func installAndRelaunch(_ staged: StagedUpdate) throws {
+        onInstall()
+        installed.append(staged)
+        try installing.get()
+    }
+
+    func discard(_ staged: StagedUpdate) { discarded.append(staged) }
+}
+
 final class FakeHotKeyBackend: HotKeyBackend {
     var onPressed: ((UInt32) -> Void)?
     var failing: [HotKey: Int32] = [:]
@@ -196,9 +239,14 @@ final class World {
     var revealed: [URL] = []
     var sounds = 0
     var quits = 0
+    var confirmations: [AppRelease] = []
+    var confirmAnswer = true
+    var updateAlerts: [UpdateAlert] = []
+    var alertOpensPage = false
     var presented: [NSWindow] = []
     var pickedFolder: URL?
     let login = FakeLoginItem()
+    let updateService = FakeUpdateService()
     let source: FixtureScreenSource
     let display: DisplaySnapshot
     let env: AppEnvironment
@@ -226,9 +274,17 @@ final class World {
             hasScreenPermission: { box.world?.permission ?? false }, requestScreenPermission: {},
             openURL: { box.world?.opened.append($0) }, revealInFinder: { box.world?.revealed.append($0) },
             playSound: { box.world?.sounds += 1 }, pickFolder: { done in done(box.world?.pickedFolder) },
-            loginItem: login, defaultSaveFolder: root.appendingPathComponent("desktop", isDirectory: true),
+            loginItem: login, updateService: updateService, defaultSaveFolder: root.appendingPathComponent("desktop", isDirectory: true),
             dragDirectory: drag, quit: { box.world?.quits += 1 })
         env.willPresent = { box.world?.presented.append($0) }
+        env.confirmUpdate = { release in
+            box.world?.confirmations.append(release)
+            return box.world?.confirmAnswer ?? false
+        }
+        env.presentUpdateAlert = { alert in
+            box.world?.updateAlerts.append(alert)
+            return box.world?.alertOpensPage ?? false
+        }
         coordinator = AppCoordinator(env: env)
         box.world = self
         coordinator.capture.settleDelay = 0

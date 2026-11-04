@@ -60,6 +60,8 @@ final class GeneralPane: SettingsPane {
     private let folderLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
     private let format = Form.popup(SaveFormat.allCases.map(\.title), id: "general.format")
     private let sound = Form.checkbox("Play a sound after capture", id: "general.sound")
+    private let updates = Form.checkbox("Check for updates automatically", id: "general.checkForUpdates")
+    private let versionNote = Form.caption("")
 
     override func buildForm() -> FormPage {
         login.onAction { [unowned self] c in change { $0.launchAtLogin = (c as! NSButton).state == .on } }
@@ -86,6 +88,7 @@ final class GeneralPane: SettingsPane {
             change { $0.imageFormat = SaveFormat.allCases[i] }
         }
         sound.onAction { [unowned self] c in change { $0.playSound = (c as! NSButton).state == .on } }
+        updates.onAction { [unowned self] c in change { $0.checkForUpdatesAutomatically = (c as! NSButton).state == .on } }
         loginNote.isHidden = true
 
         return Form.page(title: paneTitle, groups: [
@@ -96,6 +99,7 @@ final class GeneralPane: SettingsPane {
                 Form.row(title: "Format", control: format),
             ], footer: "Files are named Cornermark YYYY-MM-DD at HH.MM.SS.png"),
             .init("Feedback", rows: [Form.row(title: "Play a sound after capture", control: sound)]),
+            .init("Updates", rows: [Form.row(title: "Check for updates automatically", caption: versionNote, control: updates)]),
         ])
     }
 
@@ -108,6 +112,9 @@ final class GeneralPane: SettingsPane {
         folderLabel.stringValue = settings.resolvedSaveFolder(default: ctx.env.defaultSaveFolder).path
         format.selectItem(at: SaveFormat.allCases.firstIndex(of: settings.imageFormat) ?? 0)
         sound.state = settings.playSound ? .on : .off
+        updates.state = settings.checkForUpdatesAutomatically ? .on : .off
+        let version = ctx.env.updateService.currentVersion.map { "Version \($0). " } ?? ""
+        versionNote.stringValue = version + "Checks GitHub at launch and once a day, and sends no personal data."
     }
 }
 
