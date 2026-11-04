@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/emretfn/cornermark/compare/v0.2.1...v0.3.0) (2026-11-04)
+
+
+### New
+
+* **menu:** open a panel with capture tiles and recent captures from the menu bar ([#7](https://github.com/emretfn/cornermark/issues/7)) ([a935a42](https://github.com/emretfn/cornermark/commit/a935a427b531d5ba0b167dbae99b497f18b9e366))
+* update Cornermark from the menu bar and see what's new ([#6](https://github.com/emretfn/cornermark/issues/6)) ([22f4452](https://github.com/emretfn/cornermark/commit/22f4452fd263e927a37e6fc561c6901460fd3a57))
+
 ## [0.2.1](https://github.com/emretfn/cornermark/compare/v0.2.0...v0.2.1) (2026-11-03)
 
 
