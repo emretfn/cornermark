@@ -56,6 +56,7 @@ extension AppEnvironment {
         env.presentUpdateAlert = presentUpdateAlert
         env.frameSource = { target, options in StreamFrameSource(target: target, options: options) }
         env.pointerSource = { LivePointerSource() }
+        env.recordingJournal = RecordingJournal(folder: support.appendingPathComponent("\(AppVariant.current.name)/Unfinished Recordings", isDirectory: true))
         return env
     }
 
@@ -88,6 +89,7 @@ extension AppEnvironment {
         env.recordingTestWindow = testWindow
         env.frameSource = { target, options in try isolatedFrameSource(target, options, testWindow: testWindow) }
         env.pointerSource = { ScriptedPointerSource() }
+        env.recordingJournal = RecordingJournal(folder: root.appendingPathComponent("unfinished", isDirectory: true))
         env.willPresent = { window in
             Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")
         }
@@ -105,7 +107,8 @@ extension AppEnvironment {
         case .display(let id, let area):
             if let id, id != FixtureFrameSource.displayID { throw RecordingRefusal.unknownDisplay(id) }
             // The scripted pointer is the one a project's track records, so a video shows the same path in its picture.
-            return FixtureFrameSource(area: area, options: options, cursor: .tour, pacing: .realtime)
+            return FixtureFrameSource(area: area, options: options, cursor: .tour,
+                                      windows: SyntheticScene.otherWindows(on: FixtureFrameSource.displayFrame.size), pacing: .realtime)
         }
     }
 

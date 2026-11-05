@@ -141,7 +141,7 @@ final class Film {
     var settingsOrigin = CGPoint(x: 120, y: 160)
     var historyOrigin = CGPoint(x: 120, y: 90)
     /// Frames lifted from the files recorded in this film, newest last, each with its facts.
-    private var results: [(label: String, frame: CGImage?, facts: String)] = []
+    var results: [(label: String, frame: CGImage?, facts: String)] = []
     private var cached: [(CGImage, CGRect)] = []
     private let width: Int
     private let height: Int
@@ -228,7 +228,15 @@ final class Film {
         guard let record = await recordOnce(w, query), let video = record.video else { return failures.append("no recording for \(query)") }
         refresh()
         guard let label else { return }
-        let file = video.file
+        var extra = ""
+        if video.format == .project, let project = try? RecordingProjectFile.read(from: video.location) {
+            extra = "  project.json cursor.isVisible=\(project.edits.cursor.isVisible) pointer samples=\(project.events.pointer.count)"
+        }
+        await show(video.file, label: label, at: time, extra: extra)
+    }
+
+    /// Lifts a frame at `time` from a recorded file and shows it with what the file measures.
+    func show(_ file: URL, label: String, at time: Double, extra: String = "") async {
         let asset = AVURLAsset(url: file)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.requestedTimeToleranceBefore = .zero
@@ -237,10 +245,7 @@ final class Film {
         let facts = await fileFacts(file)
         let rate = (try? await asset.loadTracks(withMediaType: .video).first?.load(.estimatedDataRate)).flatMap { $0 } ?? 0
         let bytes = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
-        var text = facts.map { "\($0.width) x \($0.height), \(Int($0.fps.rounded())) fps, \($0.frames) frames, \(bytes / 1024) KB, \(Int(rate / 1000)) kbit/s" } ?? "unreadable"
-        if video.format == .project, let project = try? RecordingProjectFile.read(from: video.location) {
-            text += "  project.json cursor.isVisible=\(project.edits.cursor.isVisible) pointer samples=\(project.events.pointer.count)"
-        }
+        let text = (facts.map { "\($0.width) x \($0.height), \(Int($0.fps.rounded())) fps, \($0.frames) frames, \(bytes / 1024) KB, \(Int(rate / 1000)) kbit/s" } ?? "unreadable") + extra
         print("RESULT \(label): \(file.lastPathComponent) \(text)")
         results.append((label, frame, text))
         refresh()
@@ -313,7 +318,7 @@ final class Film {
     }
 
     /// The recorded files' frames, side by side along the right edge, newest at the top.
-    private func resultLayers() -> [(CGImage, CGRect)] {
+    func resultLayers() -> [(CGImage, CGRect)] {
         results.suffix(2).reversed().enumerated().compactMap { i, r in
             let box = CGRect(x: 900, y: 470 - CGFloat(i) * 300, width: 360, height: 280)
             return resultCard(r, size: box.size).map { ($0, box) }

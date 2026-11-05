@@ -5,8 +5,11 @@ import UniformTypeIdentifiers
 enum ActionID: String, CaseIterable {
     case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer, recordScreen
     case restoreOverlay, hideOverlays, history, settings, checkForUpdates, whatsNew, openFile, quit
-    case record, stopRecording, recordTestWindow
+    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording
 }
+
+/// What the recording controls do to a recording that is under way.
+enum RecordingControl: Equatable { case pause, resume, restart }
 
 /// One row per user intent. The menu, the global hotkeys and the URL scheme all read this table.
 struct ActionSpec {
@@ -47,6 +50,9 @@ enum ActionTable {
         ActionSpec(id: .openFile, title: "Open Image", symbol: "photo", hotKey: nil, urlPath: "open", menuGroup: nil),
         ActionSpec(id: .record, title: "Record", symbol: "record.circle", hotKey: nil, urlPath: "record", menuGroup: nil),
         ActionSpec(id: .stopRecording, title: "Stop Recording", symbol: "stop.circle", hotKey: nil, urlPath: "record/stop", menuGroup: nil),
+        ActionSpec(id: .pauseRecording, title: "Pause Recording", symbol: "pause.fill", hotKey: nil, urlPath: "record/pause", menuGroup: nil),
+        ActionSpec(id: .resumeRecording, title: "Resume Recording", symbol: "play.fill", hotKey: nil, urlPath: "record/resume", menuGroup: nil),
+        ActionSpec(id: .restartRecording, title: "Restart Recording", symbol: "arrow.counterclockwise", hotKey: nil, urlPath: "record/restart", menuGroup: nil),
         ActionSpec(id: .recordTestWindow, title: "Show Recording Test Window", symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
         ActionSpec(id: .quit, title: "Quit Cornermark", symbol: "power", hotKey: nil, urlPath: nil, menuGroup: 3),
     ]
@@ -67,6 +73,7 @@ enum AppAction: Equatable {
     case openFile(URL)
     case startRecording(RecordingTarget, RecordingStyle)
     case stopRecording
+    case controlRecording(RecordingControl)
     case openRecordingTestWindow
     case quit
 
@@ -93,6 +100,9 @@ enum AppAction: Equatable {
         case .openFile: return .openFile
         case .startRecording: return .record
         case .stopRecording: return .stopRecording
+        case .controlRecording(.pause): return .pauseRecording
+        case .controlRecording(.resume): return .resumeRecording
+        case .controlRecording(.restart): return .restartRecording
         case .openRecordingTestWindow: return .recordTestWindow
         case .quit: return .quit
         }
@@ -119,6 +129,9 @@ enum AppAction: Equatable {
         case .quit: return .quit
         case .stopRecording: return .stopRecording
         case .recordTestWindow: return .openRecordingTestWindow
+        case .pauseRecording: return .controlRecording(.pause)
+        case .resumeRecording: return .controlRecording(.resume)
+        case .restartRecording: return .controlRecording(.restart)
         case .openFile, .record: return nil
         }
     }

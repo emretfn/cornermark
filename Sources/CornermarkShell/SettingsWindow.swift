@@ -260,6 +260,10 @@ final class RecordingPane: SettingsPane {
     private let limit = Form.popup(SizeLimit.allCases.map(\.title), id: "recording.limit")
     private let cursor = Form.checkbox("Show cursor", id: "recording.cursor")
     private let quickAccess = Form.checkbox("Show Quick Access overlay", id: "recording.quickAccess")
+    private let countdown = Form.popup(RecordingPreferences.countdownChoices.map { $0 == 0 ? "Off" : "\($0) seconds" }, id: "recording.countdown")
+    private let dim = Form.checkbox("Dim outside the area", id: "recording.dim")
+    private let desktopIcons = Form.checkbox("Keep desktop icons out of the video", id: "recording.desktopIcons")
+    private let notifications = Form.checkbox("Keep notifications out of the video", id: "recording.notifications")
 
     override func buildForm() -> FormPage {
         fps.onAction { [unowned self] c in
@@ -280,6 +284,13 @@ final class RecordingPane: SettingsPane {
         }
         cursor.onAction { [unowned self] c in change { $0.recording.showCursor = (c as! NSButton).state == .on } }
         quickAccess.onAction { [unowned self] c in change { $0.recording.showQuickAccess = (c as! NSButton).state == .on } }
+        countdown.onAction { [unowned self] c in
+            let i = (c as! NSPopUpButton).indexOfSelectedItem
+            change { $0.recording.countdown = RecordingPreferences.countdownChoices[i] }
+        }
+        dim.onAction { [unowned self] c in change { $0.recording.dimOutside = (c as! NSButton).state == .on } }
+        desktopIcons.onAction { [unowned self] c in change { $0.recording.hideDesktopIcons = (c as! NSButton).state == .on } }
+        notifications.onAction { [unowned self] c in change { $0.recording.hideNotifications = (c as! NSButton).state == .on } }
         return Form.page(title: paneTitle, groups: [
             .init("Video", rows: [
                 Form.row(title: "Frame rate", control: fps),
@@ -291,6 +302,12 @@ final class RecordingPane: SettingsPane {
                 Form.row(title: "Show cursor", caption: Form.caption("Record Video draws the cursor into the video. Record for Editing keeps it separate, so you can still hide it later."),
                          control: cursor),
             ]),
+            .init("While recording", rows: [
+                Form.row(title: "Countdown", caption: Form.caption("Time to get ready before the first frame."), control: countdown),
+                Form.row(title: "Dim outside the area", caption: Form.caption("Darkens the rest of the screen while an area records. The video never shows it."), control: dim),
+                Form.row(title: "Keep desktop icons out of the video", caption: Form.caption("Finder windows are still recorded."), control: desktopIcons),
+                Form.row(title: "Keep notifications out of the video", caption: Form.caption("Notifications still appear on your screen."), control: notifications),
+            ], footer: "The display stays awake while recording."),
             .init("After recording", rows: [Form.row(title: "Show Quick Access overlay", control: quickAccess)]),
         ])
     }
@@ -303,6 +320,10 @@ final class RecordingPane: SettingsPane {
         limit.selectItem(at: SizeLimit.allCases.firstIndex(of: r.limit) ?? 0)
         cursor.state = r.showCursor ? .on : .off
         quickAccess.state = r.showQuickAccess ? .on : .off
+        countdown.selectItem(at: RecordingPreferences.countdownChoices.firstIndex(of: r.countdown) ?? 0)
+        dim.state = r.dimOutside ? .on : .off
+        desktopIcons.state = r.hideDesktopIcons ? .on : .off
+        notifications.state = r.hideNotifications ? .on : .off
     }
 }
 

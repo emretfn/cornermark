@@ -1,6 +1,6 @@
 #!/bin/bash
 # link.sh <path> | link.sh open <image-path> | link.sh unknown-link
-# link.sh record/test-window | link.sh record window=<test window id> | link.sh record/stop
+# link.sh record/test-window | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | link.sh record/stop
 # Sends one link to the recorded instance only, watches focus while it lands, and prints what the app logged.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -50,6 +50,12 @@ elif in_list "$path" "$RECORDING_LINKS"; then
         record/stop)
             [ $# -eq 1 ] || die "usage: link.sh record/stop"
             want="recording finished" ;;
+        record/pause|record/resume)
+            [ $# -eq 1 ] || die "usage: link.sh $path"
+            want="recording ${path#record/}d" ;;
+        record/restart)
+            [ $# -eq 1 ] || die "usage: link.sh record/restart"
+            want="recording restarted" ;;
     esac
 fi
 

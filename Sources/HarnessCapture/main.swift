@@ -34,6 +34,7 @@ Task { @MainActor in
     await runRecordOverlayTests()
     await runRecordingTests()
     await runRecordingSettingsTests()
+    await runRecordingControlTests()
     await runProjectTimelineTests()
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")

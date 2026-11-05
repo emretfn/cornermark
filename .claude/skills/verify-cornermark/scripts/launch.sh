@@ -21,7 +21,8 @@ if [ ! -x "$PROBE" ] || [ "$(dirname "$0")/focus-probe.swift" -nt "$PROBE" ]; th
 fi
 
 RUN="$(date +%Y%m%d-%H%M%S)-$$"
-ROOT="${TMPDIR%/}/cornermark-verify/$RUN"
+# CORNERMARK_VERIFY_ROOT reopens an earlier run's root, so a relaunch finds what the last instance left, such as a cut-off recording.
+ROOT="${CORNERMARK_VERIFY_ROOT:-${TMPDIR%/}/cornermark-verify/$RUN}"
 is_protected_path "$ROOT" && die "refused: root $ROOT would raise a permission dialog. Nothing was started. Point TMPDIR elsewhere."
 mkdir -p "$ROOT"
 SINCE="$(date '+%Y-%m-%d %H:%M:%S')"
