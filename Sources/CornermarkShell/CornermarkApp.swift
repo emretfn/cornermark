@@ -26,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let coordinator = AppCoordinator(env: env)
         self.coordinator = coordinator
         #if DEBUG
+        if AppEnvironment.isolatedRoot != nil {
+            // A scripted instance runs beside the developer, so a key it is sent and nothing handles must not sound the alert.
+            SilentNoResponder.report = { Log.shell.error("no responder for \($0, privacy: .public): the key or action fell through silently") }
+            SilentNoResponder.install()
+            ShortcutRecorderView.playRefusedSound = {}
+        }
         Log.shell.notice("launch pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public) isolated=\(!env.isOnscreen, privacy: .public) screenPermission=\(CaptureController.hasPermission, privacy: .public)")
         #endif
         if env.isOnscreen { coordinator.installHotKeys(backend: CarbonHotKeyBackend()) }
