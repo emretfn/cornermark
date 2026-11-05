@@ -73,6 +73,13 @@ func checkVideoBackground(_ w: World, folder: URL) async throws {
     more?.performClick(nil)
     content.layoutSubtreeIfNeeded()
     check(visibleTiles("video.background.gradient.", in: editor).count == BackgroundPanel.firstGradients && more?.title == "Show more", "Show less folds them back")
+    editor.setBackground(VideoBackground(fill: .gradient(index: 17)))
+    content.layoutSubtreeIfNeeded()
+    check(editor.view(identifier: "video.background.gradient.17")?.isHiddenOrHasHiddenAncestor == false && more?.title == "Show less",
+          "a gradient picked from the folded rows, here by the harness as undo would, opens them so its ring shows")
+    editor.undo()
+    more?.performClick(nil)
+    content.layoutSubtreeIfNeeded()
     check(visibleTiles("video.background.wallpaper.", in: editor).count == VideoBackground.wallpapers.count && editor.view(identifier: "video.background.add")?.isHidden == false
           && editor.view(identifier: "video.background.image")?.isHiddenOrHasHiddenAncestor != false,
           "Wallpapers offer Add image and \(VideoBackground.wallpapers.count) wallpapers; no picture of your own yet",

@@ -23,7 +23,7 @@ final class PreviewView: NSView {
     /// Room around the picture. None in preview-only mode, where the picture fills the window.
     var inset: CGFloat = DS.Space.s16 { didSet { needsLayout = true } }
 
-    /// The whole finished video. Its first sublayer place is what a harness renders as the preview's frame.
+    /// The whole finished video. As the backing layer's first sublayer it is what a harness renders as the preview's frame.
     private let stage = CALayer()
     private let picture = CALayer()
     private let pointer = CAShapeLayer()

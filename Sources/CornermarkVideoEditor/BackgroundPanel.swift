@@ -56,6 +56,10 @@ final class BackgroundPanel: NSView {
 
     func show(_ background: VideoBackground, picture: CGImage?) {
         if background != self.background { problem.isHidden = true }
+        // A fill picked elsewhere, by undo or on opening, opens the rows that hold it so its ring shows.
+        if background.fill != self.background.fill, case .gradient(let i) = background.fill, i >= Self.firstGradients, !showsAllGradients {
+            setShowsAllGradients(true)
+        }
         let pictureChanged = picture !== self.picture
         self.background = background
         self.picture = picture
@@ -81,7 +85,7 @@ final class BackgroundPanel: NSView {
         frameNote.isHidden = framed
     }
 
-    /// Shows all twenty gradients, or the first two rows. The picked one stays visible either way, since collapsing never hides it.
+    /// Shows all twenty gradients, or the first two rows.
     func setShowsAllGradients(_ on: Bool) {
         showsAllGradients = on
         more.title = on ? "Show less" : "Show more"
