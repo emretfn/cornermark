@@ -121,6 +121,7 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 | Ctrl+Shift+6 | Scrolling capture |
 | Ctrl+Shift+7 | Capture text (OCR) |
 | Ctrl+Shift+8 | Timed capture |
+| Ctrl+Shift+9 | Record the screen: an area, a window, or a whole display. Press it again to stop |
 
 <p align="center">
   <img src="docs/screenshots/settings.png" width="640" alt="The Shortcuts section of the Settings window">

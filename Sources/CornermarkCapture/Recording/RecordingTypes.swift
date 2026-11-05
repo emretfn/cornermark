@@ -11,8 +11,14 @@ public enum RecordingTarget: Equatable {
 
 public struct RecordingOptions: Equatable {
     public var fps: Int
-    public init(fps: Int = 60) { self.fps = fps }
+    /// A finished video carries the pointer in its picture. A project keeps it out, as its own track.
+    public var showsCursor: Bool
+    public init(fps: Int = 60, showsCursor: Bool = false) { self.fps = fps; self.showsCursor = showsCursor }
     public static let standard = RecordingOptions()
+
+    public static func `for`(_ style: RecordingStyle) -> RecordingOptions {
+        RecordingOptions(showsCursor: style == .video)
+    }
 }
 
 /// The pixel size a source will deliver. Both sides are even, because H.264 needs it.

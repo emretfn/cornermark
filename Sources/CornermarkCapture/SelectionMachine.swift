@@ -73,10 +73,18 @@ public enum AspectLock: Hashable {
     }
 }
 
-/// What a finished selection turns into: the toolbar's Scrolling and Timer modes decide it.
-public enum Intent: Hashable { case area, scrolling, timer }
+/// What a finished selection turns into: the toolbar's Scrolling, Timer and Record modes decide it.
+public enum Intent: Hashable { case area, scrolling, timer, record }
 
-public enum ToolbarMode: Hashable, CaseIterable { case area, window, fullscreen, scrolling, timer }
+public enum ToolbarMode: Hashable, CaseIterable { case area, window, fullscreen, scrolling, timer, record }
+
+/// What a recording becomes. A GIF joins here as its own case.
+public enum RecordingStyle: String, Hashable, CaseIterable {
+    /// One finished video with the pointer in the picture.
+    case video
+    /// A project whose pointer and edits stay changeable.
+    case editing
+}
 
 public enum Flow: Hashable {
     /// Releasing the mouse commits (area, scrolling).
@@ -95,15 +103,21 @@ public struct MachineConfig {
     public var displays: [DisplayGeometry]
     /// Front to back.
     public var windows: [WindowSnapshot]
+    /// An adjustable overlay opens with this area already selected, when any of it lies on a display.
+    public var remembered: CGRect?
 
     public init(flow: Flow, intent: Intent = .area, aspect: AspectLock = .free, timerSeconds: Int = 3,
-                displays: [DisplayGeometry], windows: [WindowSnapshot] = []) {
+                displays: [DisplayGeometry], windows: [WindowSnapshot] = [], remembered: CGRect? = nil) {
         self.flow = flow; self.intent = intent; self.aspect = aspect; self.timerSeconds = timerSeconds
-        self.displays = displays; self.windows = windows
+        self.displays = displays; self.windows = windows; self.remembered = remembered
     }
 
     /// Derived from `intent` so the two cannot disagree when the toolbar switches modes mid-session.
-    public var span: DisplaySpan { intent == .scrolling ? .withinOneDisplay : .acrossDisplays }
+    /// A recording films one display, like the scrolling stitcher polls one.
+    public var span: DisplaySpan { intent == .scrolling || intent == .record ? .withinOneDisplay : .acrossDisplays }
+
+    /// A recording lines up with what it films, so its edges pull towards display and window edges.
+    public var snapsToEdges: Bool { intent == .record }
 }
 
 public enum Target: Hashable {
@@ -115,6 +129,7 @@ public enum Target: Hashable {
 
 public enum Finish: Hashable {
     case capture(Target, CaptureKind)
+    case record(Target, RecordingStyle)
     case scrolled
     case cancelled
 }
@@ -140,10 +155,13 @@ public struct Drag: Hashable {
     public var aspect: AspectLock
     /// Set while space is held: pointer motion translates the rect instead of resizing it.
     public var movingFrom: CGPoint?
+    /// Set while Option is held: `start` is the centre and the rect grows both ways.
+    public var fromCenter = false
 
     public var rect: CGRect {
-        RectMath.make(anchor: start, to: current, ratio: aspect.value, bounds: space.bounds,
-                      scale: max(space.scale(at: start), space.scale(at: current)))
+        let scale = max(space.scale(at: start), space.scale(at: current))
+        if fromCenter { return RectMath.centered(on: start, to: current, ratio: aspect.value, bounds: space.bounds, scale: scale) }
+        return RectMath.make(anchor: start, to: current, ratio: aspect.value, bounds: space.bounds, scale: scale)
     }
 }
 
@@ -153,6 +171,8 @@ public enum OverlayState: Hashable {
     case dragging(Drag)
     case adjusting(Selection, Gesture?)
     case windowHover(WindowSnapshot?)
+    /// A recording's window, clicked and held until a start button or a key says how to record it.
+    case windowPicked(WindowSnapshot)
     case countdown(remaining: Int, then: Target)
     case scrollingCapture(ScrollArea, ScrollProgress)
     case finished(Finish)
@@ -178,6 +198,7 @@ public enum ToolbarAction: Hashable {
     case aspect(AspectLock)
     case size(width: Double?, height: Double?)
     case capture
+    case record(RecordingStyle)
     case done
 }
 
@@ -253,6 +274,15 @@ public struct SelectionMachine {
         return sel.rect.contains(p) ? .inside : .outside
     }
 
+    /// The target the recording panel shows as chosen: a selection that fills a display records that display.
+    public var recordingMode: ToolbarMode {
+        switch state {
+        case .windowHover, .windowPicked: return .window
+        case .adjusting(let sel, _): return fullscreenDisplay(for: sel.rect) == nil ? .area : .fullscreen
+        default: return .area
+        }
+    }
+
     /// The selection rect currently on screen, whatever state it is in.
     public var liveRect: CGRect? {
         switch state {
@@ -268,7 +298,9 @@ public struct SelectionMachine {
     private mutating func begin() {
         guard case .idle = state else { return }
         switch config.flow {
-        case .immediate, .adjustable: state = .armed
+        case .adjustable:
+            state = config.remembered.flatMap(rememberedSelection).map { .adjusting($0, nil) } ?? .armed
+        case .immediate: state = .armed
         case .window: state = .windowHover(window(at: cursor))
         case .timedFullscreen(let seconds):
             guard let d = display(at: cursor) else { state = .finished(.cancelled); return }
@@ -285,7 +317,10 @@ public struct SelectionMachine {
         case .armed:
             beginDrag(at: p, m)
         case .windowHover(let w):
-            if let w { state = .finished(.capture(.window(w, toggleShadow: m.contains(.option)), .window)) }
+            guard let w else { break }
+            state = config.intent == .record ? .windowPicked(w) : .finished(.capture(.window(w, toggleShadow: m.contains(.option)), .window))
+        case .windowPicked:
+            state = window(at: p).map { .windowPicked($0) } ?? .windowHover(nil)
         case .adjusting(let sel, nil):
             if let h = handle(at: p, in: sel.rect) {
                 state = .adjusting(sel, .resize(h, original: sel.rect))
@@ -301,8 +336,8 @@ public struct SelectionMachine {
     private mutating func beginDrag(at p: CGPoint, _ m: Modifiers) {
         let space = selectionSpace(confinedTo: { $0.display(at: p) })
         guard !space.displays.isEmpty else { return }
-        let start = space.snap(p)
-        state = .dragging(Drag(space: space, start: start, current: start, aspect: effectiveAspect(m), movingFrom: nil))
+        let start = space.snap(edgeSnapped(p, m))
+        state = .dragging(Drag(space: space, start: start, current: start, aspect: effectiveAspect(m), movingFrom: nil, fromCenter: m.contains(.option)))
     }
 
     private mutating func pointerDragged(_ p: CGPoint, _ m: Modifiers) {
@@ -316,8 +351,9 @@ public struct SelectionMachine {
                 d.start.x += dx; d.start.y += dy; d.current.x += dx; d.current.y += dy
                 d.movingFrom = p
             } else {
-                d.current = d.space.snap(p)
+                d.current = d.space.snap(edgeSnapped(p, m))
                 d.aspect = effectiveAspect(m)
+                d.fromCenter = m.contains(.option)
             }
             state = .dragging(d)
         case .adjusting(let sel, let gesture?):
@@ -326,9 +362,17 @@ public struct SelectionMachine {
             switch gesture {
             case .resize(let h, let original):
                 let scale = max(space.maxScale(intersecting: original), space.scale(at: p))
-                rect = RectMath.resize(original, handle: h, to: p, ratio: effectiveAspect(m).value, bounds: space.bounds, scale: scale)
+                let to = edgeSnapped(p, m), ratio = effectiveAspect(m).value
+                rect = m.contains(.option)
+                    ? RectMath.resizeCentered(original, handle: h, to: to, ratio: ratio, bounds: space.bounds, scale: scale)
+                    : RectMath.resize(original, handle: h, to: to, ratio: ratio, bounds: space.bounds, scale: scale)
             case .move(let grab):
-                rect = placed(size: sel.rect.size, at: CGPoint(x: p.x - grab.x, y: p.y - grab.y), in: space)
+                var origin = CGPoint(x: p.x - grab.x, y: p.y - grab.y)
+                if snapsEdges(m) {
+                    let shift = edges.offset(for: CGRect(origin: origin, size: sel.rect.size))
+                    origin.x += shift.dx; origin.y += shift.dy
+                }
+                rect = placed(size: sel.rect.size, at: origin, in: space)
             }
             state = .adjusting(Selection(rect: rect), gesture)
         default: break
@@ -351,12 +395,14 @@ public struct SelectionMachine {
     private mutating func keyDown(_ key: Key, _ m: Modifiers) {
         if key == .escape { state = .finished(.cancelled); return }
         switch (state, key) {
-        case (.adjusting(let sel, nil), .confirm): commit(sel)
+        case (.adjusting(let sel, nil), .confirm): commit(sel, style: style(m))
+        case (.windowHover(let w?), .confirm) where config.intent == .record, (.windowPicked(let w), .confirm):
+            state = .finished(.record(.window(w, toggleShadow: false), style(m)))
         case (.windowHover(let w?), .confirm):
             state = .finished(.capture(.window(w, toggleShadow: m.contains(.option)), .window))
         case (.scrollingCapture, .confirm): state = .finished(.scrolled)
         case (.armed, .space): state = .windowHover(window(at: cursor))
-        case (.windowHover, .space): state = .armed
+        case (.windowHover, .space), (.windowPicked, .space): state = .armed
         case (.dragging(var d), .space):
             let r = d.rect
             d.current = CGPoint(x: abs(r.minX - d.start.x) < 1e-6 ? r.maxX : r.minX,
@@ -387,6 +433,7 @@ public struct SelectionMachine {
     private mutating func modifiersChanged(_ m: Modifiers) {
         guard case .dragging(var d) = state, d.movingFrom == nil else { return }
         d.aspect = effectiveAspect(m)
+        d.fromCenter = m.contains(.option)
         state = .dragging(d)
     }
 
@@ -409,6 +456,13 @@ public struct SelectionMachine {
             state = .adjusting(Selection(rect: r), nil)
         case .capture:
             if case .adjusting(let sel, nil) = state { commit(sel) }
+        case .record(let style):
+            guard config.intent == .record else { return }
+            switch state {
+            case .adjusting(let sel, nil): commit(sel, style: style)
+            case .windowPicked(let w): state = .finished(.record(.window(w, toggleShadow: false), style))
+            default: break
+            }
         case .done:
             if case .scrollingCapture = state { state = .finished(.scrolled) }
         }
@@ -417,15 +471,30 @@ public struct SelectionMachine {
     private mutating func selectMode(_ mode: ToolbarMode) {
         switch mode {
         case .area:
-            config.intent = .area
-            if case .windowHover = state { state = .armed }
+            // In a recording the target buttons choose what to film and never leave the recording.
+            if config.intent != .record { config.intent = .area }
+            switch state {
+            case .windowHover, .windowPicked: state = .armed
+            // A whole display is the Fullscreen target, so Area asks for a new drag.
+            case .adjusting(let sel, nil) where config.intent == .record && fullscreenDisplay(for: sel.rect) != nil: state = .armed
+            default: break
+            }
         case .window:
-            if case .adjusting = state { state = .windowHover(window(at: cursor)) }
-            else if case .armed = state { state = .windowHover(window(at: cursor)) }
+            switch state {
+            case .adjusting, .armed: state = .windowHover(window(at: cursor))
+            default: break
+            }
         case .fullscreen:
             var display = display(at: cursor)
             if case .adjusting(let sel, _) = state { display = chromeDisplay(for: sel.rect) }
-            if let display { state = .finished(.capture(.fullscreen(display), .fullscreen)) }
+            if case .windowPicked(let w) = state { display = chromeDisplay(for: w.frame) }
+            guard let display else { return }
+            state = config.intent == .record ? .adjusting(Selection(rect: display.frame), nil) : .finished(.capture(.fullscreen(display), .fullscreen))
+        case .record:
+            config.intent = .record
+            if case .adjusting(let sel, nil) = state {
+                state = ScrollArea(clipping: sel, to: config.displays, preferring: cursor).map { .adjusting(Selection(rect: $0.rect), nil) } ?? .armed
+            }
         case .scrolling, .timer:
             config.intent = mode == .scrolling ? .scrolling : .timer
             if case .adjusting(let sel, nil) = state { commit(sel) }
@@ -433,14 +502,16 @@ public struct SelectionMachine {
         }
     }
 
-    private mutating func commit(_ sel: Selection) {
-        if let next = committed(sel) { state = next }
+    private mutating func commit(_ sel: Selection, style: RecordingStyle = .video) {
+        if let next = committed(sel, style: style) { state = next }
     }
 
     /// Nil only for a scrolling pick that lies on no display.
-    private func committed(_ sel: Selection) -> OverlayState? {
+    private func committed(_ sel: Selection, style: RecordingStyle = .video) -> OverlayState? {
         switch config.intent {
         case .area: return .finished(.capture(.area(sel), .area))
+        case .record:
+            return .finished(.record(fullscreenDisplay(for: sel.rect).map { .fullscreen($0) } ?? .area(sel), style))
         case .scrolling:
             return ScrollArea(clipping: sel, to: config.displays, preferring: cursor).map { .scrollingCapture($0, ScrollProgress()) }
         case .timer: return .countdown(remaining: max(1, config.timerSeconds), then: .area(sel))
@@ -466,6 +537,26 @@ public struct SelectionMachine {
     // MARK: Helpers
 
     private func effectiveAspect(_ m: Modifiers) -> AspectLock { m.contains(.shift) ? .ratio(1, 1) : config.aspect }
+
+    /// Return records a video, Shift-Return a project for editing. Option stays free for a GIF.
+    private func style(_ m: Modifiers) -> RecordingStyle { m.contains(.shift) ? .editing : .video }
+
+    private func fullscreenDisplay(for rect: CGRect) -> DisplayGeometry? { config.displays.first { $0.frame == rect } }
+
+    private var edges: EdgeSnap { EdgeSnap(frames: config.displays.map(\.frame) + config.windows.map(\.frame)) }
+
+    /// Command holds snapping off, for an edge that must sit a few points away.
+    private func snapsEdges(_ m: Modifiers) -> Bool { config.snapsToEdges && !m.contains(.command) }
+
+    private func edgeSnapped(_ p: CGPoint, _ m: Modifiers) -> CGPoint { snapsEdges(m) ? edges.snapped(p) : p }
+
+    /// The remembered area, kept inside the space it may live in. Nil when none of it is on a display.
+    private func rememberedSelection(_ rect: CGRect) -> Selection? {
+        guard config.displays.contains(where: { !$0.frame.intersection(rect).isEmpty }) else { return nil }
+        let space = spaceAround(rect)
+        let kept = rect.intersection(space.bounds)
+        return kept.isEmpty ? nil : Selection(rect: kept)
+    }
 
     /// All displays, or only the picked one when the config keeps a selection on a single display.
     private func selectionSpace(confinedTo pick: (SelectionSpace) -> DisplayGeometry?) -> SelectionSpace {

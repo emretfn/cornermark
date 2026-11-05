@@ -14,9 +14,9 @@ func checkActionTable() async throws {
     check(Set(paths).count == paths.count, "no two actions share a URL path", detail: "\(paths)")
     check(Set(specs.map(\.id)) == Set(ActionID.allCases) && specs.count == ActionID.allCases.count, "every ActionID has exactly one table row")
 
-    let captureIDs: [ActionID] = [.allInOne, .area, .window, .fullscreen, .previousArea, .scrolling, .ocr, .timer]
+    let captureIDs: [ActionID] = [.allInOne, .area, .window, .fullscreen, .previousArea, .scrolling, .ocr, .timer, .recordScreen]
     let codes = captureIDs.map { ActionTable.spec($0).hotKey?.keyCode }
-    check(codes == [18, 19, 20, 21, 23, 22, 26, 28], "default hotkeys are Ctrl+Shift+1 to 8 in order", detail: "\(codes)")
+    check(codes == [18, 19, 20, 21, 23, 22, 26, 28, 25], "default hotkeys are Ctrl+Shift+1 to 9 in order", detail: "\(codes)")
     check(captureIDs.allSatisfy { ActionTable.spec($0).hotKey?.modifiers == HotKey.controlShift }, "all default hotkeys use Control and Shift only")
     check(ActionTable.spec(.allInOne).hotKey?.displayString == "\u{2303}\u{21E7}1", "hotkey display string is Mac ordered (control, shift, key)",
           detail: ActionTable.spec(.allInOne).hotKey?.displayString ?? "nil")
@@ -156,7 +156,7 @@ func checkHotKeys() async throws {
     let manager = HotKeyManager(backend: backend) { fired.append($0) }
     manager.apply(Settings())
     let captureCount = ActionTable.specs.filter { $0.hotKey != nil }.count
-    check(backend.registered.count == captureCount && captureCount == 8, "all eight default hotkeys are registered")
+    check(backend.registered.count == captureCount && captureCount == 9, "all nine default hotkeys are registered")
     check(manager.status[.area] == .registered && manager.status[.history] == .unassigned, "status distinguishes registered and unassigned")
     check(manager.failures.isEmpty, "no failures with defaults")
 
@@ -168,7 +168,7 @@ func checkHotKeys() async throws {
     backend.failing[ActionTable.spec(.window).hotKey!] = Int32(eventHotKeyExistsErr)
     manager.apply(Settings())
     check(manager.failures[.window]?.contains("Taken by") == true, "a taken key surfaces a readable failure", detail: "\(manager.failures)")
-    check(backend.registered.count == 7 && backend.unregisterCalls >= 2, "re-applying unregisters first, then registers what still works")
+    check(backend.registered.count == 8 && backend.unregisterCalls >= 2, "re-applying unregisters first, then registers what still works")
 
     backend.failing = [:]
     var dup = Settings()

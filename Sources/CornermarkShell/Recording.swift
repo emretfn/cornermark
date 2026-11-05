@@ -37,12 +37,16 @@ enum RecordingOutput {
     }
 
     /// Never overwrites: a second recording within the same second gets " 2", " 3", and so on.
-    static func uniqueFolder(in folder: URL, for date: Date) -> URL {
-        let base = folderName(for: date)
-        var url = folder.appendingPathComponent(base, isDirectory: true)
+    static func uniqueFolder(in folder: URL, for date: Date) -> URL { unique(in: folder, base: folderName(for: date), suffix: "", isDirectory: true) }
+
+    /// A finished video's file, `Cornermark Recording 2026-11-03 at 14.05.09.mp4`, never overwriting either.
+    static func uniqueVideo(in folder: URL, for date: Date) -> URL { unique(in: folder, base: folderName(for: date), suffix: ".mp4", isDirectory: false) }
+
+    private static func unique(in folder: URL, base: String, suffix: String, isDirectory: Bool) -> URL {
+        var url = folder.appendingPathComponent(base + suffix, isDirectory: isDirectory)
         var n = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = folder.appendingPathComponent("\(base) \(n)", isDirectory: true)
+            url = folder.appendingPathComponent("\(base) \(n)\(suffix)", isDirectory: isDirectory)
             n += 1
         }
         return url
@@ -58,10 +62,13 @@ final class RecordingController {
     private let folder: () -> URL
     private(set) var phase = Phase.idle
     private var recorder: Recorder?
+    /// Set for a recording for editing, whose project is written beside its video when it finishes.
     private var projectFolder: URL?
+    private var style = RecordingStyle.editing
     private var stopWhenStarted = false
     private var activity: NSObjectProtocol?
-    var onSaved: (RecordingReport) -> Void = { _ in }
+    /// The project folder, or the video file of a plain recording.
+    var onSaved: (URL) -> Void = { _ in }
     var onFailed: (String) -> Void = { _ in }
 
     init(env: AppEnvironment, folder: @escaping () -> URL) {
@@ -69,10 +76,11 @@ final class RecordingController {
         self.folder = folder
     }
 
-    func start(_ target: RecordingTarget) {
+    func start(_ target: RecordingTarget, style: RecordingStyle = .editing) {
         guard phase == .idle else { return Log.shell.error("recording refused: one is already running") }
+        let options = RecordingOptions.for(style)
         let source: FrameSource
-        do { source = try env.frameSource(target, .standard) } catch {
+        do { source = try env.frameSource(target, options) } catch {
             Log.shell.error("recording refused: \(String(describing: error), privacy: .public)")
             return onFailed("Recording not allowed")
         }
@@ -80,14 +88,23 @@ final class RecordingController {
             Log.shell.error("recording refused: cannot create the folder: \(error.localizedDescription, privacy: .public)")
             return onFailed("Could not save the recording")
         }
-        let project = RecordingOutput.uniqueFolder(in: folder(), for: env.clock())
-        do { try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false) } catch {
-            Log.shell.error("recording refused: cannot create the project folder: \(error.localizedDescription, privacy: .public)")
-            return onFailed("Could not save the recording")
+        let output: URL
+        switch style {
+        case .editing:
+            let project = RecordingOutput.uniqueFolder(in: folder(), for: env.clock())
+            do { try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false) } catch {
+                Log.shell.error("recording refused: cannot create the project folder: \(error.localizedDescription, privacy: .public)")
+                return onFailed("Could not save the recording")
+            }
+            projectFolder = project
+            output = project.appendingPathComponent(RecordingProjectFile.videoName)
+        case .video:
+            output = RecordingOutput.uniqueVideo(in: folder(), for: env.clock())
         }
-        projectFolder = project
-        let output = project.appendingPathComponent(RecordingProjectFile.videoName)
-        let recorder = Recorder(source: source, output: output, pointer: env.pointerSource())
+        self.style = style
+        let name = (projectFolder ?? output).lastPathComponent
+        // A finished video has its pointer in the picture, so nothing watches it.
+        let recorder = Recorder(source: source, output: output, pointer: style == .editing ? env.pointerSource() : nil)
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
             Task { @MainActor in self?.sourceEnded(error) }
@@ -100,7 +117,7 @@ final class RecordingController {
             do {
                 try await recorder.start()
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
-                Log.shell.notice("recording started project=\(project.lastPathComponent, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(RecordingOptions.standard.fps, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
+                Log.shell.notice("recording started project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
                 if stopWhenStarted { await finish() }
             } catch {
@@ -132,13 +149,14 @@ final class RecordingController {
         phase = .stopping
         do {
             let report = try await recorder.stop()
-            guard let folder = projectFolder else { throw RecordingError.noFrames }
-            try RecordingProjectFile.write(report.project, to: folder)
+            if let folder = projectFolder { try RecordingProjectFile.write(report.project, to: folder) }
             let rate = String(format: "%.3f", report.dropRate * 100)
             let seconds = String(format: "%.3f", report.duration)
-            Log.shell.notice("recording finished project=\(folder.lastPathComponent, privacy: .public) file=\(report.url.lastPathComponent, privacy: .public) pointerSamples=\(report.pointer.count, privacy: .public) firstFrame=\(String(format: "%.6f", report.firstFrameTime), privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) bytes=\(report.fileBytes, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
+            let saved = projectFolder ?? report.url
+            let name = saved.lastPathComponent, style = self.style
+            Log.shell.notice("recording finished project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) file=\(report.url.lastPathComponent, privacy: .public) pointerSamples=\(report.pointer.count, privacy: .public) firstFrame=\(String(format: "%.6f", report.firstFrameTime), privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) bytes=\(report.fileBytes, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
             reset()
-            onSaved(report)
+            onSaved(saved)
         } catch {
             Log.shell.error("recording failed to finish: \(String(describing: error), privacy: .public)")
             reset()

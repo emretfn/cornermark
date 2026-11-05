@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkDesign
 
 public enum OverlayPresentation {
     case onscreen
@@ -30,6 +31,7 @@ final class CaptureSession: OverlayHost {
 
     private(set) var panels: [OverlayPanel] = []
     private var toolbar: SelectionToolbar?
+    private var recordingPanel: RecordingPanel?
     private(set) var toolbarPill: CGRect?
     private var countdown: CountdownPanel?
     private var scroll: ScrollCapture?
@@ -128,7 +130,7 @@ final class CaptureSession: OverlayHost {
             case .cancelled:
                 previousApp?.activate()
                 end(.finish(finish))
-            case .capture: end(.finish(finish))
+            case .capture, .record: end(.finish(finish))
             }
         case .countdown(let remaining, _):
             if case .countdown = before {} else { enterCountdown() }
@@ -148,6 +150,7 @@ final class CaptureSession: OverlayHost {
 
     private func closePanels() {
         toolbar?.removeFromSuperview()
+        recordingPanel?.removeFromSuperview()
         for p in panels { p.keyHost = nil; p.orderOut(nil); p.close() }
         panels = []
     }
@@ -170,33 +173,59 @@ final class CaptureSession: OverlayHost {
         capture.start(interval: options.scrollInterval, present: options.presentation == .onscreen)
     }
 
+    /// The all-in-one toolbar, or in a recording the recording panel. One of them, never both.
     private func updateToolbar() {
         guard machine.config.flow == .adjustable else { return }
+        let recording = machine.config.intent == .record
+        var anchorRect: CGRect?
         switch machine.state {
-        case .armed, .windowHover, .adjusting: break
+        case .armed, .windowHover: break
+        case .adjusting(let sel, _): anchorRect = sel.rect
+        case .windowPicked(let w): anchorRect = w.frame
         default:
             toolbar?.removeFromSuperview()
+            recordingPanel?.removeFromSuperview()
             toolbarPill = nil
             return
         }
-        let bar: SelectionToolbar
-        if let existing = toolbar { bar = existing } else {
-            bar = SelectionToolbar(frame: .zero)
-            bar.onAction = { [weak self] in self?.send(.toolbar($0)) }
-            toolbar = bar
+        let bar: Surface
+        let pill: CGSize
+        if recording {
+            toolbar?.removeFromSuperview()
+            let panel: RecordingPanel
+            if let existing = recordingPanel { panel = existing } else {
+                panel = RecordingPanel()
+                panel.onAction = { [weak self] in self?.send(.toolbar($0)) }
+                recordingPanel = panel
+            }
+            panel.update(machine)
+            bar = panel
+            pill = panel.pillRect.size
+        } else {
+            recordingPanel?.removeFromSuperview()
+            let toolbar: SelectionToolbar
+            if let existing = self.toolbar { toolbar = existing } else {
+                toolbar = SelectionToolbar(frame: .zero)
+                toolbar.onAction = { [weak self] in self?.send(.toolbar($0)) }
+                self.toolbar = toolbar
+            }
+            toolbar.update(machine)
+            bar = toolbar
+            pill = toolbar.pillRect.size
         }
-        bar.update(machine)
 
         let display: DisplayGeometry
-        let pill = bar.pillRect.size
         var origin: CGPoint
-        if case .adjusting(let sel, _) = machine.state {
-            display = machine.chromeDisplay(for: sel.rect) ?? machine.config.displays[0]
+        if let anchorRect {
+            display = machine.chromeDisplay(for: anchorRect) ?? machine.config.displays[0]
             // Hug the part of the selection on this display, so the pill never straddles two.
-            let part = sel.rect.intersection(display.frame)
-            let anchor = part.isEmpty ? sel.rect : part
+            let part = anchorRect.intersection(display.frame)
+            let anchor = part.isEmpty ? anchorRect : part
             origin = CGPoint(x: anchor.midX - pill.width / 2, y: anchor.minY - 12 - pill.height)
-            if origin.y < display.frame.minY + 8 {
+            if recording, anchor.insetBy(dx: 12, dy: 12).width >= pill.width, anchor.insetBy(dx: 12, dy: 12).height >= pill.height {
+                // A recording's panel sits in the middle of what it films, once the selection has room for it.
+                origin = CGPoint(x: anchor.midX - pill.width / 2, y: anchor.midY - pill.height / 2)
+            } else if origin.y < display.frame.minY + 8 {
                 origin.y = anchor.maxY + 12
                 if origin.y + pill.height > display.frame.maxY - 8 { origin.y = anchor.minY + 12 }
             }

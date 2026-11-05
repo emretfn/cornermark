@@ -5,6 +5,8 @@ public enum CaptureMode: Hashable {
     case area, window, fullscreen, allInOne, previousArea
     case timed(seconds: Int)
     case scrolling
+    /// The recording overlay: an area, a window or a display, then how to record it.
+    case recording
 }
 
 public struct CaptureOutput {
@@ -24,6 +26,8 @@ public enum CaptureFailure: Error, Equatable {
 
 public enum CaptureOutcome {
     case captured(CaptureOutput)
+    /// The overlay chose what to record. Nothing was imaged; the recording is the caller's to start.
+    case record(RecordingTarget, RecordingStyle)
     case cancelled
     case failed(CaptureFailure)
 }

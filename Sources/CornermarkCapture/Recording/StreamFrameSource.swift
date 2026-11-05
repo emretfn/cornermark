@@ -2,27 +2,29 @@ import AppKit
 import AVFoundation
 import ScreenCaptureKit
 
-/// The live source. The cursor is never part of the picture, so later steps can store it as its own track.
+/// The live source. The cursor is part of the picture only when asked, because a project stores it as its own track.
 public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCStreamDelegate {
     public var onFailure: ((Error) -> Void)?
     public let deliversInRealTime = true
     private let target: RecordingTarget
     private let fps: Int
+    private let showsCursor: Bool
     private let queue = DispatchQueue(label: "cornermark.stream-frames", qos: .userInteractive)
     private var stream: SCStream?
     private var prepared: (filter: SCContentFilter, config: SCStreamConfiguration, format: FrameFormat)?
     private var deliver: ((VideoFrame) -> Void)?
     public private(set) var pointArea = CGRect.zero
 
-    public init(target: RecordingTarget, fps: Int) {
+    public init(target: RecordingTarget, fps: Int, showsCursor: Bool = false) {
         self.target = target
         self.fps = fps
+        self.showsCursor = showsCursor
     }
 
     public func prepare() async throws -> FrameFormat {
         let content = try await Self.content()
         let config = SCStreamConfiguration()
-        config.showsCursor = false
+        config.showsCursor = showsCursor
         config.capturesAudio = false
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB

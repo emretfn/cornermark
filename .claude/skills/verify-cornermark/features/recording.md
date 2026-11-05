@@ -1,19 +1,22 @@
 # Recording
 
-Cornermark records a window or a display into a project folder in the save folder and stops on request. The folder holds `screen.mp4`, an H.264 video without the cursor in the picture, and `project.json`, which holds the pointer as a separate track and the edits to come.
+Cornermark records a window or a display and stops on request. Record for Editing writes a project folder in the save folder. The folder holds `screen.mp4`, an H.264 video without the cursor in the picture, and `project.json`, which holds the pointer as a separate track and the edits to come. Record Video writes one dated `.mp4` file in the save folder, with the pointer in the picture and no project.
 
 ## Sub-features
 
 - `record-window` records one window by its window number, with `record?window=<id>`.
 - `record-display` records a display, or an area of it, with `record?display=<id>` and `x`, `y`, `width`, `height` in global points with a bottom-left origin.
+- `record-style` picks the result with `style=video` or `style=editing`. A link without it records for editing.
+- `record-overlay` is Record Screen: the capture overlay chooses an area, a window or a display, and two start buttons pick the style. It is harness-only.
 - `record-stop` finishes the file with `record/stop`.
 - `record-test-window` shows the instance's own synthetic window with `record/test-window`. A scripted instance has one, and no other instance does.
 - `record-refusal` keeps a scripted instance from filming anything but its test window.
 
 ## How to get to it (user POV)
 
-- Open `cornermark-dev://record?window=<id>` or `cornermark-dev://record?display=<id>&x=<x>&y=<y>&width=<w>&height=<h>`, then `cornermark-dev://record/stop`.
-- There is no menu row, hotkey, or toolbar yet.
+- Press `Ctrl+Option+Shift+9` in Cornermark Dev, choose the **Record** tile in the menu panel, or open `cornermark-dev://record-screen`. The overlay opens on the last area. Pick Area, Window or Fullscreen, then **Record Video** (Return) or **Record for Editing** (Shift-Return). The same shortcut or the tile, now **Stop**, ends the recording.
+- Open `cornermark-dev://record?window=<id>` or `cornermark-dev://record?display=<id>&x=<x>&y=<y>&width=<w>&height=<h>`, with `&style=video` for a plain video, then `cornermark-dev://record/stop`.
+- `link.sh` refuses `record-screen`, because it shows the overlay over the screen. Run `swift run HarnessCapture` (section `recording overlay`) and `CORNERMARK_OVERLAY_FILM=<folder> swift run HarnessCapture`, which films the real overlay offscreen over a synthetic desktop into `R1.mp4` to `R5.mp4`.
 
 ## Driving it with link.sh
 
@@ -24,6 +27,7 @@ Preconditions:
 
 - **Window.** Run `$V/link.sh record/test-window`. The output has `test window id=<n>` and `"onScreenWindowIDs":[<n>]`. Run `$V/watch.sh 14 &`, then `$V/link.sh record window=<n>`, wait, and `$V/link.sh record/stop`. The log has `recording started ... source=screen` and `recording finished ... frames= dropped= dropPercent=`. The recording is the folder `<root>/saved/Cornermark Recording <date>/`.
 - **Display and area.** With no test window open, run `$V/link.sh record "display=1&x=0&y=0&width=960&height=540"`. The log must say `source=fixture`. The instance films its synthetic display, so the line proves the link, the area crop, and the writer, not live display capture.
+- **Plain video.** Add `&style=video` to a display link. Both log lines say `style=video`, and `<root>/saved/` gets one `Cornermark Recording <date>.mp4` file and no project folder. The synthetic display has no real pointer, so this proves the file and the style, not the pointer in the picture.
 - **Check the project.** The folder holds `screen.mp4` and `project.json` and nothing else. `project.json` has `source` (video name, pixel and point size, fps, duration), `events.pointer` (samples with `t` in seconds from the first frame and `x`, `y` in points from the top-left of the filmed area), and `edits.cursor` (`isVisible`, `scale`). A scripted instance replays a built-in pointer path, so `pointerSamples=` in the `recording finished` line is not zero. Hash `screen.mp4` with `shasum -a 256` before and after any rendering to show that edits never touch it.
 - **Render the pointer.** `CORNERMARK_PROJECT_PREVIEW=<project folder> CORNERMARK_PROJECT_PREVIEW_OUT=<folder> swift run HarnessCapture` draws the stored project through `frameState` into `E1.mp4` and `C8.mp4` and prints the source hash before and after. Copy the project folder out of `<root>/saved` first. It is a verification renderer, not the export.
 - **Check the file.** Run `ffprobe -count_frames -select_streams v -show_entries stream=codec_name,width,height,nb_read_frames,duration <file>`. Extract frames with `ffmpeg -ss <t> -i <file> -frames:v 1 <png>` and look at them. Only the synthetic scene may appear: dark background, a sweeping bar, a clock, and four colored corners (red top left, green top right, blue bottom left, yellow bottom right).

@@ -79,6 +79,7 @@ final class MenuPanelController {
             overlaysHidden: c.overlay.isHidden,
             canRestoreOverlay: !c.overlay.recentlyClosed.isEmpty,
             pins: c.pins.summaries,
+            isRecording: c.recording.phase != .idle,
             recent: c.env.store.list(filter: CaptureFilter(limit: MenuPanelModel.recentLimit)))
     }
 

@@ -27,7 +27,7 @@ enum PanelItem: Hashable {
 /// What the panel shows, decided in one place: which sections exist, what each row is called, whether it is enabled.
 /// The views only draw it.
 struct MenuPanelModel: Equatable {
-    static let columns = 4
+    static let columns = 3
     static let recentLimit = 3
 
     struct UpdateBanner: Equatable {
@@ -91,6 +91,7 @@ struct MenuPanelModel: Equatable {
         overlaysHidden: Bool,
         canRestoreOverlay: Bool,
         pins: [PinSummary],
+        isRecording: Bool = false,
         recent: [CaptureRecord],
         dateText: (Date) -> String = Self.dateText
     ) -> MenuPanelModel {
@@ -101,6 +102,11 @@ struct MenuPanelModel: Equatable {
         let tiles = specs.filter { $0.menuGroup == 0 }.map { spec -> Tile in
             let key = settings.hotKey(for: spec.id)
             let spoken = key.map { ", " + $0.spokenString } ?? ""
+            // While a recording runs, its tile stops it.
+            if spec.id == .recordScreen, isRecording {
+                return Tile(item: .action(spec.id), symbol: "stop.circle", title: "Stop", shortcut: key?.displayString,
+                            accessibilityLabel: "Stop Recording" + spoken)
+            }
             return Tile(item: .action(spec.id), symbol: spec.symbol, title: spec.tileTitle, shortcut: key?.displayString,
                         accessibilityLabel: spec.title + spoken)
         }

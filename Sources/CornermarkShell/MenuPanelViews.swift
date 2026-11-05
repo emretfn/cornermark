@@ -11,7 +11,7 @@ enum MenuMetrics {
     static let innerWidth = width - 2 * padding
     static let bannerHeight: CGFloat = 48
     static let tileHeight: CGFloat = 64
-    static let tileGap = DS.Space.s4
+    static let tileGap = DS.Space.s6
     static let tileWidth = (innerWidth - CGFloat(MenuPanelModel.columns - 1) * tileGap) / CGFloat(MenuPanelModel.columns)
     static let headerHeight: CGFloat = 24
     static let captionHeight: CGFloat = 22

@@ -12,7 +12,7 @@ SUBSYSTEM="local.emretufan.cornermark"
 SAFE_LINKS="history settings whats-new check-for-updates restore-overlay hide-overlays open record record/stop record/test-window"
 # The links that start, end or prepare a recording. They may put the instance's own test window on screen and nothing else.
 RECORDING_LINKS="record record/stop record/test-window"
-REFUSED_LINKS="all-in-one capture-area capture-window capture-fullscreen previous-area scrolling ocr timer"
+REFUSED_LINKS="all-in-one capture-area capture-window capture-fullscreen previous-area scrolling ocr timer record-screen"
 
 die() { echo "$*" >&2; exit 1; }
 is_protected_path() { case "$1" in "$HOME/Documents"*|"$HOME/Desktop"*|"$HOME/Downloads"*) return 0 ;; *) return 1 ;; esac; }

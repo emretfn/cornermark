@@ -24,6 +24,7 @@ final class SelectionToolbar: Surface {
             (.fullscreen, IconButton(symbol: "display", label: "Fullscreen", size: .large)),
             (.scrolling, IconButton(symbol: "arrow.up.and.down.text.horizontal", label: "Scrolling", size: .large)),
             (.timer, IconButton(symbol: "timer", label: "Timer", size: .large)),
+            (.record, IconButton(symbol: "record.circle", label: "Record", size: .large)),
         ]
         super.init(style: .hud, shadowInset: Self.inset)
 
@@ -112,6 +113,7 @@ final class SelectionToolbar: Surface {
             case .area: selected = .area
             case .scrolling: selected = .scrolling
             case .timer: selected = .timer
+            case .record: selected = .record
             }
         }
         for item in modeButtons { item.button.isSelected = item.mode == selected }

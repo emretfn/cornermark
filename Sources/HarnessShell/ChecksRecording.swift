@@ -44,10 +44,13 @@ func checkRecording() async throws {
     section("recording links")
     func parse(_ s: String) -> Result<AppAction, URLCommandError> { URLCommand.parse(URL(string: s)!, timerSeconds: 5) }
     let accepted: [(String, AppAction)] = [
-        ("cornermark://record?window=42", .startRecording(.window(42))),
-        ("cornermark://record?display=1", .startRecording(.display(1, area: nil))),
-        ("cornermark://record?display=3&x=10&y=20&width=300&height=200", .startRecording(.display(3, area: CGRect(x: 10, y: 20, width: 300, height: 200)))),
-        ("cornermark://record?x=10.5&y=-20&width=300&height=200", .startRecording(.display(nil, area: CGRect(x: 10.5, y: -20, width: 300, height: 200)))),
+        ("cornermark://record?window=42", .startRecording(.window(42), .editing)),
+        ("cornermark://record?display=1", .startRecording(.display(1, area: nil), .editing)),
+        ("cornermark://record?display=3&x=10&y=20&width=300&height=200", .startRecording(.display(3, area: CGRect(x: 10, y: 20, width: 300, height: 200)), .editing)),
+        ("cornermark://record?x=10.5&y=-20&width=300&height=200", .startRecording(.display(nil, area: CGRect(x: 10.5, y: -20, width: 300, height: 200)), .editing)),
+        ("cornermark://record?display=1&style=video", .startRecording(.display(1, area: nil), .video)),
+        ("cornermark://record?window=42&style=editing", .startRecording(.window(42), .editing)),
+        ("cornermark://record-screen", .capture(.recording)),
         ("cornermark://record/stop", .stopRecording), ("cornermark:///record/stop", .stopRecording), ("cornermark://record/stop/", .stopRecording),
         ("cornermark://record/test-window", .openRecordingTestWindow),
     ]
@@ -58,6 +61,7 @@ func checkRecording() async throws {
         "cornermark://record?display=0", "cornermark://record?display=main",
         "cornermark://record?x=1&y=2", "cornermark://record?x=1&y=2&width=0&height=5", "cornermark://record?x=1&y=2&width=5&height=-1",
         "cornermark://record?x=a&y=2&width=5&height=5", "cornermark://record?x=nan&y=2&width=5&height=5",
+        "cornermark://record?display=1&style=gif", "cornermark://record?display=1&style=",
     ]
     for s in rejected {
         if case .failure(.invalidRecording) = parse(s) { check(true, "rejects \(s)") } else { check(false, "rejects \(s)", detail: "\(parse(s))") }
@@ -65,8 +69,12 @@ func checkRecording() async throws {
     if case .failure(.unknownPath) = parse("cornermark://record/bogus") { check(true, "rejects an unknown record sub-path") } else { check(false, "rejects an unknown record sub-path") }
     check(AppAction.make(.record, timerSeconds: 5) == nil, "record needs a target, so make() returns nil")
     check(AppAction.make(.stopRecording, timerSeconds: 5) == .stopRecording, "stop needs nothing")
-    check(ActionTable.specs.filter { $0.urlPath?.hasPrefix("record") == true }.allSatisfy { $0.hotKey == nil && $0.menuGroup == nil },
-          "recording links have no hotkey and no menu row yet")
+    check([ActionID.record, .stopRecording, .recordTestWindow].allSatisfy { ActionTable.spec($0).hotKey == nil && ActionTable.spec($0).menuGroup == nil },
+          "the scripting links have no hotkey and no menu row")
+    let screen = ActionTable.spec(.recordScreen)
+    check(screen.hotKey?.displayString == "\u{2303}\u{21E7}9" && screen.menuGroup == 0 && screen.urlPath == "record-screen" && screen.tileTitle == "Record",
+          "Record Screen has the ninth shortcut, a capture tile and its own link", detail: "\(screen.hotKey?.displayString ?? "nil") \(String(describing: screen.menuGroup))")
+    check(AppAction.make(.recordScreen, timerSeconds: 5) == .capture(.recording), "and opens the recording overlay")
 
     section("recording policy of an isolated instance")
     let host = StubTestWindow()
@@ -145,6 +153,54 @@ func checkRecording() async throws {
     check(link("record?window=9") && w.coordinator.recording.phase == .idle && recordings(in: folder).count == 2 && w.coordinator.hud.lastMessage == "Recording not allowed",
           "a refused target starts nothing and writes nothing")
     check(((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).count == 2, "not even an empty folder")
+
+    section("recording a finished video")
+    made = []
+    w.env.frameSource = { target, options in
+        made.append((target, options))
+        return FixtureFrameSource(area: { if case .display(_, let a) = target { return a } else { return nil } }(), fps: options.fps, pacing: .scripted(frames: 30))
+    }
+    var pointerAsked = 0
+    w.env.pointerSource = { pointerAsked += 1; return nil }
+    check(link("record?display=1&x=0&y=0&width=320&height=180&style=video") && link("record/stop"), "a video link starts and stops")
+    check(await waitUntil { w.coordinator.recording.phase == .idle && w.coordinator.hud.lastMessage?.hasSuffix(".mp4") == true }, "and it finishes",
+          detail: w.coordinator.hud.lastMessage ?? "nil")
+    check(made.last?.1.showsCursor == true && pointerAsked == 0, "a video asks for the pointer in its picture and watches no pointer track", detail: "\(made)")
+    let videoFile = folder.appendingPathComponent("Cornermark Recording 2026-11-03 at 14.05.09.mp4")
+    check(FileManager.default.fileExists(atPath: videoFile.path) && !videoFile.hasDirectoryPath, "it lands in the save folder as one dated MP4 file, not a project folder")
+    check(w.coordinator.hud.lastMessage == "Saved Cornermark Recording 2026-11-03 at 14.05.09.mp4", "and the message names the file", detail: w.coordinator.hud.lastMessage ?? "nil")
+    if let video = await summarize(videoFile) {
+        check(video.isH264 && video.width == 320 && video.height == 180 && video.frames == 30, "as 30 H.264 frames of the area", detail: "\(video)")
+    } else {
+        check(false, "the video can be read back")
+    }
+    check(link("record?display=1") && link("record/stop"), "a link without a style still records for editing")
+    check(await waitUntil { w.coordinator.recording.phase == .idle && projects(in: folder).count == 3 }, "as a third project folder", detail: "\(projects(in: folder).map(\.lastPathComponent))")
+    check(made.last?.1.showsCursor == false, "with the pointer kept out of the picture")
+
+    section("recording from the overlay")
+    func overlayRecording(_ keys: (NSWindow) -> Void) async -> RecordingTarget? {
+        made = []
+        w.coordinator.perform(.capture(.recording))
+        guard await waitUntil(5, { !w.coordinator.capture.overlayWindows.isEmpty }), let window = w.coordinator.capture.overlayWindows.first else { return nil }
+        keys(window)
+        _ = await waitUntil { w.coordinator.recording.phase == .recording }
+        w.coordinator.perform(.capture(.recording))
+        _ = await waitUntil { w.coordinator.recording.phase == .idle }
+        return made.first?.0
+    }
+    let d = w.display.frame
+    let picked = await overlayRecording { window in
+        Synth.drag(window, from: CGPoint(x: d.minX + 40, y: d.minY + 30), to: CGPoint(x: d.minX + 240, y: d.minY + 150))
+        window.sendEvent(Synth.keyEvent(window, 36, "\r", modifiers: [.shift]))
+    }
+    check(picked == .display(w.display.displayID, area: CGRect(x: d.minX + 40, y: d.minY + 30, width: 200, height: 120)),
+          "Shift-Return in the overlay records the dragged area on its display", detail: "\(String(describing: picked))")
+    check(made.first?.1.showsCursor == false && projects(in: folder).count == 4, "for editing, as a project", detail: "\(projects(in: folder).count)")
+    check(w.coordinator.capture.lastSelection?.rect == CGRect(x: d.minX + 40, y: d.minY + 30, width: 200, height: 120), "and the area is remembered")
+    let again = await overlayRecording { window in window.sendEvent(Synth.keyEvent(window, 36, "\r")) }
+    check(again == picked && made.first?.1.showsCursor == true, "the next overlay opens on that area, and Return records it as a video", detail: "\(String(describing: again))")
+    check(nothingOnScreen(), "the overlay and the recordings put nothing on screen")
 
     section("recording in a scripted instance")
     let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)

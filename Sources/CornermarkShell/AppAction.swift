@@ -3,7 +3,7 @@ import CornermarkCapture
 import UniformTypeIdentifiers
 
 enum ActionID: String, CaseIterable {
-    case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer
+    case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer, recordScreen
     case restoreOverlay, hideOverlays, history, settings, checkForUpdates, whatsNew, openFile, quit
     case record, stopRecording, recordTestWindow
 }
@@ -37,6 +37,7 @@ enum ActionTable {
         ActionSpec(id: .scrolling, title: "Capture Scrolling", symbol: "arrow.up.and.down.square", shortTitle: "Scroll", hotKey: .ctrlShift(22), urlPath: "scrolling", menuGroup: 0),
         ActionSpec(id: .ocr, title: "Capture Text (OCR)", symbol: "text.viewfinder", shortTitle: "Text", hotKey: .ctrlShift(26), urlPath: "ocr", menuGroup: 0),
         ActionSpec(id: .timer, title: "Capture with Timer", symbol: "timer", shortTitle: "Timer", hotKey: .ctrlShift(28), urlPath: "timer", menuGroup: 0),
+        ActionSpec(id: .recordScreen, title: "Record Screen", symbol: "record.circle", shortTitle: "Record", hotKey: .ctrlShift(25), urlPath: "record-screen", menuGroup: 0),
         ActionSpec(id: .restoreOverlay, title: "Restore Last Overlay", symbol: "arrow.uturn.backward", hotKey: nil, urlPath: "restore-overlay", menuGroup: 1),
         ActionSpec(id: .hideOverlays, title: "Hide Overlays", symbol: "eye.slash", hotKey: nil, urlPath: "hide-overlays", menuGroup: 1),
         ActionSpec(id: .history, title: "Capture History\u{2026}", symbol: "clock", hotKey: nil, urlPath: "history", menuGroup: 2),
@@ -64,7 +65,7 @@ enum AppAction: Equatable {
     case restoreLastOverlay
     case hideOverlays
     case openFile(URL)
-    case startRecording(RecordingTarget)
+    case startRecording(RecordingTarget, RecordingStyle)
     case stopRecording
     case openRecordingTestWindow
     case quit
@@ -80,6 +81,7 @@ enum AppAction: Equatable {
             case .previousArea: return .previousArea
             case .timed: return .timer
             case .scrolling: return .scrolling
+            case .recording: return .recordScreen
             }
         case .captureOCR: return .ocr
         case .openHistory: return .history
@@ -106,6 +108,7 @@ enum AppAction: Equatable {
         case .previousArea: return .capture(.previousArea)
         case .scrolling: return .capture(.scrolling)
         case .timer: return .capture(.timed(seconds: timerSeconds))
+        case .recordScreen: return .capture(.recording)
         case .ocr: return .captureOCR
         case .history: return .openHistory
         case .settings: return .openSettings
@@ -146,12 +149,16 @@ enum URLCommand {
             guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
             return validatedImageURL(path: path).map { .openFile($0) }
         }
-        if spec.id == .record { return recordingTarget(query).map { .startRecording($0) } }
+        if spec.id == .record {
+            // A link records for editing unless it asks for a plain video, which keeps older links meaning what they did.
+            guard let style = query["style"].map(RecordingStyle.init(rawValue:)) ?? .editing else { return .failure(.invalidRecording("style")) }
+            return recordingTarget(query).map { .startRecording($0, style) }
+        }
         let seconds = query["seconds"].flatMap(Int.init).map { min(max($0, 1), 60) } ?? timerSeconds
         return AppAction.make(spec.id, timerSeconds: seconds).map { .success($0) } ?? .failure(.unknownPath(rawPath))
     }
 
-    /// `window=<id>` films one window. `display=<id>`, or `x`, `y`, `width` and `height`, or both, film a display or an area of it.
+    /// `window=<id>` films one window. `style=video` or `style=editing` says what it becomes. `display=<id>`, or `x`, `y`, `width` and `height`, or both, film a display or an area of it.
     /// A link that names no target is refused, so a stray link never starts filming the screen.
     static func recordingTarget(_ query: [String: String]) -> Result<RecordingTarget, URLCommandError> {
         let areaKeys = ["x", "y", "width", "height"]

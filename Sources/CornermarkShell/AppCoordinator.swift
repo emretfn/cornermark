@@ -36,7 +36,7 @@ final class AppCoordinator {
         updates = UpdateController(env: env, hud: hud)
         recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
 
-        recording.onSaved = { [unowned self] report in hud.show("Saved \(report.url.deletingLastPathComponent().lastPathComponent)") }
+        recording.onSaved = { [unowned self] saved in hud.show("Saved \(saved.lastPathComponent)") }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
@@ -49,6 +49,9 @@ final class AppCoordinator {
 
     func perform(_ action: AppAction) {
         switch action {
+        case .capture(.recording) where recording.phase != .idle:
+            // The same shortcut and tile that start a recording stop it.
+            recording.stop()
         case .capture(let mode): beginCapture(mode) { [unowned self] out in handleCaptured(out) }
         case .captureOCR: beginCapture(.area) { [unowned self] out in runOCR(on: out.image) }
         case .openHistory: showHistory()
@@ -58,7 +61,7 @@ final class AppCoordinator {
         case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
-        case .startRecording(let target): startRecording(target)
+        case .startRecording(let target, let style): startRecording(target, style)
         case .stopRecording: recording.stop()
         case .openRecordingTestWindow: openRecordingTestWindow()
         case .quit: env.quit()
@@ -87,9 +90,9 @@ final class AppCoordinator {
 
     // MARK: Recording
 
-    private func startRecording(_ target: RecordingTarget) {
+    private func startRecording(_ target: RecordingTarget, _ style: RecordingStyle) {
         guard env.hasScreenPermission() else { return showPermissionWindow() }
-        recording.start(target)
+        recording.start(target, style: style)
     }
 
     /// Only a scripted instance has one. Anywhere else the link is refused and nothing is drawn.
@@ -107,6 +110,7 @@ final class AppCoordinator {
         capture.begin(mode) { [unowned self] outcome in
             switch outcome {
             case .captured(let out): onCaptured(out)
+            case .record(let target, let style): startRecording(target, style)
             case .cancelled: break
             case .failed(.permissionDenied): showPermissionWindow()
             case .failed(let failure):
