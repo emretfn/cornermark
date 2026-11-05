@@ -42,12 +42,20 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         public var fps: Int
         /// Seconds from the first frame to the end of the last one.
         public var duration: Double
+        /// File names inside the project folder of the sound tracks, each as long as the video and on its timeline. Nil when not recorded.
+        public var microphone: String?
+        public var systemAudio: String?
 
         public init(video: String = RecordingProjectFile.videoName, pixelWidth: Int = 0, pixelHeight: Int = 0,
-                    pointWidth: Double = 0, pointHeight: Double = 0, fps: Int = 60, duration: Double = 0) {
+                    pointWidth: Double = 0, pointHeight: Double = 0, fps: Int = 60, duration: Double = 0,
+                    microphone: String? = nil, systemAudio: String? = nil) {
             self.video = video; self.pixelWidth = pixelWidth; self.pixelHeight = pixelHeight
             self.pointWidth = pointWidth; self.pointHeight = pointHeight; self.fps = fps; self.duration = duration
+            self.microphone = microphone; self.systemAudio = systemAudio
         }
+
+        /// The sound tracks there are, microphone first.
+        public var audioFiles: [String] { [microphone, systemAudio].compactMap { $0 } }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
@@ -58,8 +66,10 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             pointHeight = try c.decodeIfPresent(Double.self, forKey: .pointHeight) ?? 0
             fps = try c.decodeIfPresent(Int.self, forKey: .fps) ?? 60
             duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? 0
+            microphone = try? c.decodeIfPresent(String.self, forKey: .microphone)
+            systemAudio = try? c.decodeIfPresent(String.self, forKey: .systemAudio)
         }
-        private enum Keys: String, CodingKey { case video, pixelWidth, pixelHeight, pointWidth, pointHeight, fps, duration }
+        private enum Keys: String, CodingKey { case video, pixelWidth, pixelHeight, pointWidth, pointHeight, fps, duration, microphone, systemAudio }
     }
 
     /// What happened while recording, on the video's timeline.
@@ -141,6 +151,8 @@ private struct Lossy<Value: Decodable>: Decodable {
 /// A recording's folder: the source video next to the project JSON.
 public enum RecordingProjectFile {
     public static let videoName = "screen.mp4"
+    public static let microphoneName = "mic.m4a"
+    public static let systemAudioName = "system.m4a"
     public static let projectName = "project.json"
 
     public static func write(_ project: RecordingProject, to folder: URL) throws {

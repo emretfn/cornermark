@@ -110,6 +110,11 @@ final class RecordingBarView: NSView {
     /// Restart throws the take away, so it asks once more in place: a second click within a few seconds confirms.
     let confirmRestart = Button(title: "Discard take", variant: .dangerGhost)
     let stop = Button(title: "Stop", variant: .secondary)
+    /// The microphone's level, or its warning, shown only when the recording has a microphone.
+    let microphone = MicrophoneSlotView()
+    var showsMicrophone = false {
+        didSet { if showsMicrophone != oldValue { microphone.isHidden = !showsMicrophone; layoutBar() } }
+    }
     private var disarm: DispatchWorkItem?
     private(set) var isRestartArmed = false
     private(set) var look = RecordingBarLook.of(.idle)
@@ -140,7 +145,8 @@ final class RecordingBarView: NSView {
             button.target = self
             button.action = action
         }
-        [indicator, time, divider, pause, resume, restart, confirmRestart, stop].forEach(addSubview)
+        microphone.isHidden = true
+        [indicator, time, microphone, divider, pause, resume, restart, confirmRestart, stop].forEach(addSubview)
         apply(RecordingStatus(phase: .idle, seconds: 0))
     }
 
@@ -202,9 +208,11 @@ final class RecordingBarView: NSView {
     }
 
     var fittingWidth: CGFloat {
-        DS.Space.s12 + DS.Size.iconLarge + DS.Space.s6 + timeWidth + DS.Space.s8 + 1 + DS.Space.s8
+        DS.Space.s12 + DS.Size.iconLarge + DS.Space.s6 + timeWidth + DS.Space.s8 + microphoneWidth + 1 + DS.Space.s8
             + DS.Size.control + DS.Space.s6 + restartWidth + DS.Space.s6 + stop.intrinsicContentSize.width + DS.Space.s4
     }
+
+    private var microphoneWidth: CGFloat { showsMicrophone ? MicrophoneSlotView.width + DS.Space.s8 : 0 }
 
     private var restartWidth: CGFloat { isRestartArmed ? confirmRestart.intrinsicContentSize.width : DS.Size.control
     }
@@ -217,6 +225,10 @@ final class RecordingBarView: NSView {
         let line = DS.Text.bodyStrong.lineHeight
         time.frame = CGRect(x: x, y: mid - line / 2, width: timeWidth, height: line)
         x += timeWidth + DS.Space.s8
+        if showsMicrophone {
+            microphone.frame = CGRect(x: x, y: mid - DS.Size.controlSmall / 2, width: MicrophoneSlotView.width, height: DS.Size.controlSmall)
+            x += MicrophoneSlotView.width + DS.Space.s8
+        }
         divider.frame = CGRect(x: x, y: mid - DS.Space.s8, width: 1, height: DS.Space.s16)
         x += 1 + DS.Space.s8
         let c = DS.Size.control
@@ -229,7 +241,7 @@ final class RecordingBarView: NSView {
         let w = stop.intrinsicContentSize.width
         stop.frame = CGRect(x: x, y: mid - c / 2, width: w, height: c)
         setFrameSize(NSSize(width: fittingWidth, height: h))
-        if let window, window.frame.size != frame.size { window.setContentSize(frame.size) }
+        if let window, window.contentView === self, window.frame.size != frame.size { window.setContentSize(frame.size) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -286,6 +298,23 @@ final class RecordingControls {
         self.env = env
         self.recording = recording
         recording.onChange = { [weak self] in self?.update() }
+        recording.onMicrophone = { [weak self] in self?.microphoneChanged() }
+    }
+
+    private var wasSilent = false
+
+    private func microphoneChanged() {
+        let status = recording.microphone
+        barView?.microphone.apply(status)
+        let silent = status?.isSilent ?? false
+        guard silent != wasSilent else { return }
+        wasSilent = silent
+        // VoiceOver hears it once when the sound stops and once when it comes back, never each tick.
+        if let view = barView {
+            let words = silent ? "No sound from the microphone. Check that it is not muted." : "The microphone has sound again."
+            let priority: NSAccessibilityPriorityLevel = silent ? .high : .medium
+            NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [.announcement: words, .priority: priority.rawValue])
+        }
     }
 
     var status: RecordingStatus { RecordingStatus(phase: recording.phase, seconds: recording.seconds) }
@@ -315,6 +344,7 @@ final class RecordingControls {
             showDim(area: area)
             if case .countingDown(let n) = s.phase { showCountdown(n, area: area) } else { closeCountdown() }
         }
+        barView?.showsMicrophone = recording.hearsMicrophone
         barView?.apply(s)
         if s.phase.isRunning, ticker == nil {
             let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
@@ -340,6 +370,7 @@ final class RecordingControls {
         view.onResume = { [unowned self] in recording.resume() }
         view.onRestart = { [unowned self] in recording.restart() }
         view.onStop = { [unowned self] in recording.stop() }
+        view.showsMicrophone = recording.hearsMicrophone
         view.apply(status)
         let visible = Self.screen(for: area).visible
         let origin = RecordingBarLayout.origin(size: view.frame.size, area: area, visible: visible, remembered: rememberedOrigin)

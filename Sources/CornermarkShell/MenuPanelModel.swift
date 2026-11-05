@@ -92,6 +92,7 @@ struct MenuPanelModel: Equatable {
         canRestoreOverlay: Bool,
         pins: [PinSummary],
         recording: RecordingController.Phase = .idle,
+        microphoneSilent: Bool = false,
         recent: [CaptureRecord],
         dateText: (Date) -> String = Self.dateText
     ) -> MenuPanelModel {
@@ -116,8 +117,13 @@ struct MenuPanelModel: Equatable {
         if recording.isRunning {
             let pause = ActionTable.spec(recording == .paused ? .resumeRecording : .pauseRecording)
             let restart = ActionTable.spec(.restartRecording)
-            sections.append(.rows([Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
-                                   Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true)]))
+            var rows = [Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
+                        Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true)]
+            // The bar's No sound badge says what, and this row says what to do, where the keyboard can reach it.
+            if microphoneSilent {
+                rows.append(Row(item: .action(.settings), symbol: "mic.slash.fill", title: "No sound from the microphone. Check that it is not muted.", isEnabled: false))
+            }
+            sections.append(.rows(rows))
         }
 
         let newest = Array(recent.sorted { $0.createdAt > $1.createdAt }.prefix(recentLimit))
