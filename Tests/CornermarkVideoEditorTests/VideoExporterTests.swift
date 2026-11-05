@@ -95,6 +95,40 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual(shown[15], 21 * 8, accuracy: 4, "the first frame after the cut is source frame 21, not 15")
     }
 
+    /// A screen recording gets a frame only when the screen changes, so a clip can start long after the frame it shows.
+    func testAClipStartingInAStillStretchShowsTheFrameBeforeIt() async throws {
+        let url = folder.appendingPathComponent("screen.mp4")
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 320, kCVPixelBufferHeightKey as String: 180,
+        ])
+        writer.add(input)
+        XCTAssertTrue(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+        for (t, level) in [(0.0, 0), (0.1, 80), (0.9, 160)] {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
+            CVPixelBufferLockBaseAddress(buffer!, [])
+            memset(CVPixelBufferGetBaseAddress(buffer!), Int32(level), CVPixelBufferGetDataSize(buffer!))
+            CVPixelBufferUnlockBaseAddress(buffer!, [])
+            adaptor.append(buffer!, withPresentationTime: CMTime(seconds: t, preferredTimescale: 600))
+        }
+        input.markAsFinished()
+        writer.endSession(atSourceTime: CMTime(seconds: 1, preferredTimescale: 600))
+        await writer.finishWriting()
+        var project = RecordingProject(source: .init(pixelWidth: 320, pixelHeight: 180, pointWidth: 160, pointHeight: 90, fps: 30, duration: 1))
+        project.edits.clips = [Clip(start: 0.5, end: 1)]
+        let out = folder.appendingPathComponent("still.mp4")
+        _ = try await VideoExporter.export(project: project, video: url, settings: ExportSettings(), to: out)
+        let shown = try await levels(out)
+        XCTAssertEqual(shown.count, 15)
+        XCTAssertEqual(shown.first ?? -1, 80, accuracy: 4, "at 0.5 s the screen still shows the frame from 0.1 s, not the one from 0.9 s")
+        XCTAssertEqual(shown[11], 80, accuracy: 4, "source 0.867 s is still the 0.1 s frame")
+        XCTAssertEqual(shown[12], 160, accuracy: 4, "source 0.9 s is the new frame")
+    }
+
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")
