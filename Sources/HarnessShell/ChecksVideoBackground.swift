@@ -106,7 +106,7 @@ func checkVideoBackground(_ w: World, folder: URL) async throws {
     check(bg.padding == 140 && bg.shadow == 80 && bg.cornerRadius == 24 && plan.width == even((source.pointWidth + 280) * scale),
           "Padding, Shadow and Corners change the background as they move", detail: "\(bg)")
     let readout = (padding?.superview as? NSStackView)?.arrangedSubviews.last as? NSTextField
-    check(readout?.stringValue == "140 pt", "the padding readout follows the slider", detail: readout?.stringValue ?? "nil")
+    check(readout?.stringValue == "140", "the padding readout follows the slider", detail: readout?.stringValue ?? "nil")
     let exportPanel = editor.view(identifier: "video.export.resolution") as? NSPopUpButton
     check(exportPanel?.itemTitles.first == "\(plan.width) \u{00D7} \(plan.height) (Original)", "the export panel's sizes follow the background",
           detail: exportPanel?.itemTitles.first ?? "nil")
@@ -153,7 +153,7 @@ func checkVideoBackground(_ w: World, folder: URL) async throws {
     editor.chooseImage = { _, done in done(w.root.appendingPathComponent("missing.png")) }
     _ = click("video.background.add", in: content)
     let problem = editor.view(identifier: "video.background.problem") as? NSTextField
-    check(editor.state.project.edits.background == bg && problem?.isHidden == false && problem?.stringValue == "missing.png could not be added. Try another picture.",
+    check(editor.state.project.edits.background == bg && problem?.isHidden == false && problem?.stringValue == "missing.png could not be added. Choose another image.",
           "a picture that cannot be read changes nothing and the panel says so, without a sound", detail: problem?.stringValue ?? "nil")
     _ = click("video.background.gradient.1", in: content)
     _ = click("video.background.image", in: content)

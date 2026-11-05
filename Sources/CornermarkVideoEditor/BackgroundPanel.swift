@@ -25,7 +25,7 @@ final class BackgroundPanel: NSView {
     private(set) var showsAllGradients = false
     private var picture: CGImage?
     private var tiles: [(view: Tile, fill: VideoBackground.Fill)] = []
-    private let noneTile = Tile(label: "No background", id: "video.background.none")
+    private let noneTile = Tile(label: "None", id: "video.background.none", size: CGSize(width: inner, height: DS.Size.control))
     private let addTile = Tile(label: "Add image", id: "video.background.add")
     private let imageTile = Tile(label: "Your image", id: "video.background.image")
     private let colorWell = ColorTile()
@@ -115,8 +115,7 @@ final class BackgroundPanel: NSView {
             text.draw(at: CGPoint(x: x, y: rect.midY - DS.Text.label.lineHeight / 2))
         }
         noneTile.onPick = { [unowned self] in pick(.none) }
-        noneTile.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        noneTile.heightAnchor.constraint(equalToConstant: DS.Size.controlLarge).isActive = true
+        noneTile.toolTip = "No background: the recording fills the video"
 
         for (i, g) in BuiltinBackgrounds.all.enumerated() {
             let tile = swatch(.gradient(index: i), label: "\(g.name) gradient", id: "video.background.gradient.\(i)")
@@ -166,24 +165,27 @@ final class BackgroundPanel: NSView {
         problem.setAccessibilityIdentifier("video.background.problem")
         content.addArrangedSubview(problem)
         content.addArrangedSubview(header("Colour"))
-        let colors = row(colorRow)
-        content.addArrangedSubview(colors)
-        let line = Separator(axis: .horizontal)
-        content.addArrangedSubview(line)
-        line.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        for group in [noneTile, gradientRows, wallpaperRows, problem, colors, line] as [NSView] { content.setCustomSpacing(DS.Space.s16, after: group) }
-        content.addArrangedSubview(header("Frame"))
-        content.addArrangedSubview(sliderRow("Padding", range: VideoBackground.paddingRange, unit: " pt", id: "video.background.padding", key: "padding",
-                                             read: { $0.padding }, write: { $0.padding = $1 }))
-        content.addArrangedSubview(sliderRow("Shadow", range: VideoBackground.shadowRange, unit: "%", id: "video.background.shadow", key: "shadow",
-                                             read: { $0.shadow }, write: { $0.shadow = $1 }))
-        content.addArrangedSubview(sliderRow("Corners", range: VideoBackground.cornerRange, unit: " pt", id: "video.background.corners", key: "corners",
-                                             read: { $0.cornerRadius }, write: { $0.cornerRadius = $1 }))
+        content.addArrangedSubview(row(colorRow))
+        for group in [noneTile, gradientRows, wallpaperRows, problem] as [NSView] { content.setCustomSpacing(DS.Space.s16, after: group) }
+
+        // The frame settings stay put under the fills, which scroll, so they are never past a scroll edge however short the window.
+        let frame = NSStackView(views: [header("Frame"),
+            sliderRow("Padding", range: VideoBackground.paddingRange, unit: "", id: "video.background.padding", key: "padding",
+                      read: { $0.padding }, write: { $0.padding = $1 }),
+            sliderRow("Shadow", range: VideoBackground.shadowRange, unit: "%", id: "video.background.shadow", key: "shadow",
+                      read: { $0.shadow }, write: { $0.shadow = $1 }),
+            sliderRow("Corners", range: VideoBackground.cornerRange, unit: "", id: "video.background.corners", key: "corners",
+                      read: { $0.cornerRadius }, write: { $0.cornerRadius = $1 }),
+            frameNote])
+        frame.orientation = .vertical
+        frame.alignment = .leading
+        frame.spacing = DS.Space.s4
+        frame.setCustomSpacing(DS.Space.s8, after: frame.arrangedSubviews[0])
+        frame.edgeInsets = NSEdgeInsets(top: DS.Space.s12, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
         frameNote.font = DS.Text.caption.font
         frameNote.textColor = DS.Color.textSecondary
         frameNote.setAccessibilityIdentifier("video.background.note")
         frameNote.preferredMaxLayoutWidth = Self.inner
-        content.addArrangedSubview(frameNote)
 
         let document = FlippedView()
         document.addSubview(content)
@@ -194,12 +196,15 @@ final class BackgroundPanel: NSView {
         // A legacy scroller would take width from the grid and move every right edge.
         scroll.scrollerStyle = .overlay
         scroll.documentView = document
-        document.translatesAutoresizingMaskIntoConstraints = false
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(scroll)
+        let line = Separator(axis: .horizontal)
+        for v in [scroll, line, frame, document] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false }
+        for v in [scroll, line, frame] as [NSView] { addSubview(v) }
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: line.topAnchor),
+            line.leadingAnchor.constraint(equalTo: leadingAnchor), line.trailingAnchor.constraint(equalTo: trailingAnchor),
+            frame.topAnchor.constraint(equalTo: line.bottomAnchor), frame.leadingAnchor.constraint(equalTo: leadingAnchor),
+            frame.trailingAnchor.constraint(equalTo: trailingAnchor), frame.bottomAnchor.constraint(equalTo: bottomAnchor),
             content.leadingAnchor.constraint(equalTo: document.leadingAnchor), content.trailingAnchor.constraint(equalTo: document.trailingAnchor),
             content.topAnchor.constraint(equalTo: document.topAnchor), content.bottomAnchor.constraint(equalTo: document.bottomAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
@@ -281,7 +286,7 @@ final class BackgroundPanel: NSView {
         slider.setAccessibilityLabel(title)
         let value = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
         value.alignment = .right
-        value.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        value.widthAnchor.constraint(equalToConstant: 32).isActive = true
         slider.target = self
         slider.action = #selector(sliderMoved(_:))
         slider.onTrackingEnd = { [unowned self] in onSliderEnd() }
@@ -331,8 +336,8 @@ final class Tile: NSButton {
     }
     private var hovering = false { didSet { if oldValue != hovering { needsDisplay = true } } }
 
-    init(label: String, id: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: BackgroundPanel.tile, height: BackgroundPanel.tile))
+    init(label: String, id: String, size: CGSize = CGSize(width: BackgroundPanel.tile, height: BackgroundPanel.tile)) {
+        super.init(frame: NSRect(origin: .zero, size: size))
         isBordered = false
         title = ""
         toolTip = label
@@ -342,8 +347,8 @@ final class Tile: NSButton {
         setAccessibilityValue(0)
         target = self
         action = #selector(pressed)
-        widthAnchor.constraint(equalToConstant: BackgroundPanel.tile).isActive = true
-        heightAnchor.constraint(equalToConstant: BackgroundPanel.tile).isActive = true
+        widthAnchor.constraint(equalToConstant: size.width).isActive = true
+        heightAnchor.constraint(equalToConstant: size.height).isActive = true
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 
@@ -357,7 +362,8 @@ final class Tile: NSButton {
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
 
     override func draw(_ dirtyRect: NSRect) {
-        Tile.drawChrome(in: bounds, current: isCurrent, hovering: hovering, content: paint)
+        // Pressing shows at once, with no motion: picking a fill is frequent.
+        Tile.drawChrome(in: bounds, current: isCurrent, hovering: hovering || isHighlighted, content: paint)
     }
 
     override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.md).fill() }
