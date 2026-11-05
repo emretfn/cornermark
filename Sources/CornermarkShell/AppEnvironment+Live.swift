@@ -15,6 +15,13 @@ extension AppEnvironment {
     static let screenCapturePaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
 
     static func live() throws -> AppEnvironment {
+        #if DEBUG
+        if let root = isolatedRoot {
+            let defaults = UserDefaults(suiteName: isolatedName)!
+            defaults.removePersistentDomain(forName: isolatedName)
+            return try isolated(root: root, defaults: defaults)
+        }
+        #endif
         let fm = FileManager.default
         let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let store = try CaptureStore(root: support.appendingPathComponent("\(AppVariant.current.name)/History", isDirectory: true))
@@ -49,6 +56,43 @@ extension AppEnvironment {
         env.presentUpdateAlert = presentUpdateAlert
         return env
     }
+
+    #if DEBUG
+    /// One fixed name, because each new suite leaves a file in ~/Library/Preferences for good.
+    private static let isolatedName = "local.emretufan.cornermark.dev.isolated"
+
+    /// Set by the verification skill, so a scripted instance shares nothing with one the developer has open.
+    static var isolatedRoot: URL? {
+        ProcessInfo.processInfo.environment["CORNERMARK_ISOLATED_ROOT"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    /// `.offscreen` keeps every window out and the app inactive, so a scripted link cannot take the developer's focus.
+    /// No displays, so a capture link fails instead of imaging the developer's screen.
+    static func isolated(root: URL, defaults: UserDefaults) throws -> AppEnvironment {
+        let fm = FileManager.default
+        let drag = root.appendingPathComponent("drag", isDirectory: true)
+        let saved = root.appendingPathComponent("saved", isDirectory: true)
+        try fm.createDirectory(at: drag, withIntermediateDirectories: true)
+        try fm.createDirectory(at: saved, withIntermediateDirectories: true)
+        let env = AppEnvironment(
+            screen: FixtureScreenSource(displays: []), store: try CaptureStore(root: root.appendingPathComponent("History", isDirectory: true)),
+            defaults: defaults, pasteboard: NSPasteboard(name: NSPasteboard.Name(isolatedName)),
+            presentation: .offscreen, clock: { Date() }, cursorScreenFrame: { NSScreen.main?.visibleFrame ?? .zero },
+            hasScreenPermission: { CaptureController.hasPermission }, requestScreenPermission: {},
+            openURL: { _ in }, revealInFinder: { _ in }, playSound: {}, pickFolder: { $0(nil) },
+            loginItem: IsolatedLoginItem(), updateService: NoUpdates(), defaultSaveFolder: saved, dragDirectory: drag,
+            quit: { NSApp.terminate(nil) })
+        env.willPresent = { window in
+            Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")
+        }
+        return env
+    }
+
+    private final class IsolatedLoginItem: LoginItemControlling {
+        var isEnabled: Bool { false }
+        func setEnabled(_ enabled: Bool) throws {}
+    }
+    #endif
 
     private static func confirmUpdate(_ release: AppRelease) -> Bool {
         #if DEBUG

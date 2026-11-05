@@ -82,7 +82,10 @@ final class HUD {
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         p.contentView = HUDView(message: message, symbol: symbol)
         panel = p
-        guard env.isOnscreen else { return }
+        guard env.isOnscreen else {
+            Log.shell.notice("hud \(message, privacy: .public)")
+            return
+        }
         p.orderFrontRegardless()
         let work = DispatchWorkItem { [weak self, weak p] in
             p?.close()

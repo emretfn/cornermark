@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let env: AppEnvironment
         do { env = try AppEnvironment.live() } catch {
             Log.shell.fault("cannot open capture history: \(error.localizedDescription, privacy: .public)")
+            #if DEBUG
+            if AppEnvironment.isolatedRoot != nil { return NSApp.terminate(nil) }
+            #endif
             let alert = NSAlert()
             alert.messageText = "Cornermark cannot open its capture history"
             alert.informativeText = error.localizedDescription
@@ -21,9 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let coordinator = AppCoordinator(env: env)
         self.coordinator = coordinator
-        coordinator.installHotKeys(backend: CarbonHotKeyBackend())
+        #if DEBUG
+        Log.shell.notice("launch pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public) isolated=\(!env.isOnscreen, privacy: .public) screenPermission=\(CaptureController.hasPermission, privacy: .public)")
+        #endif
+        if env.isOnscreen { coordinator.installHotKeys(backend: CarbonHotKeyBackend()) }
         coordinator.startMaintenance()
-        installStatusItem(coordinator)
+        if env.isOnscreen { installStatusItem(coordinator) }
         installMainMenu()
         pendingURLs.forEach(open)
         pendingURLs = []

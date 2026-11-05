@@ -67,6 +67,9 @@ final class AppCoordinator {
     func handle(url: URL) -> Bool {
         switch URLCommand.parse(url, timerSeconds: settings.value.timerSeconds) {
         case .success(let action):
+            #if DEBUG
+            Log.shell.notice("handled URL \(url.absoluteString, privacy: .public)")
+            #endif
             perform(action)
             return true
         case .failure(let error):
