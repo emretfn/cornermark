@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let panel = MenuPanelController(coordinator: coordinator)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Cornermark")
+            button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: AppVariant.current.name)
             button.target = self
             button.action = #selector(toggleMenuPanel)
             button.sendAction(on: [.leftMouseDown, .rightMouseDown])
@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let apply: (UpdateState) -> Void = { [weak item] state in
                 guard let item, let button = item.button else { return }
                 applyStatusLabel(state, to: button)
-                item.length = state.statusLabel == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+                item.length = statusTitle(state) == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
                 panel.refresh()
             }
             apply(coordinator.updates.state)
@@ -121,11 +121,17 @@ public enum CornermarkApp {
     }
 }
 
+/// The text next to the menu bar icon: the development badge and the update label, when there are any.
+func statusTitle(_ state: UpdateState) -> String? {
+    let parts = [AppVariant.current.statusBadge, state.statusLabel].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " ")
+}
+
 /// Shows the update label next to the icon, or the bare icon when there is none.
 @MainActor
 func applyStatusLabel(_ state: UpdateState, to button: NSStatusBarButton) {
-    let label = state.statusLabel
+    let label = statusTitle(state)
     button.title = label ?? ""
     button.imagePosition = label == nil ? .imageOnly : .imageLeading
-    button.setAccessibilityLabel(label == nil ? "Cornermark" : "Cornermark, update available")
+    button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : "\(AppVariant.current.name), update available")
 }

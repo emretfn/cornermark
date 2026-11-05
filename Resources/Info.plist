@@ -7,8 +7,8 @@
     <key>CFBundleIconFile</key><string>Cornermark</string>
     <key>CFBundleIdentifier</key><string>__BUNDLE_ID__</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Cornermark</string>
-    <key>CFBundleDisplayName</key><string>Cornermark</string>
+    <key>CFBundleName</key><string>__APP_NAME__</string>
+    <key>CFBundleDisplayName</key><string>__APP_NAME__</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>__VERSION__</string>
     <key>CFBundleVersion</key><string>__BUILD__</string>
@@ -17,14 +17,14 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Cornermark needs to record your screen to take screenshots. Nothing leaves this Mac.</string>
+    <string>__APP_NAME__ needs to record your screen to take screenshots. Nothing leaves this Mac.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLName</key><string>__BUNDLE_ID__.url</string>
             <key>CFBundleTypeRole</key><string>Viewer</string>
             <key>CFBundleURLSchemes</key>
-            <array><string>cornermark</string></array>
+            <array><string>__URL_SCHEME__</string></array>
         </dict>
     </array>
     <key>CFBundleDocumentTypes</key>

@@ -21,6 +21,9 @@ extension NSControl {
 
 /// Click, then press the new shortcut. Escape cancels, Delete switches the shortcut off.
 final class ShortcutRecorderView: NSView {
+    /// Played when a key is refused. The harness replaces it, because its checks run while someone may be at the Mac.
+    static var playRefusedSound: () -> Void = { NSSound.beep() }
+
     var hotKey: HotKey? { didSet { needsDisplay = true } }
     var onChange: (HotKey?) -> Void = { _ in }
     private enum Phase: Equatable {
@@ -86,7 +89,7 @@ final class ShortcutRecorderView: NSView {
         default:
             guard let key = HotKey(event: event) else {
                 phase = .refused
-                return NSSound.beep()
+                return Self.playRefusedSound()
             }
             phase = .idle
             onChange(key)

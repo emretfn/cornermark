@@ -3,7 +3,8 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-// Usage: swift make-icon.swift <output.icns|output.png>
+// Usage: swift make-icon.swift <output.icns|output.png> [--dev]
+// --dev draws an amber plate, which marks a development build.
 // Draws the Cornermark icon (a lemon viewfinder on a graphite plate) at every size an .icns needs, or once at 512 for a .png.
 
 func superellipse(_ r: CGRect) -> CGPath {
@@ -35,7 +36,9 @@ func drawIcon(size: Int) -> CGImage {
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012), blur: s * 0.03, color: CGColor(gray: 0, alpha: 0.3))
     ctx.addPath(shape)
-    ctx.setFillColor(CGColor(srgbRed: 0.08, green: 0.08, blue: 0.07, alpha: 1))
+    ctx.setFillColor(CommandLine.arguments.contains("--dev")
+        ? CGColor(srgbRed: 0.72, green: 0.36, blue: 0.05, alpha: 1)
+        : CGColor(srgbRed: 0.08, green: 0.08, blue: 0.07, alpha: 1))
     ctx.fillPath()
     ctx.restoreGState()
 
@@ -82,8 +85,8 @@ func writePNG(_ image: CGImage, to url: URL) {
     guard CGImageDestinationFinalize(dest) else { fatalError("could not write \(url.path)") }
 }
 
-guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write(Data("usage: make-icon.swift <output.icns|output.png>\n".utf8))
+guard (2...3).contains(CommandLine.arguments.count) else {
+    FileHandle.standardError.write(Data("usage: make-icon.swift <output.icns|output.png> [--dev]\n".utf8))
     exit(2)
 }
 let out = URL(fileURLWithPath: CommandLine.arguments[1])
