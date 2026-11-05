@@ -76,6 +76,9 @@ final class PointerPath: Sendable {
         var x: Double, y: Double, vx: Double, vy: Double
     }
 
+    /// Far below a pixel: two samples this close are the same still pointer, whatever rounding put between them.
+    static let stillTolerance = 0.001
+
     let samples: [PointerSample]
     private let springs: [Spring]
     /// Sorted, disjoint and apart: `moveStarts[i]...moveEnds[i]` is one stretch of movement.
@@ -92,7 +95,7 @@ final class PointerPath: Sendable {
             let dt = b.t - a.t
             guard dt > 0 else { springs.append(springs[springs.count - 1]); continue }
             springs.append(Self.advance(springs[springs.count - 1], from: a, to: b, by: dt))
-            guard a.x != b.x || a.y != b.y else { continue }
+            guard abs(b.x - a.x) > Self.stillTolerance || abs(b.y - a.y) > Self.stillTolerance else { continue }
             if let end = ends.last, end >= a.t { ends[ends.count - 1] = b.t } else { starts.append(a.t); ends.append(b.t) }
         }
         self.springs = springs

@@ -138,6 +138,13 @@ final class CursorTrackTests: XCTestCase {
         XCTAssertEqual(opacity(project(rest, cursor: CursorSettings()), 3), 1)
     }
 
+    func testARestIsStillWhateverRoundingPutsInIt() {
+        let w = 1280.0, from = 0.15, to = 0.45
+        let drift = [PointerSample(t: 0, x: w * from, y: 0), PointerSample(t: 1, x: w * (from + (to - from) * 1), y: 0), PointerSample(t: 5, x: w * to, y: 0)]
+        XCTAssertNotEqual(drift[1].x, drift[2].x, "the two ends of the rest differ in the last bit")
+        XCTAssertNil(frameState(project(drift, cursor: CursorSettings(hidesWhenIdle: true)), outputTime: 3).cursor)
+    }
+
     func testAShortPauseNeverHides() {
         let pause = [PointerSample(t: 0, x: 0, y: 0), PointerSample(t: 1, x: 100, y: 0), PointerSample(t: 2.2, x: 100, y: 0), PointerSample(t: 3, x: 0, y: 0)]
         let p = project(pause, cursor: CursorSettings(hidesWhenIdle: true))
