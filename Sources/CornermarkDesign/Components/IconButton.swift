@@ -17,6 +17,14 @@ public final class IconButton: Pressable {
         didSet { needsDisplay = true }
     }
 
+    /// How the selected state looks. A tool picks with the accent; a button that only switches what a panel shows stays neutral,
+    /// because navigation never takes the accent.
+    public enum Selection: CaseIterable { case accent, neutral }
+
+    public var selection = Selection.accent {
+        didSet { needsDisplay = true }
+    }
+
     public var isSelected = false {
         didSet {
             setAccessibilityValue(isSelected ? "Selected" : "Not selected")
@@ -53,12 +61,15 @@ public final class IconButton: Pressable {
         Paint.symbol(symbol, in: bounds, pointSize: glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize), look.text)
     }
 
-    func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, state) }
+    func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, selection: selection, state) }
 
-    static func look(tone: Tone, selected: Bool, _ state: InteractionState) -> ButtonAppearance {
+    static func look(tone: Tone, selected: Bool, selection: Selection = .accent, _ state: InteractionState) -> ButtonAppearance {
         let c = DS.Color.self
         if selected && state != .disabled {
-            return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
+            switch selection {
+            case .accent: return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
+            case .neutral: return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+            }
         }
         switch (tone, state) {
         case (.plain, .normal): return ButtonAppearance(fill: nil, text: c.textSecondary)
