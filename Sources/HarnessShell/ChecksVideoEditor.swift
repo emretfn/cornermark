@@ -147,7 +147,235 @@ func checkVideoEditor() async throws {
     try await checkVideoEditorLayout(w, folder: folder)
     try await checkVideoEditorPlayback(w, folder: folder)
     try await checkVideoEditorSaving(w, folder: folder, videoHash: videoHash)
+    try await checkVideoEditorClips(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorPerformance(folder: folder)
+    try await checkVideoEditorLiveCut(folder: folder)
+}
+
+@MainActor
+func dragTimeline(_ timeline: TimelineView, from a: CGPoint, to b: CGPoint, steps: Int = 6, during: (Int) -> Void = { _ in }) {
+    guard let window = timeline.window else { return }
+    func event(_ type: NSEvent.EventType, _ p: CGPoint) -> NSEvent {
+        Synth.mouse(type, at: window.convertPoint(toScreen: timeline.convert(p, to: nil)), in: window)
+    }
+    timeline.mouseDown(with: event(.leftMouseDown, a))
+    for i in 1...max(steps, 1) {
+        let f = CGFloat(i) / CGFloat(max(steps, 1))
+        timeline.mouseDragged(with: event(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)))
+        during(i)
+    }
+    timeline.mouseUp(with: event(.leftMouseUp, b))
+}
+
+@MainActor
+private func checkVideoEditorClips(_ w: World, folder: URL, videoHash: String) async throws {
+    section("video editor: split, delete and trim")
+    let project = try RecordingProjectFile.read(from: folder)
+    let clock = ScriptedClock()
+    let frames = StillFrames(url: folder.appendingPathComponent(project.source.video))
+    let editor = VideoEditorWindowController(folder: folder, project: project, frames: frames, clock: { clock.now })
+    defer { editor.window?.close() }
+    guard let window = editor.window, let content = window.contentView, let timeline = editor.view(identifier: "video.timeline") as? TimelineView,
+          let split = editor.view(identifier: "video.split") as? NSButton, let delete = editor.view(identifier: "video.deleteClip") as? NSButton else {
+        return check(false, "an editor with a timeline and the clip buttons")
+    }
+    window.setContentSize(NSSize(width: 1200, height: 760))
+    content.layoutSubtreeIfNeeded()
+    await editor.ready()
+    func clips() -> [[Double]] { editor.state.project.edits.clips.map { [$0.start, $0.end] } }
+    func now() -> Double { editor.state.transport.time(at: clock.now) }
+    check(project.edits.clips == [Clip(start: 0, end: project.source.duration)] && timeline.clipRects.count == 1 && timeline.cutMarks.isEmpty,
+          "a new recording is one clip, the whole recording, with no cut marks", detail: "\(clips())")
+    check(split.isEnabled == false && delete.isEnabled == false && delete.toolTip == "A video keeps at least one clip",
+          "at the start Split is off, and Delete is off and says a video keeps one clip")
+
+    editor.seek(to: 0.5)
+    check(split.isEnabled, "inside a clip Split is on")
+    Synth.key(window, 11, "b", modifiers: .command)
+    check(clips() == [[0, 0.5], [0.5, 2]] && editor.state.transport.duration == 2, "Command-B splits the clip at the playhead and keeps every frame",
+          detail: "\(clips())")
+    content.layoutSubtreeIfNeeded()
+    let mark = CGFloat(timeline.scale.x(0.5)).rounded()
+    check(timeline.cutMarks == [mark] && timeline.clipRects.count == 2 && timeline.clipRects[0].maxX < mark && timeline.clipRects[1].minX > mark,
+          "the clip lane marks the cut and leaves a seam between the two clips", detail: "\(timeline.cutMarks) \(timeline.clipRects)")
+    check(delete.isEnabled && !split.isEnabled, "on the cut Split is off and Delete is on")
+    editor.seek(to: 1.5)
+    split.performClick(nil)
+    check(clips() == [[0, 0.5], [0.5, 1.5], [1.5, 2]] && timeline.cutMarks.count == 2, "the Split button splits at the playhead too", detail: "\(clips())")
+    check(timeline.accessibilityValue() as? String == "0:01.50, clip 3 of 3", "the timeline says which clip the playhead is in",
+          detail: "\(timeline.accessibilityValue() ?? "nil")")
+    snapshotEditor(editor, name: "video-editor-clips-split")
+
+    let lane = timeline.clipLaneRect
+    let middle = CGPoint(x: CGFloat(timeline.scale.x(1)), y: lane.midY)
+    dragTimeline(timeline, from: middle, to: middle, steps: 1)
+    check(editor.state.selectedClip == 1 && timeline.selection == 1 && abs(now() - 1) < 0.01, "a click on a clip picks it and moves the playhead there")
+    snapshotEditor(editor, name: "video-editor-clips-selected")
+    snapshotEditor(editor, name: "video-editor-clips-selected-dark", dark: true)
+    window.appearance = nil
+    Synth.key(window, 51, "\u{7f}")
+    check(clips() == [[0, 0.5], [1.5, 2]] && editor.state.transport.duration == 1 && editor.state.selectedClip == nil,
+          "Delete removes the picked clip and the video is a second shorter", detail: "\(clips())")
+    check(abs(now() - 0.5) < 1e-9 && editor.previewState?.sourceTime == 1.5, "the playhead waits on the cut, where the preview now shows source 1.5 s",
+          detail: "\(now()) \(String(describing: editor.previewState?.sourceTime))")
+    check(timeline.accessibilityValue() as? String == "0:00.50, clip 2 of 2", "the cut belongs to the clip it starts")
+
+    let before = clips()
+    content.layoutSubtreeIfNeeded()
+    let pps = timeline.scale.pointsPerSecond
+    let endEdge = CGPoint(x: timeline.clipRects[0].maxX - 2, y: lane.midY)
+    check(timeline.edge(at: endEdge).map { $0.index == 0 && $0.edge == .end } == true
+          && timeline.edge(at: CGPoint(x: timeline.clipRects[1].minX + 2, y: lane.midY)).map { $0.index == 1 && $0.edge == .start } == true,
+          "at a seam each side takes its own clip's edge")
+    var midDrag: [Double] = []
+    dragTimeline(timeline, from: endEdge, to: CGPoint(x: endEdge.x - 0.25 * pps, y: lane.midY)) { _ in
+        midDrag.append(Double(timeline.clipRects[0].maxX) + Double(TimelineView.Metrics.seam) / 2)
+    }
+    check(clips() == [[0, 0.25], [1.5, 2]], "dragging the first clip's end a quarter second left trims it to 0.25 s", detail: "\(clips())")
+    check(abs((midDrag.last ?? 0) - (Double(endEdge.x) + 2 - 0.25 * pps)) < 1.5, "while dragging, the edge stays under the pointer",
+          detail: "\(midDrag.map { Int($0) }) pointer end \(Int(Double(endEdge.x) - 0.25 * pps))")
+    check(abs(now() - (0.25 - 1.0 / 60)) < 1e-9 && editor.previewState?.sourceTime == 0.25 - 1.0 / 60,
+          "the playhead rides the edge: the preview shows the clip's new last frame", detail: "\(now())")
+    check(editor.state.transport.duration == 0.75 && editor.state.selectedClip == 0, "the video is shorter and the trimmed clip stays picked")
+    content.layoutSubtreeIfNeeded()
+    let startEdge = CGPoint(x: timeline.clipRects[1].minX + 2, y: lane.midY)
+    let pps2 = timeline.scale.pointsPerSecond
+    var anchored: [CGFloat] = []
+    dragTimeline(timeline, from: startEdge, to: CGPoint(x: startEdge.x - 0.25 * pps2, y: lane.midY)) { _ in anchored.append(timeline.clipRects[1].maxX) }
+    check(clips() == [[0, 0.25], [1.25, 2]], "dragging the next clip's start left brings back a quarter second that was cut", detail: "\(clips())")
+    check(Set(anchored).count == 1, "while its start moves, the clip's end stays where it was", detail: "\(anchored)")
+    check(abs(now() - 0.25) < 1e-9 && editor.previewState?.sourceTime == 1.25, "the preview shows the clip's new first frame")
+    dragTimeline(timeline, from: CGPoint(x: timeline.clipRects[1].minX + 2, y: lane.midY), to: CGPoint(x: timeline.clipRects[1].maxX + 300, y: lane.midY))
+    let refused = clips()
+    check(abs(refused[1][1] - refused[1][0] - 1.0 / 60) < 1e-9, "a start dragged past the end leaves a one-frame clip, never an empty one", detail: "\(refused)")
+
+    let undoItem = NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    check(editor.canUndo && window.validateMenuItem(undoItem), "the Edit menu's Undo is on after an edit")
+    check(NSApp.sendAction(Selector(("undo:")), to: window, from: undoItem) && clips() == [[0, 0.25], [1.25, 2]],
+          "the Edit menu's Undo reaches the editor and undoes the whole last drag in one step", detail: "\(clips())")
+    Synth.key(window, 6, "z", modifiers: .command)
+    Synth.key(window, 6, "z", modifiers: .command)
+    check(clips() == before && editor.state.transport.duration == 1, "two more undo both trims", detail: "\(clips())")
+    Synth.key(window, 6, "z", modifiers: .command)
+    Synth.key(window, 6, "z", modifiers: .command)
+    Synth.key(window, 6, "z", modifiers: .command)
+    check(clips() == [[0, 2]] && editor.state.transport.duration == 2 && timeline.cutMarks.isEmpty, "undoing every step brings back the one whole clip")
+    editor.undo()
+    check(clips() == [[0, 2]] && editor.state.project.edits == project.edits, "undo past the first edit does nothing")
+    Synth.key(window, 6, "Z", modifiers: [.command, .shift])
+    check(clips() == [[0, 0.5], [0.5, 2]], "Shift-Command-Z redoes the first split", detail: "\(clips())")
+    for _ in 0..<5 { editor.redo() }
+    check(clips() == refused && !editor.canRedo, "redo walks forward to the last edit", detail: "\(clips())")
+    editor.undo()
+    editor.setCursor(CursorSettings(isVisible: true, scale: 3))
+    editor.setCursor(CursorSettings(isVisible: true, scale: 3.5))
+    editor.undo()
+    check(editor.state.project.edits.cursor.scale == project.edits.cursor.scale && clips() == [[0, 0.25], [1.25, 2]],
+          "a size drag is one undo step and leaves the clips alone")
+    editor.selectClip(0)
+    Synth.key(window, 53, "\u{1b}")
+    check(editor.state.selectedClip == nil && !editor.state.isPreviewOnly, "Esc lets go of the picked clip")
+    Synth.key(window, 11, "b")
+    check(clips() == [[0, 0.25], [1.25, 2]], "B without Command is not taken")
+
+    editor.seek(to: 0.1)
+    let f = 1.0 / Double(project.source.fps)
+    timeline.keyDown(with: Synth.keyEvent(window, 124, modifiers: .option))
+    check(abs(clips()[0][0] - f) < 1e-9 && now() == 0 && editor.previewState?.sourceTime == f,
+          "Option-Right on the focused timeline trims a frame off the clip's start, and the preview shows its new first frame",
+          detail: "\(clips())")
+    timeline.keyDown(with: Synth.keyEvent(window, 123, modifiers: [.option, .shift]))
+    check(clips()[0][0] == 0, "Option-Shift-Left brings the start back, stopping at the recording's start")
+    for _ in 0..<3 { timeline.keyDown(with: Synth.keyEvent(window, 124, modifiers: [.option, .command])) }
+    check(abs(clips()[0][1] - (0.25 + 3 * f)) < 1e-9 && abs(now() - (0.25 + 2 * f)) < 1e-9,
+          "Option-Command-Right moves the clip's end out a frame per press, and the playhead shows its last frame", detail: "\(clips())")
+    editor.undo()
+    check(abs(clips()[0][1] - 0.25) < 1e-9 && clips()[0][0] == 0, "three presses on one edge are one undo step", detail: "\(clips())")
+    editor.selectClip(1)
+    check((timeline.accessibilityValue() as? String)?.hasSuffix("clip 2 of 2, clip 2 picked") == true && timeline.accessibilityHelp()?.contains("Option") == true,
+          "the timeline says which clip is picked and how to trim from the keyboard", detail: "\(timeline.accessibilityValue() ?? "nil")")
+    timeline.keyDown(with: Synth.keyEvent(window, 123, modifiers: [.option, .command, .shift]))
+    check(abs(clips()[1][1] - (1.25 + f)) < 1e-9 && clips()[0] == [0, 0.25] && editor.state.selectedClip == 1,
+          "with a clip picked, the keys trim that clip, stop a frame after its start, and keep it picked", detail: "\(clips())")
+    editor.undo()
+
+    let held = clips()
+    let grip = CGPoint(x: timeline.clipRects[1].maxX - 2, y: lane.midY)
+    func mouse(_ type: NSEvent.EventType, _ p: CGPoint) -> NSEvent { Synth.mouse(type, at: window.convertPoint(toScreen: timeline.convert(p, to: nil)), in: window) }
+    timeline.mouseDown(with: mouse(.leftMouseDown, grip))
+    Synth.key(window, 51, "\u{7f}")
+    check(clips() == [held[0]] && timeline.trim == nil && editor.state.selectedClip == nil, "Delete while an edge is held removes the clip and ends the drag")
+    timeline.keyDown(with: Synth.keyEvent(window, 124, modifiers: .option))
+    timeline.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: grip.x - 80, y: grip.y)))
+    timeline.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: grip.x - 80, y: grip.y)))
+    check(clips().count == 1 && clips()[0][0] > 0, "keys and the rest of that drag act on what is there now, and nothing brings the deleted clip back",
+          detail: "\(clips())")
+    editor.undo()
+    editor.undo()
+    check(clips() == held, "two undo steps put back the nudge and the deleted clip", detail: "\(clips())")
+
+    editor.window?.close()
+    let stored = try RecordingProjectFile.read(from: folder)
+    check(stored.edits.clips == [Clip(start: 0, end: 0.25), Clip(start: 1.25, end: 2)], "closing writes the clips to project.json",
+          detail: "\(stored.edits.clips)")
+    check(sha256OrUnreadable(folder.appendingPathComponent(RecordingProjectFile.videoName)) == videoHash, "the source video is unchanged")
+    guard let again = w.coordinator.openVideoEditor(folder) else { return check(false, "the editor reopens") }
+    check(again.state.project.edits.clips == stored.edits.clips && again.state.transport.duration == 1 && !again.canUndo,
+          "reopening shows the two clips, one second long, with nothing to undo")
+    w.coordinator.closeAllEditors()
+    var offGrid = project
+    offGrid.source.duration = project.source.duration + 0.004
+    offGrid.edits.clips = []
+    let odd = VideoEditorWindowController(folder: folder, project: offGrid, frames: StillFrames(url: folder.appendingPathComponent(project.source.video)), clock: { clock.now })
+    if let oddTimeline = odd.view(identifier: "video.timeline") as? TimelineView, let oddWindow = odd.window {
+        let f = 1.0 / Double(project.source.fps)
+        var ends: [Double] = []
+        for (code, mods) in [(123, NSEvent.ModifierFlags([.option, .command])), (123, [.option, .command]), (124, [.option, .command]), (124, [.option, .command])] {
+            oddTimeline.keyDown(with: Synth.keyEvent(oddWindow, UInt16(code), modifiers: mods))
+            ends.append(odd.state.project.edits.clips[0].end)
+        }
+        let want = [2, 2 - f, 2, 2.004]
+        check(zip(ends, want).allSatisfy { abs($0 - $1) < 1e-9 }, "an end off the frame grid steps to the frame next to it and back, one frame per press",
+              detail: "\(ends)")
+        odd.window?.close()
+    }
+    var whole = stored
+    whole.edits.clips = []
+    try RecordingProjectFile.write(whole, to: folder)
+    check(try RecordingProjectFile.read(from: folder).edits.clips == [Clip(start: 0, end: project.source.duration)], "the fixture is back to one clip for the checks after this")
+}
+
+@MainActor
+private func checkVideoEditorLiveCut(folder: URL) async throws {
+    section("video editor: playing across a cut")
+    var project = try RecordingProjectFile.read(from: folder)
+    project.edits.clips = [Clip(start: 0, end: 0.6), Clip(start: 1.2, end: 2)]
+    let video = folder.appendingPathComponent(project.source.video)
+    let live = PlayerFrames(url: video)
+    let editor = VideoEditorWindowController(folder: folder, project: project, frames: live)
+    defer { editor.window?.close() }
+    editor.window?.setContentSize(NSSize(width: 1200, height: 760))
+    await editor.ready()
+    editor.togglePlayback()
+    let begin = CACurrentMediaTime()
+    var after: [(late: Double, off: Double)] = []
+    while CACurrentMediaTime() - begin < 1.2 {
+        try? await Task.sleep(nanoseconds: 16_666_667)
+        editor.tick()
+        let t = editor.state.transport.time(at: CACurrentMediaTime())
+        guard t > 0.6 + 1e-3, t < 1.3 else { continue }
+        let expected = editor.state.project.timeline.sourceTime(at: t)
+        after.append((t - 0.6, abs(live.player.currentTime().seconds - expected)))
+    }
+    editor.togglePlayback()
+    let first = after.first
+    let worst = after.dropFirst().map(\.off).max() ?? 99
+    print(String(format: "CUT live player after the cut at 0.60 s: first tick %.1f ms after it, off by %.1f ms; worst afterwards %.1f ms over %d ticks; player syncs=%d",
+                 (first?.late ?? 0) * 1000, (first?.off ?? 0) * 1000, worst * 1000, after.count, live.syncs))
+    check(live.syncs == 2, "the player is put in step twice: when playing starts and at the cut", detail: "\(live.syncs)")
+    check(first.map { $0.off < 0.05 } == true && worst < 0.05, "the live player jumps over the removed part with the playhead",
+          detail: String(format: "first off %.3f s, worst %.3f s", first?.off ?? -1, worst))
+    check(nothingOnScreen(), "playing across a cut put nothing on screen")
 }
 
 @MainActor
@@ -188,9 +416,10 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
 
     window.setContentSize(window.minSize)
     content.layoutSubtreeIfNeeded()
-    let parts = ["video.start", "video.end", "video.time", "video.mute", "video.fullscreen"].map { frameInWindow(editor.view(identifier: $0)) }
+    let parts = ["video.start", "video.end", "video.split", "video.deleteClip", "video.time", "video.mute", "video.fullscreen"]
+        .map { frameInWindow(editor.view(identifier: $0)) }
     let row = frameInWindow(bar)
-    let apart = parts[1].maxX <= parts[2].minX && parts[2].maxX <= parts[3].minX && parts.allSatisfy { row.contains($0) }
+    let apart = zip(parts.dropFirst(), parts.dropFirst(2)).allSatisfy { $0.maxX <= $1.minX } && parts.allSatisfy { row.contains($0) }
     check(apart && frameInWindow(preview).height > 200, "at the smallest window size the playback row neither overlaps nor clips", detail: "\(parts)")
     _ = await waitUntil(3) { editor.tick(); return editor.previewImage != nil }
     snapshotEditor(editor, name: "video-editor-min")
@@ -356,7 +585,9 @@ private func checkVideoEditorSaving(_ w: World, folder: URL, videoHash: String) 
 @MainActor
 private func checkVideoEditorPerformance(folder: URL) async throws {
     section("video editor: preview frame time")
-    let editor = try VideoEditorWindowController.open(folder: folder)
+    let project = try RecordingProjectFile.read(from: folder)
+    let live = PlayerFrames(url: folder.appendingPathComponent(project.source.video))
+    let editor = VideoEditorWindowController(folder: folder, project: project, frames: live)
     defer { editor.window?.close() }
     guard let window = editor.window, let preview = editor.view(identifier: "video.preview") else { return check(false, "an editor") }
     window.setContentSize(NSSize(width: 1200, height: 760))
@@ -385,8 +616,8 @@ private func checkVideoEditorPerformance(folder: URL) async throws {
     let median = sorted[sorted.count / 2], p95 = sorted[Int(Double(sorted.count - 1) * 0.95)], worst = sorted.last ?? 0
     let tick = intervals.dropFirst().sorted()
     let ticks = Double(costs.count) / 1.8
-    print(String(format: "PERF preview frame cost ms median=%.2f p95=%.2f max=%.2f ticks=%d (%.1f/s, interval median %.1f ms) distinct frames=%d source fps=%d preview %@",
-                 median, p95, worst, costs.count, ticks, (tick.isEmpty ? 0 : tick[tick.count / 2]) * 1000, shown, editor.state.project.source.fps,
+    print(String(format: "PERF preview frame cost ms median=%.2f p95=%.2f max=%.2f ticks=%d (%.1f/s, interval median %.1f ms) distinct frames=%d source fps=%d player syncs=%d preview %@",
+                 median, p95, worst, costs.count, ticks, (tick.isEmpty ? 0 : tick[tick.count / 2]) * 1000, shown, editor.state.project.source.fps, live.syncs,
                  "\(Int(preview.bounds.width))x\(Int(preview.bounds.height)) pt"))
     check(p95 < 1000.0 / 60, "95% of preview frames cost under one 60 Hz frame (16.7 ms)", detail: String(format: "p95 %.2f ms", p95))
     check(Double(shown) > Double(costs.count) * 0.9, "nearly every tick shows a new source frame", detail: "\(shown) new frames in \(costs.count) ticks")

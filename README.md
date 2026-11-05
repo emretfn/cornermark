@@ -135,7 +135,7 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 - **Pins.** To unlock a locked pin, use the "Pinned screenshots" list in the menu bar panel. Escape or the close button removes a pin.
 - **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day. Recordings are listed too, under their own filter, with their length on the picture. Deleting a recording from History keeps its video in the save folder.
 - **Finished recordings.** A recording shows a Quick Access card with its first frame, length, and size. Copy puts the video file on the clipboard, Play opens a plain video or a GIF, Edit opens a recording made for editing, and Reveal in Finder shows it. Dragging the card drags the video.
-- **Video editor.** Edit on the card or in History opens a recording made for editing. Settings sit in a rail on the left, the preview in the middle, and the timeline at the bottom with a ruler, a zoom lane, and a clip lane with pictures of the recording. Space plays and pauses, the timeline takes a click, a drag, or the arrow keys, and Full Screen Preview shows only the video. The Cursor section shows, hides, and resizes the pointer, and closing the window keeps the change in `project.json`. The video file itself is never rewritten.
+- **Video editor.** Edit on the card or in History opens a recording made for editing. Settings sit in a rail on the left, the preview in the middle, and the timeline at the bottom with a ruler, a zoom lane, and a clip lane with pictures of the recording. Space plays and pauses, the timeline takes a click, a drag, or the arrow keys, and Full Screen Preview shows only the video. The Cursor section shows, hides, and resizes the pointer. Command-B splits the clip at the playhead, Delete removes a clip, and dragging a clip's edge trims it; Option with the arrow keys trims from the keyboard. Each cut is marked on the clip lane, and Command-Z undoes any edit. Closing the window keeps the changes in `project.json`, Export writes a video of only the clips that are left, and the video file itself is never rewritten.
 - **GIF.** Record GIF, or Option-Return in the recording overlay, records like a video and saves an animated GIF at 15 frames a second, at most 960 pixels on its longest side, looping forever. A paused stretch is left out. Convert to GIF on a video's Quick Access card or in History makes a GIF beside an existing Record Video recording and keeps the video.
 - **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state. The Recording pane sets the frame rate (30 or 60), quality, Retina or standard resolution, a largest size (4K, 1440p, 1080p, or 720p), whether the cursor shows, and whether a finished recording gets a Quick Access card.
 - **Updates.** Cornermark checks GitHub at launch and once a day, and installs a release only after you confirm. See [Update](#update).
@@ -146,7 +146,7 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 ## What it leaves out
 
 - No cloud, accounts, or share links.
-- No video export yet. The video editor previews a recording and changes its pointer, but cannot write a finished video, cut it, add zooms, or turn a recording for editing into a GIF.
+- The video editor cannot add zooms yet, or turn a recording for editing into a GIF.
 - No App Store version or notarization.
 
 ## Develop

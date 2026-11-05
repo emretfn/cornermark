@@ -66,7 +66,7 @@ final class RecordingProjectTests: XCTestCase {
     func testTimeOutsideTheVideoIsClamped() {
         let p = project(duration: 4)
         XCTAssertEqual(frameState(p, outputTime: -3).sourceTime, 0)
-        XCTAssertEqual(frameState(p, outputTime: 99).sourceTime, 4)
+        XCTAssertEqual(frameState(p, outputTime: 99).sourceTime, 4 - 0.5 / 60, "past the end is the middle of the last frame")
     }
 
     func testStepByStepAtSixtyFramesNeverJumps() {

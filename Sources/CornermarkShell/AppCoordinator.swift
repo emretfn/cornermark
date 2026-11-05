@@ -78,6 +78,7 @@ final class AppCoordinator {
         case .controlRecording(.resume): recording.resume()
         case .controlRecording(.restart): recording.restart()
         case .openRecordingTestWindow: openRecordingTestWindow()
+        case .filmVideoEditor(let folder, let scene): filmVideoEditor(folder, scene: scene)
         case .quit: env.quit()
         }
     }
@@ -196,6 +197,34 @@ final class AppCoordinator {
             return Log.shell.error("recording refused: \(String(describing: RecordingRefusal.unavailable), privacy: .public)")
         }
         host.show()
+    }
+
+    /// Shows the editor for `folder` as the scripted instance's test window, then plays `scene` in it once a recording of that window
+    /// runs, and stops the recording when the scene ends. Anywhere but a scripted debug instance the link is refused.
+    private func filmVideoEditor(_ folder: URL, scene name: String) {
+        #if DEBUG
+        guard let host = env.recordingTestWindow, let scene = VideoEditorWindowController.scenes[name],
+              let editor = openVideoEditor(folder), let window = editor.window else {
+            return Log.shell.error("recording refused: no film of the video editor here, scene=\(name, privacy: .public)")
+        }
+        window.setContentSize(NSSize(width: 1100, height: 690))
+        guard host.adopt(window) != nil else { return }
+        editor.showBehind(at: window.frame.origin)
+        Task { @MainActor [weak self, weak editor] in
+            for _ in 0..<1200 where self?.recording.phase != .recording { try? await Task.sleep(nanoseconds: 50_000_000) }
+            guard let self, let editor, recording.phase == .recording else {
+                return Log.shell.error("film \(name, privacy: .public) gave up: no recording of the editor started")
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            Log.shell.notice("film \(name, privacy: .public) started")
+            await editor.play(scene) { Log.shell.notice("film step \($0, privacy: .public)") }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            Log.shell.notice("film \(name, privacy: .public) done clips=\(editor.state.project.edits.clips.map { String(format: "%.3f-%.3f", $0.start, $0.end) }.joined(separator: ","), privacy: .public)")
+            recording.stop()
+        }
+        #else
+        Log.shell.error("recording refused: no film of the video editor in a release build")
+        #endif
     }
 
     // MARK: Capture

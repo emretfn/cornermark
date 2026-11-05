@@ -77,6 +77,8 @@ enum AppAction: Equatable {
     case stopRecording
     case controlRecording(RecordingControl)
     case openRecordingTestWindow
+    /// A scripted instance shows the editor for a project as its test window and plays a scene in it while it is recorded.
+    case filmVideoEditor(URL, scene: String)
     case openRecording(URL)
     case exportRecording(URL)
     case quit
@@ -107,7 +109,7 @@ enum AppAction: Equatable {
         case .controlRecording(.pause): return .pauseRecording
         case .controlRecording(.resume): return .resumeRecording
         case .controlRecording(.restart): return .restartRecording
-        case .openRecordingTestWindow: return .recordTestWindow
+        case .openRecordingTestWindow, .filmVideoEditor: return .recordTestWindow
         case .openRecording, .exportRecording: return .editRecording
         case .quit: return .quit
         }
@@ -171,6 +173,9 @@ enum URLCommand {
         if spec.id == .editRecording {
             guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
             return validatedProjectFolder(path: path).map { query["export"] == "1" ? .exportRecording($0) : .openRecording($0) }
+        }
+        if spec.id == .recordTestWindow, let path = query["editor"] {
+            return validatedProjectFolder(path: path).map { .filmVideoEditor($0, scene: query["scene"] ?? "") }
         }
         if spec.id == .record {
             // A link records for editing unless it asks for a plain video, which keeps older links meaning what they did.

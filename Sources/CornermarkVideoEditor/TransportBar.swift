@@ -1,9 +1,10 @@
 import AppKit
 import CornermarkDesign
 
-/// The row under the preview: go to start, play or pause, go to end, the time, the volume, and the preview-only switch.
+/// The row under the preview: go to start, play or pause, go to end, the clip edits at the playhead, the time, the volume,
+/// and the preview-only switch.
 final class TransportBar: NSView {
-    enum Command { case start, toggle, end, mute, previewOnly }
+    enum Command { case start, toggle, end, split, delete, mute, previewOnly }
 
     static let height: CGFloat = 44
 
@@ -14,6 +15,8 @@ final class TransportBar: NSView {
     let playButton = IconButton(symbol: "play.fill", label: "Play (Space)")
     let pauseButton = IconButton(symbol: "pause.fill", label: "Pause (Space)")
     let endButton = IconButton(symbol: "forward.end.fill", label: "Go to End")
+    let splitButton = IconButton(symbol: "scissors", label: "Split Clip at Playhead (\u{2318}B)")
+    let deleteButton = IconButton(symbol: "trash", label: "Delete Clip (\u{232B})")
     let muteButton = IconButton(symbol: "speaker.wave.2.fill", label: "Mute")
     let unmuteButton = IconButton(symbol: "speaker.slash.fill", label: "Unmute")
     let volume = Slider()
@@ -25,7 +28,8 @@ final class TransportBar: NSView {
         super.init(frame: frameRect)
         let ids: [(IconButton, String, Command)] = [
             (startButton, "video.start", .start), (playButton, "video.play", .toggle), (pauseButton, "video.pause", .toggle),
-            (endButton, "video.end", .end), (muteButton, "video.mute", .mute), (unmuteButton, "video.unmute", .mute),
+            (endButton, "video.end", .end), (splitButton, "video.split", .split), (deleteButton, "video.deleteClip", .delete),
+            (muteButton, "video.mute", .mute), (unmuteButton, "video.unmute", .mute),
             (fullButton, "video.fullscreen", .previewOnly), (exitFullButton, "video.exitFullscreen", .previewOnly),
         ]
         for (b, id, command) in ids {
@@ -45,8 +49,10 @@ final class TransportBar: NSView {
         time.setAccessibilityIdentifier("video.time")
         time.alignment = .center
 
-        let left = NSStackView(views: [startButton, playButton, pauseButton, endButton])
+        let left = NSStackView(views: [startButton, playButton, pauseButton, endButton, splitButton, deleteButton])
         left.spacing = DS.Space.s4
+        // Playback and the clip edits are two groups; space alone sets them apart.
+        left.setCustomSpacing(DS.Space.s16, after: endButton)
         let right = NSStackView(views: [muteButton, unmuteButton, volume, fullButton, exitFullButton])
         right.spacing = DS.Space.s4
         right.setCustomSpacing(DS.Space.s12, after: volume)
@@ -69,17 +75,18 @@ final class TransportBar: NSView {
 
     /// Everything the row shows except the time, so a playing frame that changes only the time touches only the time.
     struct Look: Equatable {
-        var playing, atStart, atEnd, playable, hasAudio, muted, previewOnly: Bool
+        var playing, atStart, atEnd, playable, hasAudio, muted, previewOnly, canSplit, canDelete: Bool
         var level: Float
     }
 
     private var shown: Look?
 
-    func update(time current: Double, duration: Double, playing: Bool, hasAudio: Bool, muted: Bool, volume level: Float, previewOnly: Bool) {
+    func update(time current: Double, duration: Double, playing: Bool, hasAudio: Bool, muted: Bool, volume level: Float, previewOnly: Bool,
+                canSplit: Bool, canDelete: Bool) {
         time.stringValue = "\(Timecode.text(current)) / \(Timecode.text(duration))"
         time.setAccessibilityLabel("\(Timecode.text(current)) of \(Timecode.text(duration))")
         let look = Look(playing: playing, atStart: current <= 0, atEnd: current >= duration, playable: duration > 0, hasAudio: hasAudio,
-                        muted: muted, previewOnly: previewOnly, level: level)
+                        muted: muted, previewOnly: previewOnly, canSplit: canSplit, canDelete: canDelete, level: level)
         guard look != shown else { return }
         shown = look
         playButton.isHidden = playing
@@ -87,6 +94,10 @@ final class TransportBar: NSView {
         startButton.isEnabled = !look.atStart
         endButton.isEnabled = !look.atEnd
         playButton.isEnabled = look.playable
+        splitButton.isEnabled = canSplit
+        deleteButton.isEnabled = canDelete
+        deleteButton.toolTip = canDelete ? "Delete Clip (\u{232B})" : "A video keeps at least one clip"
+        deleteButton.setAccessibilityHelp(canDelete ? nil : "A video keeps at least one clip")
         muteButton.isHidden = muted
         unmuteButton.isHidden = !muted
         // A recording without sound has nothing to turn up: the speaker stays, off and saying why, and the slider steps aside

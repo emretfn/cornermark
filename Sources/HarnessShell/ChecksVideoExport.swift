@@ -74,7 +74,7 @@ struct ParityRow {
 
 @MainActor
 func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, export: URL, plan: ExportPlan, project: RecordingProject,
-                   times: [Double]) async -> [ParityRow] {
+                   times: [Double], name: String = "parity") async -> [ParityRow] {
     var rows: [ParityRow] = []
     let renderer = ExportFrameRenderer(plan: plan, source: project.source)
     let size = CGSize(width: plan.width, height: plan.height)
@@ -86,8 +86,8 @@ func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, c
         guard let preview = previewFrame(editor, size: size), let source = await decodedFrame(editor.videoURL, at: state.sourceTime),
               let drawn = renderer.image(state, source: source), let file = await decodedFrame(export, at: t),
               let a = PixelDifference(preview, drawn, edge: 4), let b = PixelDifference(preview, file, edge: 4) else { continue }
-        for (name, image) in [("preview", preview), ("drawn", drawn), ("file", file)] {
-            let url = URL(fileURLWithPath: scratch + String(format: "parity-%.2f-%@.png", t, name))
+        for (kind, image) in [("preview", preview), ("drawn", drawn), ("file", file)] {
+            let url = URL(fileURLWithPath: scratch + String(format: "%@-%.2f-%@.png", name, t, kind))
             if let png = AssetStore.pngData(from: image) { try? png.write(to: url) }
         }
         rows.append(ParityRow(time: t, drawn: a, encoded: b))
@@ -248,6 +248,7 @@ func checkVideoExport() async throws {
               "the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
         check(rows.count == 3 && rows.allSatisfy { $0.encoded.psnr > 35 }, "the file's frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
+        try await checkTrimmedExport(editor, frames: frames, clock: clock, root: w.root)
     } else { check(false, "the harness decoder is known") }
 
     section("video export: cancel")
@@ -281,4 +282,51 @@ func checkVideoExport() async throws {
     let count = w.store.list().count
     check(c.handle(url: link), "the export link is handled")
     check(await waitUntil(30) { w.store.list().count == count + 1 }, "the link opens the editor and exports with the default choices")
+}
+
+@MainActor
+private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, root: URL) async throws {
+    section("video export: a trimmed project")
+    editor.seek(to: 0.5)
+    editor.splitAtPlayhead()
+    editor.seek(to: 1)
+    editor.splitAtPlayhead()
+    editor.selectClip(1)
+    editor.deleteClip()
+    let project = editor.state.project
+    check(project.edits.clips == [Clip(start: 0, end: 0.5), Clip(start: 1, end: 2)] && editor.state.transport.duration == 1.5,
+          "two splits and a delete leave 0 to 0.5 s and 1 to 2 s of the recording", detail: "\(project.edits.clips)")
+    let out = root.appendingPathComponent("trimmed.mp4")
+    let report = try await VideoExporter.export(project: project, video: editor.videoURL, settings: ExportSettings(), to: out)
+    let facts = await fileFacts(out)
+    print(String(format: "TRIMMED frames=%d seconds=%.4f planFrames=%d clips=0-0.5,1-2 renderSeconds=%.3f", facts?.frames ?? 0, report.duration,
+                 report.plan.frameCount, report.renderSeconds))
+    check(facts?.frames == 90 && abs(report.duration - 1.5) < 1.0 / 60, "the file is 90 frames, 1.5 s: what the clips keep",
+          detail: "\(String(describing: facts)) \(report.duration) s")
+    var ok = true
+    let renderer = ExportFrameRenderer(plan: report.plan, source: project.source)
+    let cases: [(output: Double, source: Double, skipped: Double)] = [(29.0 / 60, 29.0 / 60, 59.0 / 60), (0.5, 1.0, 0.5), (31.0 / 60, 61.0 / 60, 31.0 / 60)]
+    for (output, source, skipped) in cases {
+        let state = frameState(project, outputTime: output)
+        guard let file = await decodedFrame(out, at: output), let right = await decodedFrame(editor.videoURL, at: source).flatMap({ renderer.image(state, source: $0) }),
+              let wrong = await decodedFrame(editor.videoURL, at: skipped).flatMap({ renderer.image(state, source: $0) }),
+              let a = PixelDifference(file, right, edge: 4), let b = PixelDifference(file, wrong, edge: 4) else { ok = false; continue }
+        print(String(format: "CUTFRAME output=%.4f source=%.4f vs-source %@ | vs-%.4f %@", output, source, a.description, skipped, b.description))
+        for (kind, image) in [("file", file), ("source", right)] {
+            if let png = AssetStore.pngData(from: image) { try? png.write(to: URL(fileURLWithPath: scratch + String(format: "cut-%.4f-%@.png", output, kind))) }
+        }
+        ok = ok && a.psnr > 35 && b.psnr < a.psnr - 10
+    }
+    check(ok, "each side of the cut is its own source frame: frame 29 before it, frame 60 at it, frame 61 after it, and not the frames the cut removed")
+    let rows = await measureParity(editor, frames: frames, clock: clock, export: out, plan: report.plan, project: project, times: [0.25, 0.49, 0.5, 1.2],
+                                   name: "parity-trimmed")
+    for r in rows { print(String(format: "PARITY trimmed t=%.2f preview-vs-drawn %@ | preview-vs-file %@", r.time, r.drawn.description, r.encoded.description)) }
+    check(rows.count == 4 && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 }, "trimmed: the export draws what the preview shows at and around the cut",
+          detail: rows.map { $0.drawn.description }.joined(separator: "; "))
+    check(rows.count == 4 && rows.allSatisfy { $0.encoded.psnr > 35 }, "trimmed: the file's frames match the preview within compression loss",
+          detail: rows.map { $0.encoded.description }.joined(separator: "; "))
+    editor.undo()
+    editor.undo()
+    editor.undo()
+    check(editor.state.project.edits.clips.count == 1, "undo puts the project back to one clip")
 }

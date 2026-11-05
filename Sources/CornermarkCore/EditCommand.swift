@@ -76,25 +76,33 @@ public struct CoalescingKey: Hashable, Sendable, ExpressibleByStringLiteral {
     public init(stringLiteral value: String) { rawValue = value }
 }
 
-public struct EditHistory: Sendable {
-    public private(set) var past: [Document] = []
-    public private(set) var present: Document
-    public private(set) var future: [Document] = []
+public typealias EditHistory = UndoHistory<Document>
+
+extension UndoHistory where Value == Document {
+    public mutating func apply(_ command: EditCommand, coalescing key: CoalescingKey? = nil) {
+        record(present.applying(command), coalescing: key)
+    }
+}
+
+/// Undo and redo over whole values: each step keeps the value as it was.
+public struct UndoHistory<Value: Equatable & Sendable>: Sendable {
+    public private(set) var past: [Value] = []
+    public private(set) var present: Value
+    public private(set) var future: [Value] = []
     public let limit: Int
     private var openGroup: CoalescingKey?
 
-    public init(_ document: Document, limit: Int = 200) {
-        present = document
+    public init(_ value: Value, limit: Int = 200) {
+        present = value
         self.limit = max(1, limit)
     }
 
     public var canUndo: Bool { !past.isEmpty }
     public var canRedo: Bool { !future.isEmpty }
 
-    /// With a `coalescing` key equal to the previous apply's key, the command folds into the
-    /// open undo step instead of starting a new one. Any other apply, undo or redo closes the group.
-    public mutating func apply(_ command: EditCommand, coalescing key: CoalescingKey? = nil) {
-        let next = present.applying(command)
+    /// With a `coalescing` key equal to the previous step's key, the value folds into the
+    /// open undo step instead of starting a new one. Any other step, undo or redo closes the group.
+    public mutating func record(_ next: Value, coalescing key: CoalescingKey? = nil) {
         guard next != present else { return }
 
         if let key, key == openGroup, !past.isEmpty {
