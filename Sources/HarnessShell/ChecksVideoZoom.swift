@@ -136,7 +136,7 @@ func checkVideoZoom() async throws {
 
     section("video editor: a zoom's menu")
     guard let menu = hand.menu(x: hand.x(2)) else { return check(false, "a right click on a zoom opens its menu") }
-    check(menu.items.map(\.title) == ["Level", "Apply Level to All Zooms", "Mode", "", "Split at Playhead", "Duplicate", "", "Remove", "Remove All Zooms"],
+    check(menu.items.map(\.title) == ["Level", "Apply Level to All", "Mode", "", "Split at Playhead", "Duplicate", "", "Remove Zoom", "Remove All Zooms"],
           "the menu offers level, apply level to all, mode, split, duplicate, remove and remove all", detail: "\(menu.items.map(\.title))")
     let levels = menu.items.first { $0.title == "Level" }?.submenu?.items ?? []
     check(levels.map(\.title) == ["100%", "150%", "200%", "300%", "400%"] && levels.first { $0.state == .on }?.title == "200%",
@@ -144,7 +144,7 @@ func checkVideoZoom() async throws {
     check(menu.items.first { $0.title == "Mode" }?.submenu?.items.map(\.title) == ["Follow Cursor", "Manual"], "Mode offers Follow Cursor and Manual")
     check(hand.menu(x: hand.x(7)) == nil, "empty lane has no zoom menu")
     check(menu.pick("Level", "300%") && editor.state.project.edits.zooms[0].scale == 3, "Level 300% sets the zoom's level")
-    check(hand.menu(x: hand.x(2))?.pick("Apply Level to All Zooms") == true && editor.state.project.edits.zooms.allSatisfy { $0.scale == 3 },
+    check(hand.menu(x: hand.x(2))?.pick("Apply Level to All") == true && editor.state.project.edits.zooms.allSatisfy { $0.scale == 3 },
           "Apply Level to All gives every zoom that level")
     check(hand.menu(x: hand.x(2))?.pick("Mode", "Manual") == true && editor.state.project.edits.zooms[0].mode == .manual, "Mode switches to Manual")
     editor.seek(to: 2)
@@ -153,7 +153,7 @@ func checkVideoZoom() async throws {
     check(editor.state.project.edits.zooms[1].scale == 3 && editor.state.project.edits.zooms[1].mode == .manual, "both parts keep its settings")
     check(hand.menu(x: hand.x(1))?.pick("Duplicate") == true && zooms() == [[0.5, 2], [2, 4], [4, 6], [6, 7.5]], "Duplicate puts a copy in the first gap that holds it",
           detail: "\(zooms())")
-    check(hand.menu(x: hand.x(6.5))?.pick("Remove") == true && zooms() == [[0.5, 2], [2, 4], [4, 6]], "Remove takes that zoom away")
+    check(hand.menu(x: hand.x(6.5))?.pick("Remove Zoom") == true && zooms() == [[0.5, 2], [2, 4], [4, 6]], "Remove takes that zoom away")
     check(hand.menu(x: hand.x(3))?.pick("Remove All Zooms") == true && zooms().isEmpty, "Remove All Zooms empties the lane")
     check(editor.state.selectedZoom == nil && title?.stringValue == EditorSection.cursor.title, "with its zoom gone the panel returns to the section")
     editor.undo()
@@ -197,6 +197,33 @@ func checkVideoZoom() async throws {
     check(zooms().last == [6, 8], "Command-Z brings it back")
     Synth.key(window, 6, "z", modifiers: [.command, .shift])
     check(zooms().count == 3, "Shift-Command-Z removes it again")
+    func arrow(_ code: UInt16, _ mods: NSEvent.ModifierFlags = []) { lane.keyDown(with: Synth.keyEvent(window, code, "", modifiers: mods)) }
+    hand.click(x: hand.x(1))
+    check(window.firstResponder === lane, "clicking the lane gives it keyboard focus")
+    arrow(124)
+    check(editor.state.selectedZoom == editor.state.project.edits.zooms[1].id, "Right on the focused lane picks the next zoom")
+    arrow(123)
+    check(editor.state.selectedZoom == editor.state.project.edits.zooms[0].id, "Left picks the one before")
+    arrow(124, .option)
+    arrow(124, .option)
+    check(zooms()[0] == [0.5, 2], "Option-Right moves the picked zoom a tenth of a second, stopping at its neighbour", detail: "\(zooms())")
+    arrow(123, .option)
+    arrow(123, [.option, .shift])
+    check(zooms()[0] == [0, 1.5], "Option-Left moves it earlier, Shift a whole second, stopping at the start", detail: "\(zooms())")
+    arrow(124, [.option, .command])
+    check(zooms()[0] == [0, 1.6], "Option-Command-Right moves its end", detail: "\(zooms())")
+    editor.undo()
+    check(zooms()[0] == [0, 1.5], "the end edit is its own undo step", detail: "\(zooms())")
+    editor.undo()
+    check(zooms()[0] == [0.5, 2], "presses in a row are one undo step per edit", detail: "\(zooms())")
+    editor.seek(to: 1.2)
+    Synth.key(window, 11, "b", modifiers: .command)
+    check(zooms().prefix(2) == [[0.5, 1.2], [1.2, 2]], "Command-B splits the picked zoom at the playhead instead of the clip", detail: "\(zooms())")
+    check(editor.state.project.edits.clips.count == 1, "and leaves the clips alone")
+    Synth.key(window, 2, "d", modifiers: .command)
+    check(zooms().count == 5 && zooms().last == [6, 6.8], "Command-D duplicates the picked zoom into the first gap that holds it", detail: "\(zooms())")
+    editor.undo()
+    editor.undo()
     hand.click(x: hand.x(1))
     (editor.view(identifier: "video.rail.audio") as? NSButton)?.performClick(nil)
     check(editor.state.selectedZoom == nil && title?.stringValue == "Audio", "choosing a section in the rail lets go of the zoom")

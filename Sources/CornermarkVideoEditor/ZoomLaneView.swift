@@ -10,6 +10,14 @@ final class ZoomLaneView: NSView {
         case resize(UUID, ZoomLane.Edge, to: Double)
     }
 
+    /// The focused lane's keys: arrows pick the zoom before or after, Option-arrows move the picked zoom, Option-Command-arrows move
+    /// its end. Shift makes a step a second instead of a tenth.
+    enum KeyCommand: Equatable {
+        case pick(Int)
+        case move(by: Double)
+        case resizeEnd(by: Double)
+    }
+
     var zooms: [Zoom] = [] { didSet { if oldValue != zooms { changed() } } }
     var selection: UUID? { didSet { if oldValue != selection { changed() } } }
     /// The timeline's own scale, so the lane lines up with the ruler and the clips, also while a trim holds the zoom still.
@@ -21,6 +29,7 @@ final class ZoomLaneView: NSView {
     var onSelect: (UUID?) -> Void = { _ in }
     var onGesture: (Gesture, TimelineView.Scrub) -> Void = { _, _ in }
     var menuForZoom: (UUID) -> NSMenu? = { _ in nil }
+    var onKey: (KeyCommand) -> Void = { _ in }
 
     static let hint = "Click or drag to add a zoom"
     /// Points of a zoom's edge that resize it instead of moving it.
@@ -61,6 +70,27 @@ final class ZoomLaneView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.sm).fill() }
+
+    override func keyDown(with event: NSEvent) {
+        let mods = event.modifierFlags.intersection([.option, .command, .shift, .control])
+        let direction: Double
+        switch event.keyCode {
+        case 123: direction = -1
+        case 124: direction = 1
+        default: return super.keyDown(with: event)
+        }
+        let step = (mods.contains(.shift) ? 1.0 : 0.1) * direction
+        switch mods.subtracting(.shift) {
+        case []: onKey(.pick(Int(direction)))
+        case .option: onKey(.move(by: step))
+        case [.option, .command]: onKey(.resizeEnd(by: step))
+        default: super.keyDown(with: event)
+        }
+    }
 
     /// The timeline's scale in the lane's own points.
     var scale: TimelineScale {
@@ -104,7 +134,8 @@ final class ZoomLaneView: NSView {
         let picked = zoom.id == selection
         let radius = DS.Radius.xs
         NSBezierPath.continuous(r, radius: radius).fill(with: picked ? DS.Color.accentSubtle : DS.Color.bgControlActive)
-        (picked ? DS.Color.accentBorder : DS.Color.border).setStroke()
+        // The strong border keeps 3:1 against the lane, so a zoom too short for its label still reads as one.
+        (picked ? DS.Color.accentBorder : DS.Color.borderStrong).setStroke()
         let edge = NSBezierPath.continuous(r.insetBy(dx: 0.5, dy: 0.5), radius: radius - 0.5)
         edge.lineWidth = 1
         edge.stroke()
@@ -202,6 +233,7 @@ final class ZoomLaneView: NSView {
     private func time(_ x: CGFloat) -> Double { scale.time(Double(x)) }
 
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         let p = point(event)
         switch hit(p) {
         case .empty:

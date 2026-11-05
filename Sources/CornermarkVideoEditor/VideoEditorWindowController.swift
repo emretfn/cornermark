@@ -237,6 +237,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         lane.onSelect = { [unowned self] in selectZoom($0) }
         lane.onGesture = { [unowned self] gesture, phase in dragZoom(gesture, phase) }
         lane.menuForZoom = { [unowned self] in zoomMenu(for: $0) }
+        lane.onKey = { [unowned self] in zoomKey($0) }
         inspector.zoomPanel.onChange = { [unowned self] in zoomPanelChanged($0) }
     }
 
@@ -374,6 +375,31 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     public func removeZoom(_ id: UUID) { commitZooms(zoomLane.removing(id)) }
 
+    /// Command-B splits the picked zoom at the playhead, else the clip under it.
+    public func splitSelection() {
+        if let id = state.selectedZoom { splitZoom(id) } else { splitAtPlayhead() }
+    }
+
+    private func zoomKey(_ key: ZoomLaneView.KeyCommand) {
+        let lane = zoomLane
+        guard !lane.zooms.isEmpty else { return }
+        let picked = state.selectedZoom.flatMap { lane.index(of: $0) }
+        switch key {
+        case .pick(let step):
+            let next = picked.map { min(max($0 + step, 0), lane.zooms.count - 1) }
+                ?? (step > 0 ? lane.zooms.firstIndex { $0.end > playhead } ?? lane.zooms.count - 1 : lane.zooms.lastIndex { $0.start < playhead } ?? 0)
+            selectZoom(lane.zooms[next].id)
+        case .move(let by):
+            guard let i = picked else { return }
+            let zoom = lane.zooms[i]
+            commitZooms(lane.moving(zoom.id, to: zoom.start + by), coalescing: CoalescingKey("zoom.key.move-\(zoom.id)"))
+        case .resizeEnd(let by):
+            guard let i = picked else { return }
+            let zoom = lane.zooms[i]
+            commitZooms(lane.resizing(zoom.id, .end, to: zoom.end + by), coalescing: CoalescingKey("zoom.key.end-\(zoom.id)"))
+        }
+    }
+
     /// Delete removes the picked zoom, else the picked clip or the one under the playhead.
     public func deleteSelection() {
         if let id = state.selectedZoom { removeZoom(id) } else { deleteClip() }
@@ -425,7 +451,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             level.submenu?.addItem(item(Zoom.percent(s), state: abs(s - zoom.scale) < 0.005) { [unowned self] in setZoomScale(s, of: id) })
         }
         menu.addItem(level)
-        menu.addItem(item("Apply Level to All Zooms", enabled: zoomLane.zooms.count > 1) { [unowned self] in applyZoomLevelToAll(from: id) })
+        menu.addItem(item("Apply Level to All", enabled: zoomLane.zooms.count > 1) { [unowned self] in applyZoomLevelToAll(from: id) })
         let mode = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
         mode.submenu = NSMenu(title: "Mode")
         for m in ZoomMode.allCases {
@@ -436,7 +462,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         menu.addItem(item("Split at Playhead", enabled: zoomLane.splitting(id, at: playhead) != nil) { [unowned self] in splitZoom(id) })
         menu.addItem(item("Duplicate", enabled: zoomLane.duplicating(id) != nil) { [unowned self] in duplicateZoom(id) })
         menu.addItem(.separator())
-        menu.addItem(item("Remove") { [unowned self] in removeZoom(id) })
+        menu.addItem(item("Remove Zoom") { [unowned self] in removeZoom(id) })
         menu.addItem(item("Remove All Zooms") { [unowned self] in removeAllZooms() })
         return menu
     }
@@ -562,7 +588,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     static let keys: [Chord: (VideoEditorWindowController) -> Bool] = [
         Chord(keyCode: 49): { $0.togglePlayback(); return true },
         Chord(keyCode: 53): { $0.escape() },
-        .command(11): { $0.splitAtPlayhead(); return true },
+        .command(11): { $0.splitSelection(); return true },
+        .command(2): {
+            guard let id = $0.state.selectedZoom else { return false }
+            $0.duplicateZoom(id)
+            return true
+        },
         Chord(keyCode: 51): { $0.deleteSelection(); return true },
         Chord(keyCode: 117): { $0.deleteSelection(); return true },
         Chord(keyCode: 6): { $0.addZoomAtPlayhead(); return true },

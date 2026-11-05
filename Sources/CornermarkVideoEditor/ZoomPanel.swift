@@ -24,7 +24,7 @@ final class ZoomPanel: NSStackView {
     private let remove = Button(title: "Remove Zoom", variant: .dangerGhost, size: .small)
     private var zoom: Zoom?
 
-    static let modeNote = "The camera holds on the spot the zoom was added at."
+    static let modeNote = "The camera stays on the spot where the zoom was added."
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
