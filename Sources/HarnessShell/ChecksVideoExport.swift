@@ -51,7 +51,9 @@ extension Pix {
 
 @MainActor
 func previewFrame(_ editor: VideoEditorWindowController, size: CGSize) -> CGImage? {
-    guard let preview = editor.view(identifier: "video.preview") as? PreviewView, let picture = preview.layer?.sublayers?.first else { return nil }
+    guard let preview = editor.view(identifier: "video.preview") as? PreviewView else { return nil }
+    preview.layoutSubtreeIfNeeded()
+    guard let picture = preview.layer?.sublayers?.first else { return nil }
     let ctx = Pix.context(Int(size.width), Int(size.height))
     ctx.scaleBy(x: size.width / picture.bounds.width, y: size.height / picture.bounds.height)
     picture.render(in: ctx)
@@ -76,7 +78,7 @@ struct ParityRow {
 func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, export: URL, plan: ExportPlan, project: RecordingProject,
                    times: [Double], name: String = "parity") async -> [ParityRow] {
     var rows: [ParityRow] = []
-    let renderer = ExportFrameRenderer(plan: plan, source: project.source)
+    let renderer = ExportFrameRenderer(plan: plan, project: project, folder: editor.folder)
     let size = CGSize(width: plan.width, height: plan.height)
     for t in times {
         editor.seek(to: t)
@@ -211,7 +213,7 @@ func checkVideoExport() async throws {
 
     section("video export: size estimate")
     var ratios: [Double] = []
-    for resolution in ExportResolution.choices(for: project.source) {
+    for resolution in ExportResolution.choices(for: project) {
         for q in ExportQuality.allCases {
             let settings = ExportSettings(resolution: resolution, quality: q)
             let out = w.root.appendingPathComponent("estimate-\(ratios.count).mp4")
@@ -250,6 +252,9 @@ func checkVideoExport() async throws {
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
         try await checkTrimmedExport(editor, frames: frames, clock: clock, root: w.root)
     } else { check(false, "the harness decoder is known") }
+    if let frames = decoders[folder.standardizedFileURL.resolvingSymlinksInPath()] ?? decoders.values.first {
+        try await checkBackgroundParity(editor, frames: frames, clock: clock, root: w.root)
+    }
 
     section("video export: cancel")
     let listed = w.store.list().count
@@ -304,7 +309,7 @@ private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: S
     check(facts?.frames == 90 && abs(report.duration - 1.5) < 1.0 / 60, "the file is 90 frames, 1.5 s: what the clips keep",
           detail: "\(String(describing: facts)) \(report.duration) s")
     var ok = true
-    let renderer = ExportFrameRenderer(plan: report.plan, source: project.source)
+    let renderer = ExportFrameRenderer(plan: report.plan, project: project, folder: nil)
     let cases: [(output: Double, source: Double, skipped: Double)] = [(29.0 / 60, 29.0 / 60, 59.0 / 60), (0.5, 1.0, 0.5), (31.0 / 60, 61.0 / 60, 31.0 / 60)]
     for (output, source, skipped) in cases {
         let state = frameState(project, outputTime: output)

@@ -13,6 +13,7 @@ final class InspectorView: NSView {
     var onCursorSizeEnd: () -> Void = {}
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
+    let backgroundPanel = BackgroundPanel()
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
@@ -32,14 +33,16 @@ final class InspectorView: NSView {
     /// Sliders work in this range. A stored size outside it is kept until the slider moves.
     static let sizeRange = 0.5...4.0
 
-    func show(_ section: EditorSection, cursor: CursorSettings) {
+    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?) {
         self.cursor = cursor
         for (s, b) in railButtons { b.isSelected = s == section }
         title.stringValue = section.title
         let isCursor = section == .cursor
         cursorRows.forEach { $0.isHidden = !isCursor }
-        emptyNote.isHidden = isCursor
+        emptyNote.isHidden = isCursor || section == .background
         emptyNote.stringValue = Self.note(section)
+        backgroundPanel.isHidden = section != .background
+        backgroundPanel.show(background, picture: picture)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
         cursorSize.isEnabled = cursor.isVisible
@@ -54,7 +57,7 @@ final class InspectorView: NSView {
         case .keystrokes: return "This recording has no keystrokes."
         case .audio: return "This recording has no sound."
         case .camera: return "This recording has no camera."
-        case .background: return "Background settings are not available yet."
+        case .background: return ""
         case .motionBlur: return "Motion blur is not available yet."
         }
     }
@@ -122,7 +125,8 @@ final class InspectorView: NSView {
 
         let divider = Separator(axis: .vertical)
         let edge = Separator(axis: .vertical)
-        for v in [rail, divider, body, edge] as [NSView] {
+        backgroundPanel.isHidden = true
+        for v in [rail, divider, body, edge, backgroundPanel] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -138,6 +142,10 @@ final class InspectorView: NSView {
             body.topAnchor.constraint(equalTo: topAnchor),
             body.bottomAnchor.constraint(equalTo: bottomAnchor),
             body.widthAnchor.constraint(equalToConstant: Self.panelWidth),
+            backgroundPanel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: DS.Space.s16),
+            backgroundPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            backgroundPanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            backgroundPanel.bottomAnchor.constraint(equalTo: bottomAnchor),
             edge.leadingAnchor.constraint(equalTo: body.trailingAnchor),
             edge.trailingAnchor.constraint(equalTo: trailingAnchor),
             edge.topAnchor.constraint(equalTo: topAnchor),
@@ -164,7 +172,7 @@ final class InspectorView: NSView {
 }
 
 /// A slider that says when a drag ends: `mouseDown` returns only once the pointer lets go.
-private final class TrackingSlider: Slider {
+final class TrackingSlider: Slider {
     var onTrackingEnd: () -> Void = {}
 
     override func mouseDown(with event: NSEvent) {

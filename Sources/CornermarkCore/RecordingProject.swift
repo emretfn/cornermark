@@ -107,11 +107,12 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// What the finished video keeps of the recording, in order. A project read from a file always has at least one;
         /// one written before clips existed keeps the whole recording.
         public var clips: [Clip]
+        public var background: VideoBackground
         public var camera: CameraBubble
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = [], camera: CameraBubble = CameraBubble()) {
-            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.camera = camera
+                    clips: [Clip] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble()) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.background = background; self.camera = camera
         }
 
         public init(from decoder: Decoder) throws {
@@ -121,8 +122,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
+            background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, camera }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background, camera }
     }
 
     public var version: Int
