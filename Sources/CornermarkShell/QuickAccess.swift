@@ -5,14 +5,15 @@ import CornermarkCore
 enum CardState: Equatable { case visible, hovering, dragging, closing }
 
 enum CardAction: CaseIterable {
-    case copy, save, annotate, pin, ocr, play, reveal, close
+    case copy, save, annotate, pin, ocr, play, edit, reveal, close
 
     /// The two small buttons in the image's top corners. The rest sit in one centred row.
     static let corners: Set<CardAction> = [.close, .pin]
 
     /// What a card offers, in row order. A recording is already saved, so it shows its file instead of saving one.
-    static func offered(forRecording: Bool) -> [CardAction] {
-        forRecording ? [.copy, .play, .reveal, .close] : [.copy, .save, .annotate, .ocr, .pin, .close]
+    /// A recording for editing opens in the video editor; a plain video plays.
+    static func offered(forRecording: Bool, editable: Bool = false) -> [CardAction] {
+        forRecording ? [.copy, editable ? .edit : .play, .reveal, .close] : [.copy, .save, .annotate, .ocr, .pin, .close]
     }
 }
 
@@ -25,8 +26,8 @@ final class QuickAccessCard {
     var state: CardState = .visible
     /// Seconds left before the card closes by itself; nil keeps it until dismissed.
     var remaining: TimeInterval?
-    var actions: [CardAction] { CardAction.offered(forRecording: record.isRecording) }
-    var openAction: CardAction { record.isRecording ? .play : .annotate }
+    var actions: [CardAction] { CardAction.offered(forRecording: record.isRecording, editable: record.opensVideoEditor) }
+    var openAction: CardAction { record.opensVideoEditor ? .edit : record.isRecording ? .play : .annotate }
     var info: String {
         guard let video = record.video else { return ImageOutput.dimensionText(CGSize(width: image.width, height: image.height)) }
         return "\(ImageOutput.durationText(video.duration))  \u{00B7}  \(ImageOutput.dimensionText(record.pixelSize))"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# link.sh <path> | link.sh open <image-path> | link.sh unknown-link
+# link.sh <path> | link.sh open <image-path> | link.sh edit-recording <project-folder> | link.sh unknown-link
 # link.sh record/test-window | link.sh record window=<test window id> | link.sh record/stop
 # Sends one link to the recorded instance only, watches focus while it lands, and prints what the app logged.
 set -euo pipefail
@@ -25,6 +25,24 @@ if [ "$path" = open ]; then
     cp "$2" "$ROOT/import/"
     encoded="$(printf %s "$ROOT/import/$(basename "$2")" | perl -pe 's/([^A-Za-z0-9\/._-])/sprintf("%%%02X", ord($1))/ge')"
     url="$url?path=$encoded"
+elif [ "$path" = edit-recording ]; then
+    [ $# -eq 2 ] || die "usage: link.sh edit-recording <project-folder>"
+    [ -f "$2/project.json" ] || die "refused: $2 holds no project.json."
+    src="$(cd "$2" && pwd)"
+    # A folder outside the root is copied in first, so the app reads only inside the isolated root.
+    case "$src/" in
+        "$ROOT/"*) folder="$src" ;;
+        *)
+            mkdir -p "$ROOT/import"
+            folder="$ROOT/import/$(basename "$src")"
+            n=2
+            while [ -e "$folder" ]; do folder="$ROOT/import/$(basename "$src") $n"; n=$((n + 1)); done
+            cp -R "$src" "$folder" ;;
+    esac
+    encoded="$(printf %s "$folder" | perl -pe 's/([^A-Za-z0-9\/._-])/sprintf("%%%02X", ord($1))/ge')"
+    url="$url?path=$encoded"
+    # An editor already open for the folder logs "video editor reopened".
+    want="video editor"
 elif in_list "$path" "$RECORDING_LINKS"; then
     recording=1
     case "$path" in
@@ -69,7 +87,7 @@ for _ in $(seq 1 15); do
     lines="$(app_log "$since")"
     case "$lines" in *"URL $SCHEME://$path"*) ;; *) sleep 1; continue ;; esac
     [ -z "$want" ] && break
-    case "$lines" in *"$want"*|*"recording refused"*|*"recording failed"*|*"ignored URL"*) break ;; esac
+    case "$lines" in *"$want"*|*"recording refused"*|*"recording failed"*|*"video editor refused"*|*"ignored URL"*) break ;; esac
     sleep 1
 done
 
@@ -91,7 +109,7 @@ if [ "$path" != unknown-link ]; then
     case "$lines" in *"ignored URL"*) die "FAIL: pid $PID ignored the link." ;; esac
 fi
 if [ -n "$want" ]; then
-    case "$lines" in *"recording refused"*|*"recording failed"*) die "FAIL: the app refused or failed the recording." ;; esac
+    case "$lines" in *"recording refused"*|*"recording failed"*|*"video editor refused"*) die "FAIL: the app refused the link: see its log above." ;; esac
     case "$lines" in *"$want"*) ;; *) die "FAIL: pid $PID did not log \"$want\"." ;; esac
     if [ "$fixture" = 1 ]; then
         case "$lines" in *"source=fixture"*) ;; *) die "FAIL: a display link did not film the synthetic display. Run stop.sh and report this." ;; esac

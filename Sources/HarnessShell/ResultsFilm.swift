@@ -95,7 +95,7 @@ enum ResultsFilm {
         f.glide(to: CGPoint(x: 600, y: 420), "Moving away")
         f.refresh()
         await f.record(w, "display=1&x=0&y=0&width=960&height=540", label: nil, note: "Record for Editing runs, then stops")
-        f.hold(2.2, "A second card stacks above the first. Record for Editing plays its screen video and shows its project folder.")
+        f.hold(2.2, "A second card stacks above the first. Record for Editing offers Edit instead of Play and shows its project folder.")
 
         c.perform(.openHistory)
         guard let h = c.history, let hw = h.window else { throw FilmError.missing("History") }
@@ -114,7 +114,7 @@ enum ResultsFilm {
         f.hold(1.6, "The Recordings filter shows recordings only. The Area filter lists pictures.")
         h.select(recordIDs: [video.id])
         f.refresh()
-        f.hold(2, "A recording selected: Copy, Show Overlay and Reveal work on it. Edit stays off until the video editor exists.")
+        f.hold(2, "A plain video selected: Copy, Show Overlay and Reveal work on it. Edit is for a recording made for editing.")
         f.status = { "index.json: kind=\(video.kind.rawValue) video.format=\(video.video!.format.rawValue) duration=\(String(format: "%.3f", video.video!.duration)) location=\(video.video!.location.lastPathComponent)" }
         f.hold(2, "The stored entry carries the video: its format, length and file.")
         f.dark = true

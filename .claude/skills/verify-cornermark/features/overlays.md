@@ -8,7 +8,7 @@ Quick Access cards appear in a screen corner after a capture and close by themse
 - `overlay-hide` hides and shows all cards.
 - `overlay-lifecycle` covers the countdown, hover pause, and stack layout.
 - `overlay-actions` covers copy, save, annotate, pin, text, and close.
-- `overlay-recording` is a finished recording's card: Copy, Play, Reveal in Finder, and Close. The instance logs `recording listed ... card=true` when it adds one.
+- `overlay-recording` is a finished recording's card: Copy, Play for a plain video or Edit for a recording for editing, Reveal in Finder, and Close. The instance logs `recording listed ... card=true` when it adds one.
 
 ## How to get to it (user POV)
 

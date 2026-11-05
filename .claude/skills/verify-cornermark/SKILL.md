@@ -54,7 +54,7 @@ $V/link.sh history
 $V/link.sh open docs/screenshots/capture.png
 ```
 
-`link.sh` sends one link to the recorded instance, watches focus for 2 s, and prints the app's log lines. It fails when the app logged nothing, ignored the link, came forward, or caused a tccd alarm. `open` copies the image into the root first and sends the copy's path.
+`link.sh` sends one link to the recorded instance, watches focus for 2 s, and prints the app's log lines. It fails when the app logged nothing, ignored the link, came forward, or caused a tccd alarm. `open` copies the image into the root first and sends the copy's path. `edit-recording` does the same with a project folder that is outside the root.
 
 | Link | Log line that proves it |
 | --- | --- |
@@ -69,6 +69,7 @@ $V/link.sh open docs/screenshots/capture.png
 | `record/test-window` | `test window id=<n> ... visible=true appActive=false` |
 | `record window=<n>` | `recording started ... source=screen` |
 | `record display=1&x=..` | `recording started ... source=fixture` |
+| `edit-recording <project folder>` | `video editor opened project=<name> seconds= size= pointerSamples=`, then `present window=<name> visible=false appActive=false` |
 | `record/stop` | `recording finished ... frames= dropped=` |
 
 `link.sh` refuses capture links. Recording links are the one case where a window is on screen: only the instance's own synthetic test window, ordered in behind the others without activating the app. `link.sh` and `watch.sh` hold them to that. See [the feature map](features/README.md) for each feature's recipe and for the harnesses that cover capture.

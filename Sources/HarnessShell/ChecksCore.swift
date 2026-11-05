@@ -21,7 +21,7 @@ func checkActionTable() async throws {
     check(ActionTable.spec(.allInOne).hotKey?.displayString == "\u{2303}\u{21E7}1", "hotkey display string is Mac ordered (control, shift, key)",
           detail: ActionTable.spec(.allInOne).hotKey?.displayString ?? "nil")
 
-    for id in ActionID.allCases where id != .openFile && id != .record {
+    for id in ActionID.allCases where id != .openFile && id != .record && id != .editRecording {
         let action = AppAction.make(id, timerSeconds: 5)
         check(action?.id == id, "AppAction.make(\(id.rawValue)) maps back to its own id")
     }

@@ -9,12 +9,18 @@ app.setActivationPolicy(.prohibited)
 ShortcutRecorderView.playRefusedSound = {}
 
 let filming = ProcessInfo.processInfo.environment["CORNERMARK_RESULTS_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil ? 180 : 900)) {
+let editorFilming = ProcessInfo.processInfo.environment["CORNERMARK_EDITOR_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && editorFilming == nil ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let editorFilming {
+        let ok = await VideoEditorFilm.run(out: URL(fileURLWithPath: editorFilming, isDirectory: true))
+        print(ok ? "FILM DONE" : "FILM FAILED")
+        exit(ok ? 0 : 1)
+    }
     if let filming {
         let ok = await ResultsFilm.run(out: URL(fileURLWithPath: filming, isDirectory: true))
         print(ok ? "FILM DONE" : "FILM FAILED")
@@ -48,6 +54,7 @@ Task { @MainActor in
         try await checkIsolatedEnvironment()
         try await checkRecording()
         try await checkRecordingResults()
+        try await checkVideoEditor()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")
