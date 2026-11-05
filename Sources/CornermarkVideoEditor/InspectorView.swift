@@ -11,6 +11,7 @@ final class InspectorView: NSView {
     var onSelect: (EditorSection) -> Void = { _ in }
     var onCursor: (CursorSettings) -> Void = { _ in }
     var onCursorSizeEnd: () -> Void = {}
+    let zoomPanel = ZoomPanel()
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
@@ -32,13 +33,16 @@ final class InspectorView: NSView {
     /// Sliders work in this range. A stored size outside it is kept until the slider moves.
     static let sizeRange = 0.5...4.0
 
-    func show(_ section: EditorSection, cursor: CursorSettings) {
+    /// A picked zoom takes the panel over from the section, and the rail then marks none.
+    func show(_ section: EditorSection, cursor: CursorSettings, zoom: Zoom? = nil, zoomCount: Int = 0) {
         self.cursor = cursor
-        for (s, b) in railButtons { b.isSelected = s == section }
-        title.stringValue = section.title
-        let isCursor = section == .cursor
+        for (s, b) in railButtons { b.isSelected = zoom == nil && s == section }
+        title.stringValue = zoom == nil ? section.title : "Zoom"
+        zoomPanel.isHidden = zoom == nil
+        if let zoom { zoomPanel.show(zoom, count: zoomCount) }
+        let isCursor = section == .cursor && zoom == nil
         cursorRows.forEach { $0.isHidden = !isCursor }
-        emptyNote.isHidden = isCursor
+        emptyNote.isHidden = isCursor || zoom != nil
         emptyNote.stringValue = Self.note(section)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
@@ -110,8 +114,8 @@ final class InspectorView: NSView {
         body.alignment = .leading
         body.spacing = DS.Space.s12
         body.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
-        for v in [title, showCursor, sizeRow, emptyNote] as [NSView] { body.addArrangedSubview(v) }
-        for v in [sizeRow, emptyNote] {
+        for v in [title, showCursor, sizeRow, emptyNote, zoomPanel] as [NSView] { body.addArrangedSubview(v) }
+        for v in [sizeRow, emptyNote, zoomPanel] {
             v.widthAnchor.constraint(equalTo: body.widthAnchor, constant: -2 * DS.Space.s16).isActive = true
         }
         body.setCustomSpacing(DS.Space.s16, after: title)
