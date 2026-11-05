@@ -15,6 +15,8 @@ public struct ExportReport: Equatable, Sendable {
     public var encoderID: String
     /// Wall time of the whole export.
     public var renderSeconds: Double
+    /// The recording's microphone and system sound, mixed into the file's one sound track.
+    public var hasAudio = false
 }
 
 extension ExportPlan {
@@ -83,13 +85,16 @@ public enum VideoExporter {
         defer { encoder.invalidate() }
         let writer = try AVAssetWriter(outputURL: partial, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
+        let folder = video.deletingLastPathComponent()
+        let mix = try await AudioMixReader(files: project.source.audioFiles.map { folder.appendingPathComponent($0) }, duration: plan.duration)
+        defer { mix?.cancel() }
         do {
-            let frames = try await render(project: project, video: video, plan: plan, encoder: encoder, writer: writer, progress: progress)
+            let frames = try await render(project: project, video: video, plan: plan, encoder: encoder, sink: Sink(writer: writer, audio: mix), progress: progress)
             let duration = try await AVURLAsset(url: partial).load(.duration).seconds
             let bytes = ((try? FileManager.default.attributesOfItem(atPath: partial.path))?[.size] as? NSNumber)?.int64Value ?? 0
             try FileManager.default.moveItem(at: partial, to: output)
             return ExportReport(url: output, plan: plan, framesWritten: frames, duration: duration, bytes: bytes, usesHardware: encoder.usesHardware,
-                                encoderID: encoder.encoderID, renderSeconds: Date().timeIntervalSince(started))
+                                encoderID: encoder.encoderID, renderSeconds: Date().timeIntervalSince(started), hasAudio: mix != nil)
         } catch {
             if writer.status == .writing { writer.cancelWriting() }
             throw error
@@ -103,7 +108,7 @@ public enum VideoExporter {
         return (encoder.usesHardware, encoder.encoderID)
     }
 
-    private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, writer: AVAssetWriter,
+    private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, sink: Sink,
                                progress: @Sendable (Double) -> Void) async throws -> Int {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
@@ -125,7 +130,6 @@ public enum VideoExporter {
         }
 
         let renderer = ExportFrameRenderer(plan: plan, source: project.source)
-        let sink = Sink(writer: writer)
         var pending = next()
         var current: CGImage?
         var reported = -1
@@ -254,11 +258,14 @@ private final class Encoder: @unchecked Sendable {
 }
 
 /// Writes compressed samples as they are. The input is made from the first sample, since an MP4 track needs its format up front.
+/// The sound, when there is some, is pulled by the writer on its own queue as it interleaves it with the pictures.
 private final class Sink {
     let writer: AVAssetWriter
+    private let audio: AudioMixReader?
     private var input: AVAssetWriterInput?
+    private let audioDone = DispatchGroup()
 
-    init(writer: AVAssetWriter) { self.writer = writer }
+    init(writer: AVAssetWriter, audio: AudioMixReader?) { self.writer = writer; self.audio = audio }
 
     func append(_ samples: [CMSampleBuffer]) async throws {
         for sample in samples {
@@ -276,8 +283,17 @@ private final class Sink {
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else { throw ExportError.writer("the video track could not be added") }
         writer.add(input)
+        let sound = audio.map { _ in AudioMixReader.makeInput() }
+        if let sound {
+            guard writer.canAdd(sound) else { throw ExportError.writer("the sound track could not be added") }
+            writer.add(sound)
+        }
         guard writer.startWriting() else { throw ExportError.writer(writer.error?.localizedDescription ?? "the file could not be started") }
         writer.startSession(atSourceTime: .zero)
+        if let audio, let sound {
+            audioDone.enter()
+            audio.feed(sound) { [audioDone] in audioDone.leave() }
+        }
         self.input = input
         return input
     }
@@ -285,6 +301,8 @@ private final class Sink {
     func finish() async throws {
         guard let input else { throw ExportError.writer("no frame was encoded") }
         input.markAsFinished()
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in audioDone.notify(queue: .global()) { done.resume() } }
+        if audio?.failed == true { throw ExportError.writer("the sound could not be read") }
         await writer.finishWriting()
         guard writer.status == .completed else { throw ExportError.writer(writer.error?.localizedDescription ?? "the file could not be finished") }
     }

@@ -26,6 +26,8 @@ public final class FixtureFrameSource: FrameSource {
         return false
     }
     public private(set) var framesDelivered = 0
+    /// Whole white pictures, each the first frame at or after a click of these, for measuring sound against the picture.
+    public var flash: AudioPattern.Clicks?
     private let displayFrame: CGRect
     private let scale: Double
     private let area: CGRect?
@@ -76,7 +78,8 @@ public final class FixtureFrameSource: FrameSource {
             let start = CMTime(seconds: origin, preferredTimescale: CMTimeScale(fps))
             for i in 0..<frames where !skipping.contains(i) {
                 let t = CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))
-                deliver(VideoFrame(pixels: try render(format, at: t.seconds), time: CMTimeAdd(start, t)))
+                let time = CMTimeAdd(start, t)
+                deliver(VideoFrame(pixels: try render(format, at: t.seconds, clock: time.seconds), time: time))
                 framesDelivered += 1
             }
         case .realtime:
@@ -87,7 +90,7 @@ public final class FixtureFrameSource: FrameSource {
             timer.setEventHandler { [weak self] in
                 guard let self else { return }
                 let now = CMClockGetTime(clock)
-                if let pixels = try? self.render(format, at: CMTimeSubtract(now, origin).seconds) {
+                if let pixels = try? self.render(format, at: CMTimeSubtract(now, origin).seconds, clock: now.seconds) {
                     deliver(VideoFrame(pixels: pixels, time: now))
                     self.framesDelivered += 1
                 }
@@ -104,7 +107,7 @@ public final class FixtureFrameSource: FrameSource {
         guard let manual else { return }
         for _ in 0..<frames {
             let t = CMTime(value: CMTimeValue(manualCount), timescale: CMTimeScale(fps))
-            manual.deliver(VideoFrame(pixels: try render(manual.format, at: t.seconds), time: t))
+            manual.deliver(VideoFrame(pixels: try render(manual.format, at: t.seconds, clock: t.seconds), time: t))
             manualCount += 1
             framesDelivered += 1
         }
@@ -117,7 +120,7 @@ public final class FixtureFrameSource: FrameSource {
         queue.sync {}
     }
 
-    private func render(_ format: FrameFormat, at time: Double) throws -> CVPixelBuffer {
+    private func render(_ format: FrameFormat, at time: Double, clock: Double) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(nil, format.width, format.height, kCVPixelFormatType_32BGRA,
                             [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer)
@@ -139,6 +142,10 @@ public final class FixtureFrameSource: FrameSource {
         shown.forEach { $0.draw() }
         if options.showsCursor, let p = cursor?.position(at: time) {
             SyntheticScene.drawPointer(at: CGPoint(x: sourceRect.minX + p.x * sourceRect.width, y: sourceRect.minY + p.y * sourceRect.height))
+        }
+        if let flash, flash.isFirstFrame(at: clock, fps: fps) {
+            NSColor.white.setFill()
+            CGRect(origin: .zero, size: displayFrame.size).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
         return buffer

@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CornermarkCapture
 import CornermarkCore
+import CornermarkVideoEditor
 import ImageIO
 
 /// Why an environment will not record a target. Nothing was filmed when one of these is thrown.
@@ -49,6 +50,15 @@ enum RecordingOutput {
     /// A GIF made from an existing video sits beside it under the same name, never overwriting.
     static func gifBeside(_ video: URL) -> URL {
         unique(in: video.deletingLastPathComponent(), base: video.deletingPathExtension().lastPathComponent, suffix: ".gif", isDirectory: false)
+    }
+
+    /// Where a sound track is written while recording. A project keeps it in its folder. A video keeps it hidden beside the file until
+    /// it is mixed into the video.
+    static func audioFile(_ kind: AudioTrackReport.Kind, for destination: RecordedVideo) -> URL {
+        let project = kind == .microphone ? RecordingProjectFile.microphoneName : RecordingProjectFile.systemAudioName
+        if destination.format == .project { return destination.location.appendingPathComponent(project) }
+        let base = destination.location.deletingPathExtension().lastPathComponent
+        return destination.location.deletingLastPathComponent().appendingPathComponent(".\(base).\(project)")
     }
 
     /// Where a recording in `style` lands, with nothing created yet.
@@ -178,6 +188,14 @@ final class RecordingController {
     var onNotice: (String) -> Void = { _ in }
     /// Called on every phase change and when the area becomes known.
     var onChange: () -> Void = {}
+    /// Called when the microphone's level or its silence changes, about 30 times a second while it records.
+    var onMicrophone: () -> Void = {}
+    /// The microphone being recorded, nil when none is.
+    private(set) var microphone: MicrophoneStatus?
+    private var hearing: MicrophoneHearing?
+    /// The recording has a microphone, from the moment it is prepared, so the bar has its room from the start.
+    var hearsMicrophone: Bool { hearing != nil }
+    private var meterTimer: Timer?
 
     init(env: AppEnvironment, folder: @escaping () -> URL) {
         self.env = env
@@ -227,9 +245,11 @@ final class RecordingController {
             Log.shell.error("recording input unavailable: Input Monitoring is not allowed, recording without clicks and keystrokes")
             onNotice("Turn on Input Monitoring to show clicks and keys")
         }
+        let sound = audio(for: request, destination: destination, source: source)
         // A finished video or GIF has its pointer in the picture, so nothing watches it.
         let recorder = Recorder(source: source, output: destination.film, pointer: request.style == .editing ? env.pointerSource() : nil,
-                                input: input, marks: request.preferences.marks(for: request.style), quality: options.quality)
+                                input: input, marks: request.preferences.marks(for: request.style),
+                                microphone: sound.microphone, systemAudio: sound.system, quality: options.quality)
         let inputKind = input.map { $0 is ScriptedInputSource ? "scripted" : "live" } ?? "none"
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
@@ -254,13 +274,16 @@ final class RecordingController {
                     Log.shell.notice("recording cancelled before it started project=\(name, privacy: .public)")
                     return reset()
                 }
+                hearing?.restart(at: recordingClockNow())
                 try await recorder.start()
+                logAudio(request, sound, recorder)
                 journalEntry = env.recordingJournal?.open(location: destination.location, format: destination.format,
                                                           kind: request.target.captureKind, area: recorder.pointArea)
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
                 Log.shell.notice("recording input source=\(inputKind, privacy: .public) clicks=\(capture.clicks, privacy: .public) keys=\(capture.keys?.rawValue ?? "off", privacy: .public) marksInPicture=\(recorder.marksInPicture, privacy: .public) failure=\(recorder.inputFailure.map(String.init(describing:)) ?? "none", privacy: .public) taps=\(LiveInputSource.tapsCreated, privacy: .public)")
                 Log.shell.notice("recording started project=\(name, privacy: .public) style=\(request.style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) hideNotifications=\(options.exclusion.hidesNotifications, privacy: .public) hideDesktopIcons=\(options.exclusion.hidesDesktopIcons, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
+                startMeter()
                 if stopRequested { await finish() }
             } catch {
                 Log.shell.error("recording failed to start: \(String(describing: error), privacy: .public)")
@@ -273,6 +296,7 @@ final class RecordingController {
     func pause() {
         guard phase == .recording, let recorder else { return Log.shell.error("recording refused: nothing to pause") }
         recorder.pause()
+        hearing?.paused = true
         phase = .paused
         Log.shell.notice("recording paused seconds=\(String(format: "%.3f", recorder.seconds), privacy: .public)")
     }
@@ -280,6 +304,8 @@ final class RecordingController {
     func resume() {
         guard phase == .paused, let recorder else { return Log.shell.error("recording refused: nothing to resume") }
         recorder.resume()
+        hearing?.paused = false
+        hearing?.restart(at: recordingClockNow())
         phase = .recording
         Log.shell.notice("recording resumed seconds=\(String(format: "%.3f", recorder.seconds), privacy: .public)")
     }
@@ -289,6 +315,7 @@ final class RecordingController {
         guard phase.isRunning, let recorder, let request else { return Log.shell.error("recording refused: nothing to restart") }
         phase = .stopping
         let discarded = recorder.seconds
+        stopMeter()
         Task {
             await recorder.cancel()
             if let journalEntry { env.recordingJournal?.close(journalEntry) }
@@ -322,8 +349,11 @@ final class RecordingController {
     private func finish() async {
         guard let recorder, let request, let destination, phase.isRunning else { return }
         phase = .stopping
+        stopMeter()
         do {
             let report = try await recorder.stop()
+            logAudioFinished(report, recorder)
+            if destination.format == .video, !report.audio.isEmpty { await mixSound(report, into: destination.film) }
             if destination.format == .project {
                 var project = report.project
                 project.edits.cursor.isVisible = request.preferences.showCursor
@@ -360,6 +390,8 @@ final class RecordingController {
     }
 
     private func reset() {
+        stopMeter()
+        hearing = nil
         recorder = nil
         if let destination, destination.format == .project,
            (try? FileManager.default.contentsOfDirectory(atPath: destination.location.path))?.isEmpty == true {
@@ -375,6 +407,146 @@ final class RecordingController {
         env.recordingTestWindow?.close()
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
+    }
+}
+
+extension RecordingController {
+    private struct Sound {
+        var microphone: AudioRecording?
+        var system: AudioRecording?
+        var microphoneName = "none"
+        var kind = "none"
+    }
+
+    /// The sound sources a recording asked for and may have. A microphone without access is left out with a notice, and never asked for.
+    private func audio(for request: Request, destination: RecordedVideo, source: FrameSource) -> Sound {
+        let prefs = request.preferences.audio(for: request.style)
+        var sound = Sound()
+        hearing = nil
+        if prefs.microphone {
+            if env.microphoneAccess() != .allowed {
+                Log.shell.error("recording microphone unavailable: access=\(self.env.microphoneAccess().rawValue, privacy: .public), recording without it")
+                onNotice("Turn on microphone access in System Settings to record your voice")
+            } else if let mic = env.microphoneSource(prefs.microphoneID) {
+                let hearing = MicrophoneHearing(start: recordingClockNow())
+                self.hearing = hearing
+                sound.microphone = AudioRecording(source: mic, output: RecordingOutput.audioFile(.microphone, for: destination), mono: prefs.mono) { level, end in
+                    hearing.hear(level, until: end)
+                }
+                sound.microphoneName = env.microphones().first { $0.id == prefs.microphoneID }?.name ?? "default"
+                sound.kind = mic is ScriptedAudioSource ? "scripted" : "live"
+            }
+        }
+        if prefs.systemAudio, let system = env.systemAudioSource(source) {
+            sound.system = AudioRecording(source: system, output: RecordingOutput.audioFile(.system, for: destination))
+            if sound.kind == "none" { sound.kind = system is ScriptedAudioSource ? "scripted" : "live" }
+        }
+        microphone = nil
+        return sound
+    }
+
+    private func logAudio(_ request: Request, _ sound: Sound, _ recorder: Recorder) {
+        let prefs = request.preferences.audio(for: request.style)
+        let failures = recorder.audioFailures.map { "\($0.key.rawValue):\($0.value)" }.sorted().joined(separator: ",")
+        Log.shell.notice("recording audio microphone=\(sound.microphone != nil && recorder.audioFailures[.microphone] == nil, privacy: .public) device=\(sound.microphoneName, privacy: .public) mono=\(prefs.mono, privacy: .public) system=\(sound.system != nil && recorder.audioFailures[.system] == nil, privacy: .public) source=\(sound.kind, privacy: .public) failure=\(failures.isEmpty ? "none" : failures, privacy: .public) realMicrophoneAccess=\(MicrophoneAccess.current.rawValue, privacy: .public) devicesOpened=\(LiveMicrophoneSource.sessionsOpened, privacy: .public) accessRequests=\(MicrophoneAccess.requests, privacy: .public)")
+        if recorder.audioFailures[.microphone] != nil {
+            hearing = nil
+            onNotice("Could not record the microphone")
+        }
+    }
+
+    private func logAudioFinished(_ report: RecordingReport, _ recorder: Recorder) {
+        guard !report.audio.isEmpty || !recorder.audioFailures.isEmpty else { return }
+        let tracks = report.audio.map {
+            "\($0.kind.rawValue)=\($0.url.lastPathComponent) seconds=\(String(format: "%.3f", $0.duration)) channels=\($0.channels) rate=\(Int($0.rate)) filled=\(String(format: "%.3f", $0.filled))"
+        }.joined(separator: " ")
+        Log.shell.notice("recording audio finished \(tracks, privacy: .public) videoSeconds=\(String(format: "%.3f", report.project.source.duration), privacy: .public) devicesOpened=\(LiveMicrophoneSource.sessionsOpened, privacy: .public) accessRequests=\(MicrophoneAccess.requests, privacy: .public)")
+    }
+
+    /// A finished video carries its sound in the file: the tracks are mixed into it and their hidden files removed. When that fails the
+    /// video stays without sound and a notice says so.
+    private func mixSound(_ report: RecordingReport, into film: URL) async {
+        let mixed = film.deletingLastPathComponent().appendingPathComponent(".\(film.deletingPathExtension().lastPathComponent).mixing.mp4")
+        do {
+            try await AudioMux.mux(video: film, audio: report.audio.map(\.url), to: mixed)
+            _ = try FileManager.default.replaceItemAt(film, withItemAt: mixed)
+            Log.shell.notice("recording sound mixed file=\(film.lastPathComponent, privacy: .public) tracks=\(report.audio.count, privacy: .public)")
+        } catch {
+            try? FileManager.default.removeItem(at: mixed)
+            Log.shell.error("recording sound not mixed: \(String(describing: error), privacy: .public)")
+            onNotice("Could not add the sound. The video is saved without it.")
+        }
+        report.audio.forEach { try? FileManager.default.removeItem(at: $0.url) }
+    }
+
+    private func startMeter() {
+        guard hearing != nil, meterTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.readMeter() } }
+        RunLoop.main.add(timer, forMode: .common)
+        meterTimer = timer
+        readMeter()
+    }
+
+    private func stopMeter() {
+        meterTimer?.invalidate()
+        meterTimer = nil
+        if microphone != nil {
+            microphone = nil
+            onMicrophone()
+        }
+    }
+
+    private func readMeter() {
+        guard let hearing else { return }
+        let next = hearing.status(at: recordingClockNow())
+        let was = microphone
+        microphone = next
+        if next.isSilent != (was?.isSilent ?? false) {
+            if next.isSilent {
+                Log.shell.notice("recording microphone silent seconds=\(String(format: "%.3f", self.seconds), privacy: .public) quietFor=\(String(format: "%.1f", next.quietFor), privacy: .public)")
+            } else {
+                Log.shell.notice("recording microphone sound again seconds=\(String(format: "%.3f", self.seconds), privacy: .public)")
+            }
+        }
+        if next != was { onMicrophone() }
+    }
+}
+
+/// What the control bar shows of the microphone.
+struct MicrophoneStatus: Equatable {
+    var level: AudioLevel
+    /// No sound for `MicrophoneSilence.delay` seconds: muted, its volume at zero, or no longer sending.
+    var isSilent: Bool
+    var quietFor: Double
+}
+
+/// The microphone's latest level and its silence, written on the sound's queue and read on the main thread.
+final class MicrophoneHearing: @unchecked Sendable {
+    private let lock = NSLock()
+    private var silence: MicrophoneSilence
+    private var level = AudioLevel.silence
+    /// While paused nothing is recorded, so silence is not a problem.
+    var paused: Bool {
+        get { lock.withLock { isPaused } }
+        set { lock.withLock { isPaused = newValue } }
+    }
+    private var isPaused = false
+
+    init(start: Double) { silence = MicrophoneSilence(start: start) }
+
+    func hear(_ level: AudioLevel, until end: Double) {
+        lock.withLock {
+            self.level = level
+            if !isPaused { silence.hear(level, until: end) }
+        }
+    }
+
+    func restart(at time: Double) { lock.withLock { silence.restart(at: time) } }
+
+    func status(at now: Double) -> MicrophoneStatus {
+        lock.withLock {
+            MicrophoneStatus(level: isPaused ? .silence : level, isSilent: !isPaused && silence.isSilent(at: now), quietFor: max(0, now - silence.lastSound))
+        }
     }
 }
 

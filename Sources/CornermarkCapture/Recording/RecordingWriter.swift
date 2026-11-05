@@ -104,6 +104,22 @@ final class RecordingWriter {
         }
     }
 
+    /// How source times land on the video's timeline so far. Sound recorded beside the video follows it, so a pause leaves the same stretch
+    /// out of both. `settled` is the source time, in seconds after the first frame, up to which no later pause can change the answer.
+    struct Mapping {
+        var origin: Double?
+        var pauses: [RecordingPause]
+        var settled: Double
+        var paused: Bool
+    }
+
+    var mapping: Mapping {
+        lock.withLock {
+            let settled = written == 0 ? 0 : lastTime.seconds + removed.seconds + 1 / Double(format.fps)
+            return Mapping(origin: origin?.seconds, pauses: pauses, settled: settled, paused: paused)
+        }
+    }
+
     /// The length of the video written so far, which a pause does not grow.
     var seconds: Double {
         lock.withLock { written == 0 ? 0 : lastTime.seconds + 1 / Double(format.fps) }

@@ -52,7 +52,19 @@ final class AppCoordinator {
         updates.closeEditors = { [unowned self] in closeAllEditors() }
         settings.observe { [unowned self] old, new in settingsChanged(from: old, to: new) }
         applyCaptureSettings()
+        #if DEBUG
+        (env.recordingTestWindow as? RecordingTestWindow)?.stage = { [weak self] in self?.testStage() }
+        #endif
     }
+
+    #if DEBUG
+    private func testStage() -> NSView? {
+        guard let root = AppEnvironment.isolatedRoot, let file = RecordingTestStageFile.read(root: root), file.stage == "audio" else { return nil }
+        let ctx = SettingsContext(env: env, store: settings, hotKeyStatus: { [:] }, loginError: { nil })
+        Log.shell.notice("test stage audio tour=\(file.tour ?? false, privacy: .public)")
+        return AudioTestStage(ctx: ctx, recording: recording, controls: controls, tour: file.tour ?? false)
+    }
+    #endif
 
     // MARK: Actions
 
