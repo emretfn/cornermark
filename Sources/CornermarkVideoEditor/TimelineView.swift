@@ -59,6 +59,8 @@ final class TimelineView: NSView {
     var frameStep: Double = 1.0 / 60
     private let playhead = PlayheadView()
     private(set) var trim: Trim?
+    /// Off while a script drives the timeline, so the system's cursor never changes for input that did not come from it.
+    var showsResizeCursor = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -321,7 +323,7 @@ final class TimelineView: NSView {
     func cancelTrim() {
         guard trim != nil else { return }
         trim = nil
-        NSCursor.pop()
+        if showsResizeCursor { NSCursor.pop() }
         needsDisplay = true
         placePlayhead()
         window?.invalidateCursorRects(for: self)
@@ -333,7 +335,7 @@ final class TimelineView: NSView {
         if let hit = edge(at: p) {
             trim = Trim(index: hit.index, edge: hit.edge, before: timeline, pointsPerSecond: scale.pointsPerSecond, pressX: Double(p.x))
             onSelect(hit.index)
-            NSCursor.resizeLeftRight.push()
+            if showsResizeCursor { NSCursor.resizeLeftRight.push() }
             moveTrim(to: p, .began)
             return
         }

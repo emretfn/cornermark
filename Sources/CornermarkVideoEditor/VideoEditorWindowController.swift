@@ -83,7 +83,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private let clock: () -> Double
     private let preview = PreviewView()
     private let transportBar = TransportBar()
-    private let timeline = TimelineView()
+    let timeline = TimelineView()
     private let inspector = InspectorView()
     private let header = HeaderBar()
     private let exportPanel = ExportPanel()
@@ -632,7 +632,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                             canSplit: clips.splitting(at: t) != nil, canDelete: clips.clips.count > 1)
     }
 
-    private func startDisplayLink() {
+    func startDisplayLink() {
         guard displayLink == nil else { return }
         let link = preview.displayLink(target: self, selector: #selector(displayTick))
         link.add(to: .main, forMode: .common)

@@ -8,6 +8,7 @@ import CornermarkCore
 private final class StubTestWindow: RecordingTestWindowHosting {
     var windowID: CGWindowID?
     func show() -> CGWindowID? { windowID }
+    func adopt(_ window: NSWindow) -> CGWindowID? { windowID }
     func close() {}
 }
 

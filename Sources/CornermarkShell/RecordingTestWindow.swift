@@ -18,6 +18,7 @@ final class RecordingTestWindow: RecordingTestWindowHosting {
     }
 
     private var panel: Panel?
+    private var adopted: NSWindow?
     private var clock: Timer?
     private var timecode: CATextLayer?
     private var startedAt = CACurrentMediaTime()
@@ -60,9 +61,32 @@ final class RecordingTestWindow: RecordingTestWindowHosting {
         return windowID
     }
 
+    /// Puts `window` where the scene would be, behind every other window and without activating the app.
+    @discardableResult
+    func adopt(_ window: NSWindow) -> CGWindowID? {
+        close()
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+            Log.shell.error("test window: there is no display to place it on")
+            return nil
+        }
+        let size = CGSize(width: min(window.frame.width, screen.visibleFrame.width - 48), height: min(window.frame.height, screen.visibleFrame.height - 48))
+        window.setFrame(CGRect(origin: CGPoint(x: screen.visibleFrame.minX + 24, y: screen.visibleFrame.minY + 24), size: size), display: false)
+        window.orderBack(nil)
+        adopted = window
+        windowID = CGWindowID(window.windowNumber)
+        Log.shell.notice("test window id=\(window.windowNumber, privacy: .public) frame=\(NSStringFromRect(window.frame), privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public) adopted=\(window.title, privacy: .public)")
+        return windowID
+    }
+
     func close() {
         clock?.invalidate()
         clock = nil
+        if let adopted {
+            Log.shell.notice("test window closed id=\(adopted.windowNumber, privacy: .public)")
+            self.adopted = nil
+            windowID = nil
+            adopted.close()
+        }
         guard let panel else { return }
         Log.shell.notice("test window closed id=\(panel.windowNumber, privacy: .public)")
         panel.orderOut(nil)
