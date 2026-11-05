@@ -103,7 +103,8 @@ public struct ClipTimeline: Equatable, Sendable {
             clip.start = max(clip.start, lowest)
         case .end:
             let highest = index < clips.count - 1 ? clips[index + 1].start : sourceDuration
-            let end = source >= highest - frame / 2 ? highest : snap(source)
+            // The source's end may sit between grid points; past the last one below it, the edge lands on the end itself.
+            let end = snap(source) > highest - 1e-9 ? highest : snap(source)
             clip.end = max(min(end, highest), clip.start + frame)
             clip.end = min(clip.end, highest)
         }

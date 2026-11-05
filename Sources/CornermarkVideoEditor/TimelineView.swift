@@ -320,7 +320,18 @@ final class TimelineView: NSView {
         return best.map { ($0.index, $0.edge) }
     }
 
+    /// Ends a drag on an edge without another edit, when something else changed the clips under it or its mouse-up never came.
+    func cancelTrim() {
+        guard trim != nil else { return }
+        trim = nil
+        NSCursor.pop()
+        needsDisplay = true
+        placePlayhead()
+        window?.invalidateCursorRects(for: self)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        cancelTrim()
         let p = convert(event.locationInWindow, from: nil)
         if let hit = edge(at: p) {
             trim = Trim(index: hit.index, edge: hit.edge, before: timeline, pointsPerSecond: scale.pointsPerSecond, pressX: Double(p.x))
@@ -344,12 +355,7 @@ final class TimelineView: NSView {
     override func mouseUp(with event: NSEvent) {
         if trim != nil {
             moveTrim(to: convert(event.locationInWindow, from: nil), .ended)
-            trim = nil
-            NSCursor.pop()
-            needsDisplay = true
-            placePlayhead()
-            window?.invalidateCursorRects(for: self)
-            return
+            return cancelTrim()
         }
         scrub(event, .ended)
     }

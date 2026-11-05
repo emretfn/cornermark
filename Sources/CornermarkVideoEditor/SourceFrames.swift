@@ -29,6 +29,8 @@ public final class PlayerFrames: SourceFrames {
     /// Host time of the last move back in step. The player needs a moment to decode before its own clock is worth comparing.
     private var syncedAt = -Double.infinity
     public private(set) var hasAudio = false
+    /// How many times playing moved the player back in step with the editor's clock.
+    public private(set) var syncs = 0
     public var volume: Float {
         get { player.volume }
         set { player.volume = min(max(newValue, 0), 1) }
@@ -70,6 +72,7 @@ public final class PlayerFrames: SourceFrames {
             // Both clocks count host time, so the player shows `sourceTime` at the same instant the editor's playhead is there.
             player.setRate(1, time: CMTime(seconds: sourceTime, preferredTimescale: 600), atHostTime: host)
             syncedAt = host.seconds
+            syncs += 1
         } else {
             lastAsked = nil
             if player.rate != 0 { player.pause() }

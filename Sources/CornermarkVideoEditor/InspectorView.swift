@@ -10,12 +10,14 @@ final class InspectorView: NSView {
 
     var onSelect: (EditorSection) -> Void = { _ in }
     var onCursor: (CursorSettings) -> Void = { _ in }
+    /// The size slider was let go, so the next change is a new undo step.
+    var onCursorSizeEnd: () -> Void = {}
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
-    private let cursorSize = Slider()
+    private let cursorSize = TrackingSlider()
     private let cursorSizeValue = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let emptyNote = NSTextField(wrappingLabelWithString: "")
     private var cursorRows: [NSView] = []
@@ -85,6 +87,7 @@ final class InspectorView: NSView {
         cursorSize.maxValue = Self.sizeRange.upperBound
         cursorSize.isContinuous = true
         cursorSize.controlSize = .small
+        cursorSize.onTrackingEnd = { [unowned self] in onCursorSizeEnd() }
         cursorSize.setAccessibilityIdentifier("video.cursor.size")
         cursorSize.setAccessibilityLabel("Cursor size")
         cursorSize.target = self
@@ -158,5 +161,15 @@ final class InspectorView: NSView {
         var next = cursor
         next.scale = (cursorSize.doubleValue * 10).rounded() / 10
         onCursor(next)
+    }
+}
+
+/// A slider that says when a drag ends: `mouseDown` returns only once the pointer lets go.
+private final class TrackingSlider: Slider {
+    var onTrackingEnd: () -> Void = {}
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        onTrackingEnd()
     }
 }

@@ -107,6 +107,9 @@ final class ClipTimelineTests: XCTestCase {
         let short = t.trimming(1, .start, to: 3.5)
         XCTAssertEqual(short.clips[1].duration, 1.0 / 60, accuracy: 1e-12, "a clip keeps at least a frame")
         XCTAssertEqual(ranges(t.trimming(0, .start, to: -3)), [[0, 1], [2, 3]])
+        let odd = ClipTimeline(clips: [], source: .init(fps: 60, duration: 2.004))
+        XCTAssertEqual(odd.trimming(0, .end, to: 2.0).clips[0].end, 2.0, "an end off the grid can stop on the last frame before it")
+        XCTAssertEqual(odd.trimming(0, .end, to: 2.009).clips[0].end, 2.004, "and lands on the source's end past that")
     }
 
     func testFrameStateMapsThePointerThroughTheClips() {

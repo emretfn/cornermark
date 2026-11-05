@@ -41,6 +41,18 @@ public enum VideoEditorError: Error, Equatable {
 final class VideoEditorWindow: NSWindow {
     weak var editor: VideoEditorWindowController?
 
+    // The window answers the Edit menu's Undo and Redo before its controller would, so it hands them to the editor's history.
+    @objc(undo:) func undoEdit(_ sender: Any?) { editor?.undo() }
+    @objc(redo:) func redoEdit(_ sender: Any?) { editor?.redo() }
+
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case Selector(("undo:")): return editor?.canUndo ?? false
+        case Selector(("redo:")): return editor?.canRedo ?? false
+        default: return super.validateMenuItem(item)
+        }
+    }
+
     /// Space plays and pauses wherever focus is, the way it does in a player, so a focused button never takes it.
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, editor?.handleKey(event) == true { return }
@@ -198,6 +210,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private func wire() {
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
+        inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }
         transportBar.onCommand = { [unowned self] command in
             switch command {
             case .start: seek(to: 0)
@@ -283,7 +296,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// Removes the picked clip, or the one under the playhead. The video keeps at least one clip.
     public func deleteClip() {
         let timeline = state.project.timeline
-        let index = state.selectedClip ?? timeline.clipIndex(at: state.transport.time(at: clock()))
+        let index = target(in: timeline)
         guard let next = timeline.deleting(index) else { return }
         commit(clips: next, playhead: timeline.starts[index])
     }
@@ -298,17 +311,21 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var canRedo: Bool { history.canRedo }
 
     public func undo() {
+        timeline.cancelTrim()
         guard history.undo() else { return }
         show(history.present, playhead: state.transport.time(at: clock()))
     }
 
     public func redo() {
+        timeline.cancelTrim()
         guard history.redo() else { return }
         show(history.present, playhead: state.transport.time(at: clock()))
     }
 
-    @objc func undo(_ sender: Any?) { undo() }
-    @objc func redo(_ sender: Any?) { redo() }
+    /// The clip an edit acts on: the picked one, or the one under the playhead.
+    private func target(in clips: ClipTimeline) -> Int {
+        state.selectedClip.flatMap { clips.clips.indices.contains($0) ? $0 : nil } ?? clips.clipIndex(at: state.transport.time(at: clock()))
+    }
 
     /// A drag on a clip's edge. The playhead rides on the edge, so the preview shows the frame the clip now starts or ends on.
     private func trimmed(_ trim: TimelineView.Trim, to moved: ClipTimeline, _ phase: TimelineView.Scrub) {
@@ -317,44 +334,50 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let edge = trim.edge == .start ? start : start + clip.duration - moved.frame
         var edits = state.project.edits
         edits.clips = moved.clips
-        commit(edits, coalescing: "trim", keepsSelection: true, playhead: edge)
+        commit(edits, coalescing: "trim", keeping: trim.index, playhead: edge)
         if phase == .ended { history.endCoalescing() }
     }
 
     /// Moves an edge of the picked clip, or of the clip under the playhead, from the keyboard. Presses in a row on one edge are one undo step.
     public func nudge(_ edge: ClipTimeline.Edge, by seconds: Double) {
+        timeline.cancelTrim()
         let clips = state.project.timeline
-        let index = state.selectedClip ?? clips.clipIndex(at: state.transport.time(at: clock()))
+        let index = target(in: clips)
         let clip = clips.clips[index]
-        let moved = clips.trimming(index, edge, to: (edge == .start ? clip.start : clip.end) + seconds)
+        // Whole frames from the edge, so an edge off the grid, like the end of a recording, still stops on the frame next to it.
+        let at = (edge == .start ? clip.start : clip.end) * clips.fps, steps = abs(seconds) * clips.fps
+        let frame = seconds < 0 ? (at - 1e-6).rounded(.up) - steps : (at + 1e-6).rounded(.down) + steps
+        let moved = clips.trimming(index, edge, to: frame / clips.fps)
         let start = moved.starts[index]
         var edits = state.project.edits
         edits.clips = moved.clips
         state.transport.pause(now: clock())
-        commit(edits, coalescing: CoalescingKey("nudge-\(index)-\(edge)"), keepsSelection: true,
+        commit(edits, coalescing: CoalescingKey("nudge-\(index)-\(edge)"), keeping: index,
                playhead: edge == .start ? start : start + moved.clips[index].duration - moved.frame)
     }
 
     private func commit(clips next: ClipTimeline, playhead: Double) {
+        timeline.cancelTrim()
         var edits = state.project.edits
         edits.clips = next.clips
         commit(edits, playhead: playhead)
     }
 
     /// The one way an edit reaches the project: it becomes an undo step, then everything that shows the project follows.
-    private func commit(_ edits: RecordingProject.Edits, coalescing key: CoalescingKey? = nil, keepsSelection: Bool = false, playhead: Double? = nil) {
+    /// `keeping` is the clip that stays picked, for an edit that moves an edge and leaves every clip where it was.
+    private func commit(_ edits: RecordingProject.Edits, coalescing key: CoalescingKey? = nil, keeping: Int? = nil, playhead: Double? = nil) {
         history.record(edits, coalescing: key)
-        show(history.present, keepsSelection: keepsSelection, playhead: playhead ?? state.transport.time(at: clock()))
+        show(history.present, keeping: keeping, playhead: playhead ?? state.transport.time(at: clock()))
     }
 
-    private func show(_ edits: RecordingProject.Edits, keepsSelection: Bool = false, playhead: Double) {
+    private func show(_ edits: RecordingProject.Edits, keeping: Int? = nil, playhead: Double) {
         let clipsChanged = edits.clips != state.project.edits.clips
         state.project.edits = edits
         if clipsChanged {
             let clips = state.project.timeline
             state.transport.setDuration(clips.duration, playheadAt: playhead, now: clock())
-            // Indices move when clips come and go; a trim keeps its clip picked.
-            if timeline.trim == nil && !keepsSelection { state.selectedClip = nil }
+            // Indices move when clips come and go, so only an edge edit keeps its clip picked.
+            state.selectedClip = keeping.flatMap { clips.clips.indices.contains($0) ? $0 : nil }
             timeline.selection = state.selectedClip
             timeline.timeline = clips
             awaitFrame()
@@ -658,17 +681,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             state.isPreviewOnly = false
             applyLayout()
             refresh()
-        }
-    }
-}
-
-extension VideoEditorWindowController: NSMenuItemValidation {
-    /// The Edit menu's Undo and Redo reach the editor through the responder chain and are on only when there is a step to take.
-    public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        switch item.action {
-        case #selector(undo(_:)): return canUndo
-        case #selector(redo(_:)): return canRedo
-        default: return true
         }
     }
 }
