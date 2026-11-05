@@ -148,11 +148,14 @@ public struct ZoomLane: Equatable, Sendable {
 
     public enum Edge: Sendable { case start, end }
 
-    /// Zooms are sorted; one that overlaps the zoom before it, or lies outside the video, is left out.
+    /// Zooms are sorted and end with the video, which a trim can shorten. One that overlaps the zoom before it, or keeps less than the
+    /// shortest zoom inside the video, is left out.
     public init(_ zooms: [Zoom], duration: Double) {
         self.duration = max(duration, 0)
         var kept: [Zoom] = []
-        for zoom in zooms.sorted(by: { $0.start < $1.start }) where zoom.start >= 0 && zoom.end <= self.duration + 1e-9 {
+        for var zoom in zooms.sorted(by: { $0.start < $1.start }) where zoom.start >= 0 {
+            zoom.end = min(zoom.end, self.duration)
+            guard zoom.duration >= Zoom.minimumDuration - 1e-9 else { continue }
             if let last = kept.last, zoom.start < last.end { continue }
             kept.append(zoom)
         }

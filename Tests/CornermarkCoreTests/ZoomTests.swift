@@ -139,6 +139,12 @@ final class ZoomLaneTests: XCTestCase {
         XCTAssertEqual(l.settingScale(9).zooms.map(\.scale), [4, 4])
     }
 
+    func testAShorterVideoCutsItsZoomsAtTheEnd() {
+        let l = ZoomLane([Zoom(start: 1, end: 4), Zoom(start: 5, end: 9)], duration: 7)
+        XCTAssertEqual(l.zooms.map { [$0.start, $0.end] }, [[1, 4], [5, 7]])
+        XCTAssertEqual(ZoomLane([Zoom(start: 6.8, end: 8)], duration: 7).zooms, [], "less than the shortest zoom is left out")
+    }
+
     func testDecodingKeepsGoodZoomsAndDropsBrokenOnes() throws {
         let p = try JSONDecoder().decode(RecordingProject.self, from: Data("""
         {"edits": {"zooms": [{"start": 4, "end": 6, "scale": 9, "mode": "later"}, {"start": 2, "end": 1}, {"start": 0, "end": 1, "center": {"x": 0.2, "y": 0.4}}]}}
