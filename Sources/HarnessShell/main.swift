@@ -29,12 +29,11 @@ Task { @MainActor in
     if let zoomCurve {
         let ok = await ZoomCurveExport.run(folder: URL(fileURLWithPath: zoomCurve, isDirectory: true),
                                            spec: ProcessInfo.processInfo.environment["CORNERMARK_ZOOMS"] ?? "1-4@2")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let zoomFilming {
         let ok = await VideoZoomFilm.run(out: URL(fileURLWithPath: zoomFilming, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let trimFilming {
         let ok = await VideoTrimFilm.run(out: URL(fileURLWithPath: trimFilming, isDirectory: true))
