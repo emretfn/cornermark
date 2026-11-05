@@ -14,10 +14,12 @@ public struct VideoEditorState: Equatable {
     public var isMuted = false
     public var export = ExportPhase.closed
     public var exportSettings = ExportSettings()
+    /// The clip Delete removes, picked on the clip lane. Without one, Delete removes the clip under the playhead.
+    public var selectedClip: Int?
 
     public init(project: RecordingProject) {
         self.project = project
-        transport = Transport(duration: project.source.duration)
+        transport = Transport(duration: project.outputDuration)
     }
 }
 
@@ -38,6 +40,18 @@ public enum VideoEditorError: Error, Equatable {
 
 final class VideoEditorWindow: NSWindow {
     weak var editor: VideoEditorWindowController?
+
+    // The window answers the Edit menu's Undo and Redo before its controller would, so it hands them to the editor's history.
+    @objc(undo:) func undoEdit(_ sender: Any?) { editor?.undo() }
+    @objc(redo:) func redoEdit(_ sender: Any?) { editor?.redo() }
+
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case Selector(("undo:")): return editor?.canUndo ?? false
+        case Selector(("redo:")): return editor?.canRedo ?? false
+        default: return super.validateMenuItem(item)
+        }
+    }
 
     /// Space plays and pauses wherever focus is, the way it does in a player, so a focused button never takes it.
     override func sendEvent(_ event: NSEvent) {
@@ -64,13 +78,14 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var onExport: (ExportEvent) -> Void = { _ in }
 
     private var saved: RecordingProject
+    private var history: UndoHistory<RecordingProject.Edits>
     private var frames: SourceFrames
     /// The camera file's pictures, when the recording has a camera. A harness can set its own.
     public var cameraFrames: SourceFrames?
     private let clock: () -> Double
     private let preview = PreviewView()
     private let transportBar = TransportBar()
-    private let timeline = TimelineView()
+    let timeline = TimelineView()
     private let inspector = InspectorView()
     private let header = HeaderBar()
     private let exportPanel = ExportPanel()
@@ -106,6 +121,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public init(folder: URL, project: RecordingProject, frames: SourceFrames, clock: @escaping () -> Double = CACurrentMediaTime) {
         self.folder = folder
         self.saved = project
+        history = UndoHistory(project.edits)
         self.frames = frames
         self.clock = clock
         state = VideoEditorState(project: project)
@@ -161,7 +177,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         }
         exportPanel.isHidden = true
         preview.pointSize = CGSize(width: max(state.project.source.pointWidth, 1), height: max(state.project.source.pointHeight, 1))
-        timeline.duration = state.project.source.duration
+        timeline.timeline = state.project.timeline
         timeline.frameStep = 1 / Double(max(state.project.source.fps, 1))
         timeline.aspect = state.project.source.pointHeight > 0 ? CGFloat(state.project.source.pointWidth / state.project.source.pointHeight) : 16 / 9
         NSLayoutConstraint.activate([
@@ -201,6 +217,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private func wire() {
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
+        inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }
         transportBar.onCommand = { [unowned self] command in
             switch command {
             case .start: seek(to: 0)
@@ -208,6 +225,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             case .end: seek(to: state.transport.duration)
             case .mute: setMuted(!state.isMuted)
             case .previewOnly: setPreviewOnly(!state.isPreviewOnly)
+            case .split: splitAtPlayhead()
+            case .delete: deleteClip()
             }
         }
         transportBar.onVolume = { [unowned self] in setVolume($0) }
@@ -216,6 +235,9 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         exportPanel.onExport = { [unowned self] in startExport() }
         exportPanel.onCancel = { [unowned self] in state.export.isExporting ? cancelExport() : closeExport() }
         timeline.onScrub = { [unowned self] t, phase in scrub(to: t, phase) }
+        timeline.onSelect = { [unowned self] in selectClip($0) }
+        timeline.onTrim = { [unowned self] trim, moved, phase in trimmed(trim, to: moved, phase) }
+        timeline.onNudge = { [unowned self] edge, seconds in nudge(edge, by: seconds) }
     }
 
     private func prepare() async {
@@ -227,6 +249,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 240, height: 240)
             let count = 24
+            // Each clip shows pictures of its own stretch, so a picture may be off by half a slot at most, not by a keyframe interval.
+            let slack = CMTime(seconds: duration / Double(count) / 2, preferredTimescale: 600)
+            generator.requestedTimeToleranceBefore = slack
+            generator.requestedTimeToleranceAfter = slack
             var images: [CGImage] = []
             for i in 0..<count {
                 if Task.isCancelled { return }
@@ -258,7 +284,107 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     public func setCursor(_ cursor: CursorSettings) {
-        state.project.edits.cursor = cursor
+        var edits = state.project.edits
+        let sizeOnly = cursor.isVisible == edits.cursor.isVisible
+        edits.cursor = cursor
+        commit(edits, coalescing: sizeOnly ? "cursor.scale" : nil)
+    }
+
+    // MARK: Clips
+
+    /// Cuts the clip under the playhead in two at the playhead. Nothing happens within a frame of the clip's ends.
+    public func splitAtPlayhead() {
+        let t = state.transport.time(at: clock())
+        guard let next = state.project.timeline.splitting(at: t) else { return }
+        commit(clips: next, playhead: t)
+    }
+
+    /// Removes the picked clip, or the one under the playhead. The video keeps at least one clip.
+    public func deleteClip() {
+        let timeline = state.project.timeline
+        let index = target(in: timeline)
+        guard let next = timeline.deleting(index) else { return }
+        commit(clips: next, playhead: timeline.starts[index])
+    }
+
+    public func selectClip(_ index: Int?) {
+        state.selectedClip = index.flatMap { state.project.timeline.clips.indices.contains($0) ? $0 : nil }
+        timeline.selection = state.selectedClip
+        refresh()
+    }
+
+    public var canUndo: Bool { history.canUndo }
+    public var canRedo: Bool { history.canRedo }
+
+    public func undo() {
+        timeline.cancelTrim()
+        guard history.undo() else { return }
+        show(history.present, playhead: state.transport.time(at: clock()))
+    }
+
+    public func redo() {
+        timeline.cancelTrim()
+        guard history.redo() else { return }
+        show(history.present, playhead: state.transport.time(at: clock()))
+    }
+
+    private func target(in clips: ClipTimeline) -> Int {
+        state.selectedClip.flatMap { clips.clips.indices.contains($0) ? $0 : nil } ?? clips.clipIndex(at: state.transport.time(at: clock()))
+    }
+
+    /// The playhead rides on the dragged edge, so the preview shows the frame the clip now starts or ends on.
+    private func trimmed(_ trim: TimelineView.Trim, to moved: ClipTimeline, _ phase: TimelineView.Scrub) {
+        if phase == .began { state.transport.pause(now: clock()) }
+        let clip = moved.clips[trim.index], start = moved.starts[trim.index]
+        let edge = trim.edge == .start ? start : start + clip.duration - moved.frame
+        var edits = state.project.edits
+        edits.clips = moved.clips
+        commit(edits, coalescing: "trim", keeping: trim.index, playhead: edge)
+        if phase == .ended { history.endCoalescing() }
+    }
+
+    /// Moves an edge of the picked clip, or of the clip under the playhead, from the keyboard. Presses in a row on one edge are one undo step.
+    public func nudge(_ edge: ClipTimeline.Edge, by seconds: Double) {
+        timeline.cancelTrim()
+        let clips = state.project.timeline
+        let index = target(in: clips)
+        let clip = clips.clips[index]
+        // Whole frames from the edge, so an edge off the grid, like the end of a recording, still stops on the frame next to it.
+        let at = (edge == .start ? clip.start : clip.end) * clips.fps, steps = abs(seconds) * clips.fps
+        let frame = seconds < 0 ? (at - 1e-6).rounded(.up) - steps : (at + 1e-6).rounded(.down) + steps
+        let moved = clips.trimming(index, edge, to: frame / clips.fps)
+        let start = moved.starts[index]
+        var edits = state.project.edits
+        edits.clips = moved.clips
+        state.transport.pause(now: clock())
+        commit(edits, coalescing: CoalescingKey("nudge-\(index)-\(edge)"), keeping: index,
+               playhead: edge == .start ? start : start + moved.clips[index].duration - moved.frame)
+    }
+
+    private func commit(clips next: ClipTimeline, playhead: Double) {
+        timeline.cancelTrim()
+        var edits = state.project.edits
+        edits.clips = next.clips
+        commit(edits, playhead: playhead)
+    }
+
+    private func commit(_ edits: RecordingProject.Edits, coalescing key: CoalescingKey? = nil, keeping: Int? = nil, playhead: Double? = nil) {
+        history.record(edits, coalescing: key)
+        show(history.present, keeping: keeping, playhead: playhead ?? state.transport.time(at: clock()))
+    }
+
+    private func show(_ edits: RecordingProject.Edits, keeping: Int? = nil, playhead: Double) {
+        let clipsChanged = edits.clips != state.project.edits.clips
+        state.project.edits = edits
+        if clipsChanged {
+            let clips = state.project.timeline
+            state.transport.setDuration(clips.duration, playheadAt: playhead, now: clock())
+            // Indices move when clips come and go, so only an edge edit keeps its clip picked.
+            state.selectedClip = keeping.flatMap { clips.clips.indices.contains($0) ? $0 : nil }
+            timeline.selection = state.selectedClip
+            timeline.timeline = clips
+            awaitFrame()
+        }
         refresh()
         tick()
     }
@@ -288,19 +414,35 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         refresh()
     }
 
+    struct Chord: Hashable {
+        var keyCode: UInt16
+        var modifiers: NSEvent.ModifierFlags.RawValue = 0
+        static func command(_ keyCode: UInt16, shift: Bool = false) -> Chord {
+            Chord(keyCode: keyCode, modifiers: (shift ? [.command, .shift] : NSEvent.ModifierFlags.command).rawValue)
+        }
+    }
+
+    static let keys: [Chord: (VideoEditorWindowController) -> Bool] = [
+        Chord(keyCode: 49): { $0.togglePlayback(); return true },
+        Chord(keyCode: 53): { $0.escape() },
+        .command(11): { $0.splitAtPlayhead(); return true },
+        Chord(keyCode: 51): { $0.deleteClip(); return true },
+        Chord(keyCode: 117): { $0.deleteClip(); return true },
+        .command(6): { $0.undo(); return true },
+        .command(6, shift: true): { $0.redo(); return true },
+    ]
+
     func handleKey(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
-        guard mods.isEmpty else { return false }
-        switch event.keyCode {
-        case 49:
-            togglePlayback()
-            return true
-        case 53 where state.isPreviewOnly:
-            setPreviewOnly(false)
-            return true
-        default:
-            return false
-        }
+        guard let action = Self.keys[Chord(keyCode: event.keyCode, modifiers: mods.rawValue)] else { return false }
+        return action(self)
+    }
+
+    private func escape() -> Bool {
+        if state.isPreviewOnly { setPreviewOnly(false); return true }
+        guard state.selectedClip != nil else { return false }
+        selectClip(nil)
+        return true
     }
 
     private func scrub(to t: Double, _ phase: TimelineView.Scrub) {
@@ -496,11 +638,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     private func updateTransportBar(_ t: Double) {
+        let clips = state.project.timeline
         transportBar.update(time: t, duration: state.transport.duration, playing: state.transport.isPlaying, hasAudio: frames.hasAudio,
-                            muted: state.isMuted, volume: state.volume, previewOnly: state.isPreviewOnly)
+                            muted: state.isMuted, volume: state.volume, previewOnly: state.isPreviewOnly,
+                            canSplit: clips.splitting(at: t) != nil, canDelete: clips.clips.count > 1)
     }
 
-    private func startDisplayLink() {
+    func startDisplayLink() {
         guard displayLink == nil else { return }
         let link = preview.displayLink(target: self, selector: #selector(displayTick))
         link.add(to: .main, forMode: .common)

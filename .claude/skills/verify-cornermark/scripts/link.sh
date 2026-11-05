@@ -1,6 +1,6 @@
 #!/bin/bash
 # link.sh <path> | link.sh open <image-path> | link.sh edit-recording <project-folder> [export] | link.sh unknown-link
-# link.sh record/test-window | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | record/camera [query] | link.sh record/stop
+# link.sh record/test-window [editor <project-folder> <scene>] | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | record/camera [query] | link.sh record/stop
 # Sends one link to the recorded instance only, watches focus while it lands, and prints what the app logged.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -65,7 +65,25 @@ elif in_list "$path" "$RECORDING_LINKS"; then
             url="$url?$2"
             want="recording started" ;;
         record/test-window)
-            [ $# -eq 1 ] || die "usage: link.sh record/test-window"
+            if [ $# -eq 4 ] && [ "$2" = editor ]; then
+                # The instance's own editor becomes the test window and plays a scripted scene once a recording of it starts.
+                [[ "$4" =~ ^E[0-9]+$ ]] || die "usage: link.sh record/test-window editor <project-folder> <scene>"
+                [ -f "$3/project.json" ] || die "refused: $3 holds no project.json."
+                src="$(cd "$3" && pwd)"
+                case "$src/" in
+                    "$ROOT/"*) folder="$src" ;;
+                    *)
+                        mkdir -p "$ROOT/import"
+                        folder="$ROOT/import/$(basename "$src")"
+                        n=2
+                        while [ -e "$folder" ]; do folder="$ROOT/import/$(basename "$src") $n"; n=$((n + 1)); done
+                        cp -R "$src" "$folder" ;;
+                esac
+                encoded="$(printf %s "$folder" | perl -pe 's/([^A-Za-z0-9\/._-])/sprintf("%%%02X", ord($1))/ge')"
+                url="$url?editor=$encoded&scene=$4"
+            else
+                [ $# -eq 1 ] || die "usage: link.sh record/test-window | link.sh record/test-window editor <project-folder> <scene>"
+            fi
             want="test window id=" ;;
         record/stop)
             [ $# -eq 1 ] || die "usage: link.sh record/stop"

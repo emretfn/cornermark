@@ -108,40 +108,31 @@ public enum VideoExporter {
                                progress: @Sendable (Double) -> Void) async throws -> Int {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        output.alwaysCopiesSampleData = false
-        reader.add(output)
-        guard reader.startReading() else { throw ExportError.writer(reader.error?.localizedDescription ?? "the source could not be read") }
-        defer { reader.cancelReading() }
-
-        func next() -> (time: Double, image: CGImage)? {
-            while let sample = output.copyNextSampleBuffer() {
-                guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-                var image: CGImage?
-                VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
-                if let image { return (CMSampleBufferGetPresentationTimeStamp(sample).seconds, image) }
-            }
-            return nil
-        }
-
-        // A project whose camera file is gone still exports, without the camera.
-        var camera: ForwardFrames?
-        if let name = project.source.camera { camera = try? await ForwardFrames(url: video.deletingLastPathComponent().appendingPathComponent(name)) }
+        let timeline = project.timeline
+        // The camera file shares the video's timeline, so each clip reads the same stretch of it. A project whose camera file is gone
+        // still exports, without the camera.
+        let cameraAsset = project.source.camera.map { AVURLAsset(url: video.deletingLastPathComponent().appendingPathComponent($0)) }
+        let cameraTrack = try? await cameraAsset?.loadTracks(withMediaType: .video).first
+        var cameraReader: ClipReader?
         let renderer = ExportFrameRenderer(plan: plan, source: project.source)
         let sink = Sink(writer: writer)
-        var pending = next()
-        var current: CGImage?
+        var reader: ClipReader?
         var reported = -1
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.fps))
         for k in 0..<plan.frameCount {
             try Task.checkCancellation()
-            let state = frameState(project, outputTime: plan.time(ofFrame: k))
-            while let p = pending, p.time <= state.sourceTime + 1e-6 { current = p.image; pending = next() }
-            if current == nil { current = pending?.image }
+            let t = plan.time(ofFrame: k)
+            let state = frameState(project, outputTime: t)
+            let clip = timeline.clipIndex(at: t)
+            if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
+            let current = reader?.image(at: state.sourceTime)
+            var camera: CGImage?
+            if state.camera != nil, let cameraAsset, let cameraTrack {
+                if cameraReader?.clip != clip { cameraReader = try? ClipReader(asset: cameraAsset, track: cameraTrack, clip: clip, range: timeline.clips[clip]) }
+                camera = cameraReader?.image(at: state.sourceTime)
+            }
             let buffer = try encoder.makeBuffer()
-            let cameraImage = state.camera == nil ? nil : camera?.image(at: state.sourceTime)
-            try draw(into: buffer) { renderer.draw(state, source: current, camera: cameraImage, in: $0) }
+            try draw(into: buffer) { renderer.draw(state, source: current, camera: camera, in: $0) }
             try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
             try await sink.append(encoder.take())
             let percent = (k + 1) * 100 / plan.frameCount
@@ -164,25 +155,32 @@ public enum VideoExporter {
     }
 }
 
-/// Reads a video forward and hands out the picture showing at a time, for a second track such as the camera's.
-private final class ForwardFrames {
+/// Reads one clip's source frames in order and answers with the last frame at or before a moment, the frame a player shows then.
+private final class ClipReader {
+    let clip: Int
     private let reader: AVAssetReader
     private let output: AVAssetReaderTrackOutput
     private var pending: (time: Double, image: CGImage)?
     private var current: CGImage?
 
-    init(url: URL) async throws {
-        let asset = AVURLAsset(url: url)
-        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
+    init(asset: AVAsset, track: AVAssetTrack, clip: Int, range: Clip) throws {
+        self.clip = clip
         reader = try AVAssetReader(asset: asset)
+        reader.timeRange = CMTimeRange(start: CMTime(seconds: range.start, preferredTimescale: 600),
+                                       end: CMTime(seconds: range.end, preferredTimescale: 600))
         output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
         output.alwaysCopiesSampleData = false
         reader.add(output)
-        guard reader.startReading() else { throw ExportError.writer(reader.error?.localizedDescription ?? "the camera could not be read") }
+        guard reader.startReading() else { throw ExportError.writer(reader.error?.localizedDescription ?? "the source could not be read") }
         pending = next()
     }
 
     deinit { reader.cancelReading() }
+
+    func image(at sourceTime: Double) -> CGImage? {
+        while let p = pending, p.time <= sourceTime + 1e-6 { current = p.image; pending = next() }
+        return current ?? pending?.image
+    }
 
     private func next() -> (time: Double, image: CGImage)? {
         while let sample = output.copyNextSampleBuffer() {
@@ -192,12 +190,6 @@ private final class ForwardFrames {
             if let image { return (CMSampleBufferGetPresentationTimeStamp(sample).seconds, image) }
         }
         return nil
-    }
-
-    /// Times must not go back.
-    func image(at t: Double) -> CGImage? {
-        while let p = pending, p.time <= t + 1e-6 { current = p.image; pending = next() }
-        return current ?? pending?.image
     }
 }
 

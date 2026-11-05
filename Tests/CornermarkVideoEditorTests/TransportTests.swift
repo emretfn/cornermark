@@ -77,4 +77,15 @@ final class TransportTests: XCTestCase {
         let long = TimelineScale(duration: 600, start: 0, end: 1000)
         XCTAssertEqual(long.majorStep(minSpacing: 72), 60)
     }
+
+    func testAnEditChangesTheLengthAndMovesThePlayhead() {
+        var t = Transport(duration: 4)
+        t.play(now: 0)
+        t.setDuration(2, playheadAt: 1.5, now: 1)
+        XCTAssertTrue(t.isPlaying, "playing goes on from the new place")
+        XCTAssertEqual(t.time(at: 1.25), 1.75, accuracy: 1e-9)
+        XCTAssertEqual(t.time(at: 9), 2, "and stops at the new end")
+        t.setDuration(1, playheadAt: 3, now: 2)
+        XCTAssertEqual(t.state, .paused(at: 1), "a playhead past the new end waits at it")
+    }
 }

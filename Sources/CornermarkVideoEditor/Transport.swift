@@ -10,7 +10,7 @@ public struct Transport: Equatable, Sendable {
     }
 
     public private(set) var state: State
-    public let duration: Double
+    public private(set) var duration: Double
 
     public init(duration: Double) {
         self.duration = max(duration, 0)
@@ -45,6 +45,13 @@ public struct Transport: Equatable, Sendable {
     /// Moves the playhead and keeps playing if it was.
     public mutating func seek(to t: Double, now: Double) {
         state = isPlaying ? .playing(from: clamp(t), since: now) : .paused(at: clamp(t))
+    }
+
+    /// An edit made the video `duration` long. The playhead moves to `t`, and keeps playing if it was and `t` is before the end.
+    public mutating func setDuration(_ duration: Double, playheadAt t: Double, now: Double) {
+        self.duration = max(duration, 0)
+        let at = clamp(t)
+        state = isPlaying && at < self.duration ? .playing(from: at, since: now) : .paused(at: at)
     }
 
     /// Stops at the end once playing reaches it. Returns whether that happened.

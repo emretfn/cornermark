@@ -238,6 +238,7 @@ final class EditorStage {
     var origin = editorOrigin
     var hasAudio = false
     var outline: CGRect?
+    var area = "display=1&x=0&y=0&width=640&height=360"
     private(set) var frames: [URL: StillFrames] = [:]
     private var project: CaptureRecord?
 
@@ -257,8 +258,8 @@ final class EditorStage {
     var current: VideoEditorWindowController? { w.coordinator.videoEditors.values.first }
 
     func recordProject() async throws -> CaptureRecord? {
-        film.hold(0.6, "Record for Editing: \(URLCommand.scheme)://record?display=1&x=0&y=0&width=640&height=360")
-        project = await recordOnce(w, "display=1&x=0&y=0&width=640&height=360")
+        film.hold(0.6, "Record for Editing: \(URLCommand.scheme)://record?\(area)")
+        project = await recordOnce(w, area)
         film.refresh()
         return project
     }

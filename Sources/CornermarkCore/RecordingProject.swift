@@ -94,11 +94,14 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         public var cursor: CursorSettings
         public var clicks: ClickHighlight
         public var keystrokes: KeystrokeDisplay
+        /// What the finished video keeps of the recording, in order. A project read from a file always has at least one;
+        /// one written before clips existed keeps the whole recording.
+        public var clips: [Clip]
         public var camera: CameraBubble
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    camera: CameraBubble = CameraBubble()) {
-            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.camera = camera
+                    clips: [Clip] = [], camera: CameraBubble = CameraBubble()) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.camera = camera
         }
 
         public init(from decoder: Decoder) throws {
@@ -107,8 +110,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             clicks = (try? c.decodeIfPresent(ClickHighlight.self, forKey: .clicks)) ?? ClickHighlight()
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
+            clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, camera }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, camera }
     }
 
     public var version: Int
@@ -118,6 +122,7 @@ public struct RecordingProject: Codable, Equatable, Sendable {
 
     public init(source: Source = Source(), events: Events = Events(), edits: Edits = Edits()) {
         self.version = Self.currentVersion; self.source = source; self.events = events; self.edits = edits
+        self.edits.clips = timeline.clips
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,6 +131,7 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         source = try c.decodeIfPresent(Source.self, forKey: .source) ?? Source()
         events = try c.decodeIfPresent(Events.self, forKey: .events) ?? Events()
         edits = try c.decodeIfPresent(Edits.self, forKey: .edits) ?? Edits()
+        edits.clips = timeline.clips
     }
     private enum Keys: String, CodingKey { case version, source, events, edits }
 }
@@ -176,7 +182,7 @@ public struct FrameState: Equatable, Sendable {
 
 /// The frame at `outputTime` seconds of the finished video. Pure: the same project and time always give the same answer.
 public func frameState(_ project: RecordingProject, outputTime: Double) -> FrameState {
-    let sourceTime = min(max(outputTime, 0), max(project.source.duration, 0))
+    let sourceTime = project.timeline.sourceTime(at: outputTime)
     let area = CGSize(width: project.source.pointWidth, height: project.source.pointHeight)
     let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
     let settings = project.edits.cursor
