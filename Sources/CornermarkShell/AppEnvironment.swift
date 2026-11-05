@@ -54,6 +54,10 @@ final class AppEnvironment {
     var presentUpdateAlert: (UpdateAlert) -> Bool = { _ in false }
     /// Called for every window the app asks to show, whether or not it is really ordered in.
     var willPresent: (NSWindow) -> Void = { _ in }
+    /// Makes the picture source for a recording, or throws `RecordingRefusal`. The scripted instance only films its own test window.
+    var frameSource: (RecordingTarget, RecordingOptions) throws -> FrameSource = { _, _ in throw RecordingRefusal.unavailable }
+    /// The window a scripted instance films. Nil in a normal instance.
+    var recordingTestWindow: RecordingTestWindowHosting?
 
     var isOnscreen: Bool { presentation == .onscreen }
 

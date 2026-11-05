@@ -4,6 +4,7 @@ import AppKit
 let pid = pid_t(CommandLine.arguments[1])!
 let end = Date().addingTimeInterval(Double(CommandLine.arguments[2])!)
 var samples = 0, onScreenMax = 0, frontChanges = 0
+var onScreenIDs = Set<Int>()
 var frontWasOurs = false
 var lastFront: pid_t?
 
@@ -14,8 +15,10 @@ repeat {
     lastFront = front
     if front == pid { frontWasOurs = true }
     let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    onScreenMax = max(onScreenMax, windows.filter { $0[kCGWindowOwnerPID as String] as? pid_t == pid }.count)
+    let ours = windows.filter { $0[kCGWindowOwnerPID as String] as? pid_t == pid }
+    onScreenMax = max(onScreenMax, ours.count)
+    ours.compactMap { $0[kCGWindowNumber as String] as? Int }.forEach { onScreenIDs.insert($0) }
     samples += 1
 } while Date() < end
 
-print("{\"pid\":\(pid),\"samples\":\(samples),\"onScreenWindowsMax\":\(onScreenMax),\"frontmostWasOurs\":\(frontWasOurs),\"frontmostChanges\":\(frontChanges)}")
+print("{\"pid\":\(pid),\"samples\":\(samples),\"onScreenWindowsMax\":\(onScreenMax),\"frontmostWasOurs\":\(frontWasOurs),\"frontmostChanges\":\(frontChanges),\"onScreenWindowIDs\":[\(onScreenIDs.sorted().map(String.init).joined(separator: ","))]}")

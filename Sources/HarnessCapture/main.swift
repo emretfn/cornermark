@@ -18,6 +18,7 @@ Task { @MainActor in
     runMachineTests()
     await runIntegrationTests()
     await runSpanTests()
+    await runRecordingTests()
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)

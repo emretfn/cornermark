@@ -12,6 +12,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 - Start from a fresh instance unless a recipe says otherwise. A new instance has an empty history and default settings.
 - Send every link through `link.sh`. It refuses capture links and copies an imported image into the isolated root.
+- Recording links follow their own focus rule: the instance's only on-screen window is its test window. See [Recording](./recording.md).
 - Do not use the mouse, the keyboard, or global events.
 - A harness section is `swift run HarnessShell | sed -n '/^== <section>/,/^$/p'`. It prints one `PASS` or `FAIL` line per check, and the run ends with `RESULT <n> passed, <n> failed`.
 
@@ -44,3 +45,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Import an image](./import-image.md) covers the image link, the stored record, and the editor.
 - [Overlays](./overlays.md) covers restoring and hiding Quick Access cards.
 - [Updates and What's New](./updates-and-whats-new.md) covers the update check and the release notes window.
+- [Recording](./recording.md) covers recording the instance's test window and its synthetic display to an MP4 file.

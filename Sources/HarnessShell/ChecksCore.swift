@@ -21,11 +21,12 @@ func checkActionTable() async throws {
     check(ActionTable.spec(.allInOne).hotKey?.displayString == "\u{2303}\u{21E7}1", "hotkey display string is Mac ordered (control, shift, key)",
           detail: ActionTable.spec(.allInOne).hotKey?.displayString ?? "nil")
 
-    for id in ActionID.allCases where id != .openFile {
+    for id in ActionID.allCases where id != .openFile && id != .record {
         let action = AppAction.make(id, timerSeconds: 5)
         check(action?.id == id, "AppAction.make(\(id.rawValue)) maps back to its own id")
     }
     check(AppAction.make(.openFile, timerSeconds: 5) == nil, "openFile needs a URL, so make() returns nil")
+    check(AppAction.make(.record, timerSeconds: 5) == nil, "record needs a target, so make() returns nil")
     check(AppAction.make(.timer, timerSeconds: 9) == .capture(.timed(seconds: 9)), "timer action carries the configured seconds")
 
     let w = try World(after: [])

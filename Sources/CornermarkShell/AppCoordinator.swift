@@ -14,6 +14,7 @@ final class AppCoordinator {
     let pins: PinManager
     let hud: HUD
     let updates: UpdateController
+    let recording: RecordingController
     let thumbnails = ThumbnailCache()
     private(set) var hotKeys: HotKeyManager?
     private(set) var history: HistoryWindowController?
@@ -33,7 +34,10 @@ final class AppCoordinator {
         pins = PinManager(env: env)
         hud = HUD(env: env)
         updates = UpdateController(env: env, hud: hud)
+        recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
 
+        recording.onSaved = { [unowned self] report in hud.show("Saved \(report.url.lastPathComponent)") }
+        recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
         updates.closeEditors = { [unowned self] in closeAllEditors() }
@@ -54,6 +58,9 @@ final class AppCoordinator {
         case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
+        case .startRecording(let target): startRecording(target)
+        case .stopRecording: recording.stop()
+        case .openRecordingTestWindow: openRecordingTestWindow()
         case .quit: env.quit()
         }
     }
@@ -76,6 +83,21 @@ final class AppCoordinator {
             Log.shell.error("ignored URL \(url.absoluteString, privacy: .public): \(String(describing: error), privacy: .public)")
             return false
         }
+    }
+
+    // MARK: Recording
+
+    private func startRecording(_ target: RecordingTarget) {
+        guard env.hasScreenPermission() else { return showPermissionWindow() }
+        recording.start(target)
+    }
+
+    /// Only a scripted instance has one. Anywhere else the link is refused and nothing is drawn.
+    private func openRecordingTestWindow() {
+        guard let host = env.recordingTestWindow else {
+            return Log.shell.error("recording refused: \(String(describing: RecordingRefusal.unavailable), privacy: .public)")
+        }
+        host.show()
     }
 
     // MARK: Capture

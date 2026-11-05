@@ -54,6 +54,7 @@ extension AppEnvironment {
             quit: { NSApp.terminate(nil) })
         env.confirmUpdate = confirmUpdate
         env.presentUpdateAlert = presentUpdateAlert
+        env.frameSource = { target, options in StreamFrameSource(target: target, fps: options.fps) }
         return env
     }
 
@@ -82,10 +83,27 @@ extension AppEnvironment {
             openURL: { _ in }, revealInFinder: { _ in }, playSound: {}, pickFolder: { $0(nil) },
             loginItem: IsolatedLoginItem(), updateService: NoUpdates(), defaultSaveFolder: saved, dragDirectory: drag,
             quit: { NSApp.terminate(nil) })
+        let testWindow = RecordingTestWindow()
+        env.recordingTestWindow = testWindow
+        env.frameSource = { target, options in try isolatedFrameSource(target, options, testWindow: testWindow) }
         env.willPresent = { window in
             Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")
         }
         return env
+    }
+
+    /// The only screen pixels a scripted instance may film are those of its own test window. A display is a synthetic one,
+    /// so no content filter on a real display is ever built here.
+    static func isolatedFrameSource(_ target: RecordingTarget, _ options: RecordingOptions, testWindow: RecordingTestWindowHosting) throws -> FrameSource {
+        switch target {
+        case .window(let id):
+            guard let own = testWindow.windowID else { throw RecordingRefusal.noTestWindow }
+            guard id == own else { throw RecordingRefusal.notTestWindow(id) }
+            return StreamFrameSource(target: target, fps: options.fps)
+        case .display(let id, let area):
+            if let id, id != FixtureFrameSource.displayID { throw RecordingRefusal.unknownDisplay(id) }
+            return FixtureFrameSource(area: area, fps: options.fps, pacing: .realtime)
+        }
     }
 
     private final class IsolatedLoginItem: LoginItemControlling {

@@ -137,11 +137,12 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 - **Updates.** Cornermark checks GitHub at launch and once a day, and installs a release only after you confirm. See [Update](#update).
 - **Open from Finder.** "Open With" opens PNG, JPEG, and HEIC files in the editor.
 - **URL scheme.** `cornermark://capture-area`, `capture-window`, `capture-fullscreen`, `all-in-one`, `previous-area`, `scrolling`, `ocr`, `timer?seconds=5`, `history`, `settings`, `check-for-updates`, `whats-new`, `restore-overlay`, `hide-overlays`, `open?path=/full/path/image.png`. The `open` path must be an existing image file. Cornermark logs and ignores unknown paths.
+- **Recording.** `cornermark://record?window=<id>` records one window. `cornermark://record?display=<id>&x=<x>&y=<y>&width=<w>&height=<h>` records a display or an area of it, in points from the bottom-left corner of the screen, and `display` or the area may be left out but not both. `cornermark://record/stop` ends the recording. The file is an H.264 MP4 at up to 60 frames a second, without the cursor, and lands in the save folder. Nothing leaves your Mac.
 
 ## What it leaves out
 
 - No cloud, accounts, or share links.
-- No video or GIF recording.
+- No GIF export and no video editor. Recording writes an MP4 file and nothing more, for now.
 - No App Store version or notarization.
 
 ## Develop

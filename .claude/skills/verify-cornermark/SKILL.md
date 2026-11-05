@@ -28,7 +28,7 @@ It builds with `scripts/build-app.sh` when `Sources` or `Resources` are newer th
 
 The instance is ready when `launch.sh` prints `ready: pid=<pid> root=<root>` and the app's `launch pid=<pid> isolated=true screenPermission=<bool>` line. An empty root is a usable state. Run it again with the instance up and it prints `already running`. It refuses to start when this checkout's app already runs outside the skill, because a link could reach that process.
 
-The instance has its own history, defaults suite, and pasteboard. It has no hot keys, no status item, no sound, no update service, and no displays, and it never orders a window in. Screen Recording permission reads truthfully.
+The instance has its own history, defaults suite, and pasteboard. It has no hot keys, no status item, no sound, no update service, and no displays, and it never orders a window in, except the recording test window that a recording link asks for. Screen Recording permission reads truthfully.
 
 ## Doctor
 
@@ -66,8 +66,12 @@ $V/link.sh open docs/screenshots/capture.png
 | `hide-overlays` | `handled URL` only, which proves delivery and nothing else |
 | `open <image>` | `handled URL`, plus a new record in `<root>/History/index.json` |
 | `unknown-link` | `ignored URL` with `unknownPath`, which proves delivery |
+| `record/test-window` | `test window id=<n> ... visible=true appActive=false` |
+| `record window=<n>` | `recording started ... source=screen` |
+| `record display=1&x=..` | `recording started ... source=fixture` |
+| `record/stop` | `recording finished ... frames= dropped=` |
 
-`link.sh` refuses capture links. See [the feature map](features/README.md) for each feature's recipe and for the harnesses that cover capture.
+`link.sh` refuses capture links. Recording links are the one case where a window is on screen: only the instance's own synthetic test window, ordered in behind the others without activating the app. `link.sh` and `watch.sh` hold them to that. See [the feature map](features/README.md) for each feature's recipe and for the harnesses that cover capture.
 
 ## Evidence
 
@@ -82,6 +86,7 @@ Run it before `stop.sh`. It writes these files to `$CORNERMARK_EVIDENCE_DIR/<nam
 - `tccd.txt` holds every tccd line about Cornermark Dev since launch.
 - `doctor.txt` holds the doctor result.
 - `focus.jsonl` holds one focus sample per link.
+- `saved/` holds the recordings.
 - `root-files.txt` lists the root.
 - `History/` is a copy of the instance's history.
 
@@ -93,7 +98,7 @@ These limits apply to every proof:
 - `hide-overlays` proves delivery only.
 - The menu panel is unreachable, because the instance has no status item.
 - The focus probe sees this instance's windows and the frontmost app. It does not see another process's dialog, so use the tccd check for that.
-- Windows are built but never drawn on screen, so this skill produces no pictures of them. `swift run HarnessShell` writes window snapshots to `build/harness/shell/`.
+- Windows are built but never drawn on screen, so this skill produces no pictures of them. The recording test window is the exception, and a recording is its picture. `swift run HarnessShell` writes window snapshots to `build/harness/shell/`.
 - What's New and updates run against a service that returns no releases.
 
 ## Cleanup
@@ -113,9 +118,10 @@ Cleanup keeps the evidence and the root. Do not delete `$TMPDIR/cornermark-verif
 | `launch.sh` | Start and record the instance. |
 | `doctor.sh` | Answer whether the instance is worth driving. |
 | `link.sh <path>` | Send one link. Paths are in the Drive table. |
+| `watch.sh <seconds>` | Sample focus around a recording and hold it to the recording rule. |
 | `evidence.sh <name>` | Copy the proof to `$CORNERMARK_EVIDENCE_DIR/<name>`. |
 | `stop.sh` | Stop the recorded PID and report tccd. |
-| `lib.sh` | Sourced by the others. Holds `SAFE_LINKS` and `REFUSED_LINKS`. |
+| `lib.sh` | Sourced by the others. Holds `SAFE_LINKS`, `REFUSED_LINKS`, and `RECORDING_LINKS`. |
 | `focus-probe.swift` | Compiled by `launch.sh` to `build/verify/focus-probe`, and run by `link.sh`. It reads window metadata and the frontmost PID, never pixels. |
 
 When `doctor.sh` reports an unclassified path, add it to `SAFE_LINKS` only if the link can run with no display and no file outside the root. Otherwise add it to `REFUSED_LINKS`.

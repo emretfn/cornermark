@@ -40,6 +40,7 @@ Task { @MainActor in
         try await checkSettingsWindow()
         try await checkSmallWindows()
         try await checkIsolatedEnvironment()
+        try await checkRecording()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

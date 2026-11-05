@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 enum ActionID: String, CaseIterable {
     case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer
     case restoreOverlay, hideOverlays, history, settings, checkForUpdates, whatsNew, openFile, quit
+    case record, stopRecording, recordTestWindow
 }
 
 /// One row per user intent. The menu, the global hotkeys and the URL scheme all read this table.
@@ -43,6 +44,9 @@ enum ActionTable {
         ActionSpec(id: .checkForUpdates, title: "Check for Updates\u{2026}", symbol: "arrow.triangle.2.circlepath", hotKey: nil, urlPath: "check-for-updates", menuGroup: 2),
         ActionSpec(id: .whatsNew, title: "What's New\u{2026}", symbol: "sparkles", hotKey: nil, urlPath: "whats-new", menuGroup: 2),
         ActionSpec(id: .openFile, title: "Open Image", symbol: "photo", hotKey: nil, urlPath: "open", menuGroup: nil),
+        ActionSpec(id: .record, title: "Record", symbol: "record.circle", hotKey: nil, urlPath: "record", menuGroup: nil),
+        ActionSpec(id: .stopRecording, title: "Stop Recording", symbol: "stop.circle", hotKey: nil, urlPath: "record/stop", menuGroup: nil),
+        ActionSpec(id: .recordTestWindow, title: "Show Recording Test Window", symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
         ActionSpec(id: .quit, title: "Quit Cornermark", symbol: "power", hotKey: nil, urlPath: nil, menuGroup: 3),
     ]
 
@@ -60,6 +64,9 @@ enum AppAction: Equatable {
     case restoreLastOverlay
     case hideOverlays
     case openFile(URL)
+    case startRecording(RecordingTarget)
+    case stopRecording
+    case openRecordingTestWindow
     case quit
 
     var id: ActionID {
@@ -82,11 +89,14 @@ enum AppAction: Equatable {
         case .restoreLastOverlay: return .restoreOverlay
         case .hideOverlays: return .hideOverlays
         case .openFile: return .openFile
+        case .startRecording: return .record
+        case .stopRecording: return .stopRecording
+        case .openRecordingTestWindow: return .recordTestWindow
         case .quit: return .quit
         }
     }
 
-    /// The action for a menu item or hotkey; nil for `.openFile`, which needs a URL.
+    /// The action for a menu item or hotkey; nil for `.openFile` and `.record`, which need a URL.
     static func make(_ id: ActionID, timerSeconds: Int) -> AppAction? {
         switch id {
         case .allInOne: return .capture(.allInOne)
@@ -104,7 +114,9 @@ enum AppAction: Equatable {
         case .restoreOverlay: return .restoreLastOverlay
         case .hideOverlays: return .hideOverlays
         case .quit: return .quit
-        case .openFile: return nil
+        case .stopRecording: return .stopRecording
+        case .recordTestWindow: return .openRecordingTestWindow
+        case .openFile, .record: return nil
         }
     }
 }
@@ -114,6 +126,7 @@ enum URLCommandError: Error, Equatable {
     case missingPath
     case unknownPath(String)
     case invalidFile(String)
+    case invalidRecording(String)
 }
 
 enum URLCommand {
@@ -123,8 +136,8 @@ enum URLCommand {
     static func parse(_ url: URL, timerSeconds: Int = 5) -> Result<AppAction, URLCommandError> {
         guard url.scheme?.lowercased() == scheme else { return .failure(.wrongScheme) }
         let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let rawPath = (comps?.host?.isEmpty == false ? comps?.host : nil)
-            ?? comps?.path.split(separator: "/").first.map(String.init) ?? ""
+        let parts = [comps?.host].compactMap { $0 }.filter { !$0.isEmpty } + (comps?.path.split(separator: "/").map(String.init) ?? [])
+        let rawPath = parts.joined(separator: "/")
         guard !rawPath.isEmpty else { return .failure(.missingPath) }
         guard let spec = ActionTable.spec(urlPath: rawPath.lowercased()) else { return .failure(.unknownPath(rawPath)) }
         let query = Dictionary((comps?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
@@ -133,8 +146,36 @@ enum URLCommand {
             guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
             return validatedImageURL(path: path).map { .openFile($0) }
         }
+        if spec.id == .record { return recordingTarget(query).map { .startRecording($0) } }
         let seconds = query["seconds"].flatMap(Int.init).map { min(max($0, 1), 60) } ?? timerSeconds
         return AppAction.make(spec.id, timerSeconds: seconds).map { .success($0) } ?? .failure(.unknownPath(rawPath))
+    }
+
+    /// `window=<id>` films one window. `display=<id>`, or `x`, `y`, `width` and `height`, or both, film a display or an area of it.
+    /// A link that names no target is refused, so a stray link never starts filming the screen.
+    static func recordingTarget(_ query: [String: String]) -> Result<RecordingTarget, URLCommandError> {
+        let areaKeys = ["x", "y", "width", "height"]
+        let named = areaKeys.filter { query[$0] != nil }
+        if let window = query["window"] {
+            guard query["display"] == nil, named.isEmpty else { return .failure(.invalidRecording("window excludes display and area")) }
+            guard let id = UInt32(window), id != 0 else { return .failure(.invalidRecording("window")) }
+            return .success(.window(CGWindowID(id)))
+        }
+        var area: CGRect?
+        if !named.isEmpty {
+            let values = areaKeys.map { query[$0].flatMap(Double.init) }
+            guard named.count == 4, values.allSatisfy({ $0?.isFinite == true }), let w = values[2], let h = values[3], w > 0, h > 0 else {
+                return .failure(.invalidRecording("area needs x, y, width and height, with a positive size"))
+            }
+            area = CGRect(x: values[0]!, y: values[1]!, width: w, height: h)
+        }
+        var display: CGDirectDisplayID?
+        if let raw = query["display"] {
+            guard let id = UInt32(raw), id != 0 else { return .failure(.invalidRecording("display")) }
+            display = CGDirectDisplayID(id)
+        }
+        guard display != nil || area != nil else { return .failure(.invalidRecording("name a window, a display or an area")) }
+        return .success(.display(display, area: area))
     }
 
     static func validatedImageURL(path rawPath: String) -> Result<URL, URLCommandError> {
