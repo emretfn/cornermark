@@ -46,6 +46,7 @@ final class AppCoordinator {
 
         recording.onSaved = { [unowned self] finished in Task { await recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
+        recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
         updates.closeEditors = { [unowned self] in closeAllEditors() }

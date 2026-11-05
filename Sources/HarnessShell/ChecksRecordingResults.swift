@@ -17,6 +17,8 @@ func recordingWorld(scale: Double = 2, frames: Int = 30) throws -> (World, () ->
                                   pacing: .scripted(frames: frames))
     }
     w.env.pointerSource = { ScriptedPointerSource(pacing: .fixed(origin: 0, count: 60)) }
+    w.env.inputSource = { ScriptedInputSource(capture: $0, pacing: .fixed(origin: 0, seconds: 10)) }
+    w.env.hasInputPermission = { true }
     return (w, { made })
 }
 

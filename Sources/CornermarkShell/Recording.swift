@@ -175,6 +175,7 @@ final class RecordingController {
     var countdownTick: TimeInterval = 1
     var onSaved: (FinishedRecording) -> Void = { _ in }
     var onFailed: (String) -> Void = { _ in }
+    var onNotice: (String) -> Void = { _ in }
     /// Called on every phase change and when the area becomes known.
     var onChange: () -> Void = {}
 
@@ -219,8 +220,17 @@ final class RecordingController {
         guard let request, let destination else { return }
         let options = request.preferences.options(for: request.style)
         let name = destination.location.lastPathComponent
+        let capture = request.preferences.inputCapture(for: request.style)
+        let inputAllowed = env.hasInputPermission()
+        let input = capture.isEmpty || !inputAllowed ? nil : env.inputSource(capture)
+        if request.preferences.showsInput, !inputAllowed {
+            Log.shell.error("recording input unavailable: Input Monitoring is not allowed, recording without clicks and keystrokes")
+            onNotice("Turn on Input Monitoring to show clicks and keys")
+        }
         // A finished video or GIF has its pointer in the picture, so nothing watches it.
-        let recorder = Recorder(source: source, output: destination.film, pointer: request.style == .editing ? env.pointerSource() : nil, quality: options.quality)
+        let recorder = Recorder(source: source, output: destination.film, pointer: request.style == .editing ? env.pointerSource() : nil,
+                                input: input, marks: request.preferences.marks(for: request.style), quality: options.quality)
+        let inputKind = input.map { $0 is ScriptedInputSource ? "scripted" : "live" } ?? "none"
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
             Task { @MainActor in self?.sourceEnded(error) }
@@ -248,6 +258,7 @@ final class RecordingController {
                 journalEntry = env.recordingJournal?.open(location: destination.location, format: destination.format,
                                                           kind: request.target.captureKind, area: recorder.pointArea)
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
+                Log.shell.notice("recording input source=\(inputKind, privacy: .public) clicks=\(capture.clicks, privacy: .public) keys=\(capture.keys?.rawValue ?? "off", privacy: .public) marksInPicture=\(recorder.marksInPicture, privacy: .public) failure=\(recorder.inputFailure.map(String.init(describing:)) ?? "none", privacy: .public) taps=\(LiveInputSource.tapsCreated, privacy: .public)")
                 Log.shell.notice("recording started project=\(name, privacy: .public) style=\(request.style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) hideNotifications=\(options.exclusion.hidesNotifications, privacy: .public) hideDesktopIcons=\(options.exclusion.hidesDesktopIcons, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
                 if stopRequested { await finish() }
@@ -316,6 +327,8 @@ final class RecordingController {
             if destination.format == .project {
                 var project = report.project
                 project.edits.cursor.isVisible = request.preferences.showCursor
+                project.edits.clicks = request.preferences.clicks
+                project.edits.keystrokes = request.preferences.keystrokes
                 try RecordingProjectFile.write(project, to: destination.location)
             }
             // A GIF's journal entry stays open until the GIF is written, so a crash while it is made is recovered at the next launch.
@@ -323,6 +336,8 @@ final class RecordingController {
             journalEntry = nil
             if destination.format != .gif, let entry { env.recordingJournal?.close(entry) }
             let rate = String(format: "%.3f", report.dropRate * 100)
+            let marked = recorder.markedFrames
+            Log.shell.notice("recording input finished clicks=\(report.clicks.count, privacy: .public) keys=\(report.keys.count, privacy: .public) markedFrames=\(marked.marked, privacy: .public) filledFrames=\(marked.filled, privacy: .public)")
             let seconds = String(format: "%.3f", report.duration)
             let name = destination.location.lastPathComponent, style = request.style, kind = request.target.captureKind
             let finished = FinishedRecording(

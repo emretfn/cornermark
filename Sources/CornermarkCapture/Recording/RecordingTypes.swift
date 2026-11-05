@@ -89,6 +89,9 @@ public struct RecordingReport: Equatable {
     public var area: CGRect = .zero
     /// The pointer on the video's timeline, so `t == 0` is the first frame. Empty when nothing watched the pointer.
     public var pointer: [PointerSample] = []
+    /// Clicks and key presses on the video's timeline. Empty when nothing watched them.
+    public var clicks: [ClickEvent] = []
+    public var keys: [KeyEvent] = []
     /// The stretches a pause left out, on the source clock in seconds after the first frame.
     public var pauses: [RecordingPause] = []
 
@@ -105,7 +108,7 @@ extension RecordingReport {
             source: .init(video: url.lastPathComponent, pixelWidth: format.width, pixelHeight: format.height,
                           pointWidth: area.width, pointHeight: area.height, fps: format.fps,
                           duration: duration + 1.0 / Double(format.fps)),
-            events: .init(pointer: pointer))
+            events: .init(pointer: pointer, clicks: clicks, keys: keys))
     }
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkCapture
 import Foundation
 @testable import CornermarkShell
 
@@ -12,7 +13,8 @@ let filming = ProcessInfo.processInfo.environment["CORNERMARK_RESULTS_FILM"]
 let editorFilming = ProcessInfo.processInfo.environment["CORNERMARK_EDITOR_FILM"]
 let filmingControls = ProcessInfo.processInfo.environment["CORNERMARK_CONTROLS_FILM"]
 let filmingGifs = ProcessInfo.processInfo.environment["CORNERMARK_GIF_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && editorFilming == nil && filmingControls == nil && filmingGifs == nil ? 180 : 900)) {
+let filmingInput = ProcessInfo.processInfo.environment["CORNERMARK_INPUT_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && editorFilming == nil && filmingControls == nil && filmingGifs == nil && filmingInput == nil ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -31,6 +33,11 @@ Task { @MainActor in
     if let filmingControls {
         let recovery = ProcessInfo.processInfo.environment["CORNERMARK_RECOVERY_EVIDENCE"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         let ok = await ControlsFilm.run(out: URL(fileURLWithPath: filmingControls, isDirectory: true), recovery: recovery)
+        print(ok ? "FILM DONE" : "FILM FAILED")
+        exit(ok ? 0 : 1)
+    }
+    if let filmingInput {
+        let ok = await InputFilm.run(out: URL(fileURLWithPath: filmingInput, isDirectory: true))
         print(ok ? "FILM DONE" : "FILM FAILED")
         exit(ok ? 0 : 1)
     }
@@ -71,6 +78,7 @@ Task { @MainActor in
         try await checkRecordingControls()
         try await checkRecordingRecovery()
         try await checkGifRecording()
+        try await checkRecordingInput()
         try await checkVideoEditor()
         try await takeSnapshots()
     } catch {
@@ -81,6 +89,7 @@ Task { @MainActor in
     check(standardKeysBefore == standardKeysAfter, "standard UserDefaults gained no cornermark keys")
     check(nothingOnScreen(), "at the end no window was ever visible and the app never became active")
     check(NSApp.activationPolicy() == .prohibited, "activation policy still .prohibited")
+    check(LiveInputSource.tapsCreated == 0, "no event tap was created in this run", detail: "\(LiveInputSource.tapsCreated)")
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)
