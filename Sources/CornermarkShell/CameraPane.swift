@@ -86,7 +86,7 @@ final class CameraPane: SettingsPane {
                          control: show),
             ]),
             .init("Bubble", rows: [
-                Form.row(title: "Shape", control: shape),
+                Form.row(title: "Shape", control: Form.hstack([shape])),
                 Form.row(title: "Size", control: size),
                 Form.row(title: "Position", caption: Form.caption("You can also drag the bubble to another corner while recording."), control: corner),
                 Form.row(title: "Mirror camera", caption: Form.caption("Shows you the way a mirror does. Turn it off to make text behind you readable."), control: mirror),
