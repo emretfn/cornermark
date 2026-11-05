@@ -80,7 +80,7 @@ enum VideoZoomFilm {
     }
 
     static func z3(_ f: Film, _ s: EditorStage) async throws {
-        f.title = "Z3  A zoom's right-click menu: Level, Apply Level to All Zooms, Mode, Split at Playhead, Duplicate, Remove, Remove All Zooms."
+        f.title = "Z3  A zoom's right-click menu: Level, Apply Level to All, Mode, Split at Playhead, Duplicate, Remove Zoom, Remove All Zooms."
         let (editor, hand, x) = try await open(f, s)
         editor.addZoom(from: 1, to: 4)
         if let b = editor.addZoom(from: 5, to: 6.5) { editor.setZoomScale(1.5, of: b.id) }
@@ -100,14 +100,14 @@ enum VideoZoomFilm {
             f.hold(2, note)
         }
         await step(["Level", "300%"], "Level 300%: the zoom reads 300%.", x: at)
-        await step(["Apply Level to All Zooms"], "Apply Level to All Zooms: both read 300%.", x: at)
+        await step(["Apply Level to All"], "Apply Level to All: both read 300%.", x: at)
         await step(["Mode", "Manual"], "Mode: Manual. The panel shows it too.", x: at)
         editor.seek(to: 2.5)
         await s.settle(editor)
         f.hold(1, "Playhead at 0:02.50")
         await step(["Split at Playhead"], "Split at Playhead: two zooms meet at 0:02.50, both 300%, Manual.", x: at)
         await step(["Duplicate"], "Duplicate: a copy of the same length in the first gap that holds it.", x: hand.x(1.5))
-        await step(["Remove"], "Remove: that zoom is gone.", x: hand.x(3))
+        await step(["Remove Zoom"], "Remove Zoom: that zoom is gone.", x: hand.x(3))
         await step(["Remove All Zooms"], "Remove All Zooms: the lane is empty.", x: hand.x(1.5))
         Synth.key(editor.window!, 6, "z", modifiers: .command)
         await s.settle(editor)
@@ -162,7 +162,10 @@ enum VideoZoomFilm {
         x.chart = true
         await s.settle(editor)
         f.hold(1.6, "One zoom, 1.5 s to 4.5 s at 200%. The chart is the camera's scale over time, drawn by the harness from frameState.")
+        editor.togglePlayback()
         await s.play(editor, seconds: 4.4, note: "Playing at the recording's speed.")
+        editor.togglePlayback()
+        await s.settle(editor)
         f.hold(1, "Back at 100%.")
         f.status = { [unowned editor, unowned s] in s.cameraText(editor) }
         for (from, label) in [(1.5, "in"), (4.5 - ZoomCurve.duration, "out")] {
@@ -190,7 +193,10 @@ enum VideoZoomFilm {
         x.chart = true
         await s.settle(editor)
         f.hold(2, "Zooms at 1.0-3.0 s (200%) and 3.8-6.2 s (300%), 0.8 s apart.")
+        editor.togglePlayback()
         await s.play(editor, seconds: 6.3, note: "Playing: in to 200%, it holds across the gap, then on to 300% and out.")
+        editor.togglePlayback()
+        await s.settle(editor)
         f.hold(1.6, "The camera never went back to 100% between the two.")
         let second = editor.state.project.edits.zooms[1].id
         let lane = ZoomLane(editor.state.project.edits.zooms, duration: editor.state.transport.duration)
@@ -203,7 +209,10 @@ enum VideoZoomFilm {
         editor.seek(to: 0.5)
         await s.settle(editor)
         f.hold(2, "Moved the second zoom to 5.0 s: now 2.0 s apart, more than 1.36 s.")
+        editor.togglePlayback()
         await s.play(editor, seconds: 7.1, note: "Playing: each zoom now returns to 100% on its own.")
+        editor.togglePlayback()
+        await s.settle(editor)
         f.dark = true
         f.refresh()
         f.hold(2, "The same in Dark appearance.")
