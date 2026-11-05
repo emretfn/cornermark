@@ -58,6 +58,8 @@ final class AppEnvironment {
     var frameSource: (RecordingTarget, RecordingOptions) throws -> FrameSource = { _, _ in throw RecordingRefusal.unavailable }
     /// Where the pointer comes from during a recording. Nil means nothing watches it. A scripted instance replays a path and never reads the real pointer.
     var pointerSource: () -> PointerSource? = { nil }
+    var inputSource: (InputCapture) -> InputSource? = { _ in nil }
+    var hasInputPermission: () -> Bool = { false }
     /// The window a scripted instance films. Nil in a normal instance.
     var recordingTestWindow: RecordingTestWindowHosting?
     /// Where recordings in progress are noted, so one cut off by a crash is finished at the next launch. Nil keeps no notes.

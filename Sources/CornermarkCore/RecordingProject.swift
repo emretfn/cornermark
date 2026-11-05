@@ -66,32 +66,47 @@ public struct RecordingProject: Codable, Equatable, Sendable {
     public struct Events: Codable, Equatable, Sendable {
         /// Sorted by `t`.
         public var pointer: [PointerSample]
+        public var clicks: [ClickEvent]
+        public var keys: [KeyEvent]
 
-        public init(pointer: [PointerSample] = []) { self.pointer = pointer.sorted { $0.t < $1.t } }
+        public init(pointer: [PointerSample] = [], clicks: [ClickEvent] = [], keys: [KeyEvent] = []) {
+            self.pointer = pointer.sorted { $0.t < $1.t }
+            self.clicks = clicks.sorted { $0.t < $1.t }
+            self.keys = keys.sorted { $0.t < $1.t }
+        }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
-            let samples = try c.decodeIfPresent([Lossy<PointerSample>].self, forKey: .pointer) ?? []
-            pointer = samples.compactMap(\.value).sorted { $0.t < $1.t }
+            func lossy<T: Decodable>(_ key: Keys) -> [T] { ((try? c.decodeIfPresent([Lossy<T>].self, forKey: key)) ?? nil)?.compactMap(\.value) ?? [] }
+            pointer = (lossy(.pointer) as [PointerSample]).sorted { $0.t < $1.t }
+            clicks = (lossy(.clicks) as [ClickEvent]).sorted { $0.t < $1.t }
+            keys = (lossy(.keys) as [KeyEvent]).sorted { $0.t < $1.t }
         }
-        private enum Keys: String, CodingKey { case pointer }
+        private enum Keys: String, CodingKey { case pointer, clicks, keys }
     }
 
     /// What the viewer chose, applied when a frame is drawn.
     public struct Edits: Codable, Equatable, Sendable {
         public var cursor: CursorSettings
+        public var clicks: ClickHighlight
+        public var keystrokes: KeystrokeDisplay
         /// What the finished video keeps of the recording, in order. A project read from a file always has at least one;
         /// one written before clips existed keeps the whole recording.
         public var clips: [Clip]
 
-        public init(cursor: CursorSettings = CursorSettings(), clips: [Clip] = []) { self.cursor = cursor; self.clips = clips }
+        public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
+                    clips: [Clip] = []) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips
+        }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             cursor = try c.decodeIfPresent(CursorSettings.self, forKey: .cursor) ?? CursorSettings()
+            clicks = (try? c.decodeIfPresent(ClickHighlight.self, forKey: .clicks)) ?? ClickHighlight()
+            keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
         }
-        private enum Keys: String, CodingKey { case cursor, clips }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips }
     }
 
     public var version: Int

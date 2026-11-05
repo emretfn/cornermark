@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCapture
+import CornermarkCore
 import CornermarkDesign
 
 @MainActor
@@ -264,6 +265,20 @@ final class RecordingPane: SettingsPane {
     private let dim = Form.checkbox("Dim outside the area", id: "recording.dim")
     private let desktopIcons = Form.checkbox("Keep desktop icons out of the video", id: "recording.desktopIcons")
     private let notifications = Form.checkbox("Keep notifications out of the video", id: "recording.notifications")
+    private let inputStatus = NSTextField.label("", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
+    private let inputDot = StatusDot()
+    private let inputNote = Form.caption("")
+    private let inputOpen = Button(title: "Open System Settings", variant: .secondary, size: .small)
+    private let clicks = Form.checkbox("Highlight clicks", id: "recording.clicks")
+    private let clickColor = Form.popup(ClickHighlight.Color.allCases.map(\.title), id: "recording.clickColor")
+    private let clickStyle = Form.popup(ClickHighlight.Style.allCases.map(\.title), id: "recording.clickStyle")
+    private let clickSize = Form.popup(ClickHighlight.Size.allCases.map(\.title), id: "recording.clickSize")
+    private let clickAnimation = Form.checkbox("Animate clicks", id: "recording.clickAnimation")
+    private let keys = Form.checkbox("Show keystrokes", id: "recording.keys")
+    private let keyMode = Form.popup(KeystrokeDisplay.Keys.allCases.map(\.title), id: "recording.keyMode")
+    private let keyPosition = Form.popup(KeystrokeDisplay.Position.allCases.map(\.title), id: "recording.keyPosition")
+    private let keySize = Form.popup(KeystrokeDisplay.Size.allCases.map(\.title), id: "recording.keySize")
+    private let keyStyle = Form.popup(KeystrokeDisplay.Theme.allCases.map(\.title), id: "recording.keyStyle")
 
     override func buildForm() -> FormPage {
         fps.onAction { [unowned self] c in
@@ -291,6 +306,7 @@ final class RecordingPane: SettingsPane {
         dim.onAction { [unowned self] c in change { $0.recording.dimOutside = (c as! NSButton).state == .on } }
         desktopIcons.onAction { [unowned self] c in change { $0.recording.hideDesktopIcons = (c as! NSButton).state == .on } }
         notifications.onAction { [unowned self] c in change { $0.recording.hideNotifications = (c as! NSButton).state == .on } }
+        buildInputControls()
         return Form.page(title: paneTitle, groups: [
             .init("Video", rows: [
                 Form.row(title: "Frame rate", control: fps),
@@ -308,6 +324,20 @@ final class RecordingPane: SettingsPane {
                 Form.row(title: "Keep desktop icons out of the video", caption: Form.caption("Finder windows are still recorded."), control: desktopIcons),
                 Form.row(title: "Keep notifications out of the video", caption: Form.caption("Notifications still appear on your screen."), control: notifications),
             ], footer: "The display stays awake while recording."),
+            .init("Clicks", rows: [
+                Form.row(title: "Highlight clicks", caption: Form.caption("Draws a ring where you click. Record for Editing keeps every click, so you can add rings later."),
+                         control: clicks),
+                Form.row(title: "Ring", control: Form.hstack([clickColor, clickStyle, clickSize], spacing: DS.Space.s6)),
+                Form.row(title: "Animate clicks", control: clickAnimation),
+            ]),
+            .init("Keystrokes", rows: [
+                Form.row(title: "Show keystrokes", caption: Form.caption("Keys typed in password fields are never shown or saved."), control: keys),
+                Form.row(title: "Keys", caption: Form.caption("Shortcuts only shows keys pressed with Command or Control."), control: keyMode),
+                Form.row(title: "Badge", control: Form.hstack([keyPosition, keySize, keyStyle], spacing: DS.Space.s6)),
+            ]),
+            .init(rows: [
+                Form.row(title: "Input Monitoring", caption: inputNote, control: Form.hstack([inputDot, inputStatus, inputOpen], spacing: DS.Space.s6)),
+            ]),
             .init("After recording", rows: [Form.row(title: "Show Quick Access overlay", control: quickAccess)]),
         ])
     }
@@ -324,7 +354,111 @@ final class RecordingPane: SettingsPane {
         dim.state = r.dimOutside ? .on : .off
         desktopIcons.state = r.hideDesktopIcons ? .on : .off
         notifications.state = r.hideNotifications ? .on : .off
+        updateInputControls(r)
     }
+
+    private func buildInputControls() {
+        inputStatus.setAccessibilityIdentifier("recording.inputPermission")
+        inputOpen.setAccessibilityIdentifier("recording.inputPermission.open")
+        inputOpen.onAction { [unowned self] _ in ctx.env.openURL(AppEnvironment.inputMonitoringPaneURL) }
+        for (popup, name) in [(clickColor, "Ring color"), (clickStyle, "Ring style"), (clickSize, "Ring size"), (keyMode, "Keys"),
+                              (keyPosition, "Badge position"), (keySize, "Badge size"), (keyStyle, "Badge style")] {
+            popup.setAccessibilityLabel(name)
+        }
+        for (i, color) in ClickHighlight.Color.allCases.enumerated() { clickColor.item(at: i)?.image = Self.swatch(color) }
+        func pick<T>(_ popup: NSPopUpButton, _ all: [T], _ set: @escaping (inout RecordingPreferences, T) -> Void) {
+            popup.onAction { [unowned self] c in
+                let value = all[(c as! NSPopUpButton).indexOfSelectedItem]
+                change { set(&$0.recording, value) }
+            }
+        }
+        clicks.onAction { [unowned self] c in change { $0.recording.clicks.isVisible = (c as! NSButton).state == .on } }
+        pick(clickColor, ClickHighlight.Color.allCases) { $0.clicks.color = $1 }
+        pick(clickStyle, ClickHighlight.Style.allCases) { $0.clicks.style = $1 }
+        pick(clickSize, ClickHighlight.Size.allCases) { $0.clicks.size = $1 }
+        clickAnimation.onAction { [unowned self] c in change { $0.recording.clicks.animates = (c as! NSButton).state == .on } }
+        keys.onAction { [unowned self] c in change { $0.recording.keystrokes.isVisible = (c as! NSButton).state == .on } }
+        pick(keyMode, KeystrokeDisplay.Keys.allCases) { $0.keystrokes.keys = $1 }
+        pick(keyPosition, KeystrokeDisplay.Position.allCases) { $0.keystrokes.position = $1 }
+        pick(keySize, KeystrokeDisplay.Size.allCases) { $0.keystrokes.size = $1 }
+        pick(keyStyle, KeystrokeDisplay.Theme.allCases) { $0.keystrokes.theme = $1 }
+    }
+
+    private func updateInputControls(_ r: RecordingPreferences) {
+        clicks.state = r.clicks.isVisible ? .on : .off
+        clickColor.selectItem(at: ClickHighlight.Color.allCases.firstIndex(of: r.clicks.color) ?? 0)
+        clickStyle.selectItem(at: ClickHighlight.Style.allCases.firstIndex(of: r.clicks.style) ?? 0)
+        clickSize.selectItem(at: ClickHighlight.Size.allCases.firstIndex(of: r.clicks.size) ?? 0)
+        clickAnimation.state = r.clicks.animates ? .on : .off
+        ([clickColor, clickStyle, clickSize, clickAnimation] as [NSControl]).forEach { $0.isEnabled = r.clicks.isVisible }
+        keys.state = r.keystrokes.isVisible ? .on : .off
+        keyMode.selectItem(at: KeystrokeDisplay.Keys.allCases.firstIndex(of: r.keystrokes.keys) ?? 0)
+        keyPosition.selectItem(at: KeystrokeDisplay.Position.allCases.firstIndex(of: r.keystrokes.position) ?? 0)
+        keySize.selectItem(at: KeystrokeDisplay.Size.allCases.firstIndex(of: r.keystrokes.size) ?? 0)
+        keyStyle.selectItem(at: KeystrokeDisplay.Theme.allCases.firstIndex(of: r.keystrokes.theme) ?? 0)
+        [keyMode, keyPosition, keySize, keyStyle].forEach { $0.isEnabled = r.keystrokes.isVisible }
+        let allowed = ctx.env.hasInputPermission()
+        inputStatus.stringValue = allowed ? "Allowed" : "Not allowed"
+        let blocking = !allowed && r.showsInput
+        inputStatus.textColor = allowed ? DS.Color.successText : blocking ? DS.Color.dangerText : DS.Color.textSecondary
+        inputDot.color = inputStatus.textColor ?? DS.Color.textSecondary
+        inputNote.textColor = blocking ? DS.Color.dangerText : DS.Color.textSecondary
+        inputNote.stringValue = allowed
+            ? "Cornermark sees clicks and keys only while it records."
+            : blocking
+            ? "Clicks and keystrokes are not recorded. Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then quit and open Cornermark again."
+            : "Clicks and keystrokes need it. Recording works without it."
+        inputOpen.variant = blocking ? .primary : .secondary
+        inputOpen.isHidden = allowed
+    }
+
+    private static func swatch(_ color: ClickHighlight.Color) -> NSImage {
+        let fill = InputOverlayInk.design.click(color)
+        return NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.setFillColor(fill)
+            ctx.fillEllipse(in: rect.insetBy(dx: 1, dy: 1))
+            ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.25))
+            ctx.setLineWidth(1)
+            ctx.strokeEllipse(in: rect.insetBy(dx: 1.5, dy: 1.5))
+            return true
+        }
+    }
+}
+
+extension ClickHighlight.Color {
+    var title: String { rawValue.capitalized }
+}
+
+extension ClickHighlight.Style {
+    var title: String { rawValue.capitalized }
+}
+
+extension ClickHighlight.Size {
+    var title: String { rawValue.capitalized }
+}
+
+extension KeystrokeDisplay.Keys {
+    var title: String { self == .all ? "All keys" : "Shortcuts only" }
+}
+
+extension KeystrokeDisplay.Position {
+    var title: String {
+        switch self {
+        case .bottomCenter: return "Bottom center"
+        case .bottomLeft: return "Bottom left"
+        case .bottomRight: return "Bottom right"
+        case .topCenter: return "Top center"
+        }
+    }
+}
+
+extension KeystrokeDisplay.Size {
+    var title: String { rawValue.capitalized }
+}
+
+extension KeystrokeDisplay.Theme {
+    var title: String { rawValue.capitalized }
 }
 
 /// A dot in a status colour. Drawn at draw time through `Glyph`, so the colour follows light and dark.

@@ -6,7 +6,13 @@ import CornermarkCore
 /// real window filmed by the real recorder. Input goes straight to the editor's views; nothing touches the system's mouse,
 /// keyboard or cursor, and the window never takes focus.
 extension VideoEditorWindowController {
-    public enum Scene: String { case e5 = "E5", e6 = "E6" }
+    public typealias Scene = @MainActor (VideoEditorWindowController, _ note: @escaping (String) -> Void) async -> Void
+
+    /// Scenes by name, as `record/test-window?editor=&scene=` names them. Another file adds its own.
+    public static var scenes: [String: Scene] = [
+        "E5": { editor, note in await Script(editor: editor, note: note).e5() },
+        "E6": { editor, note in await Script(editor: editor, note: note).e6() },
+    ]
 
     /// Orders the window in behind every other window without making it key, and starts the clock that draws its frames.
     public func showBehind(at origin: CGPoint) {
@@ -19,16 +25,12 @@ extension VideoEditorWindowController {
     public func play(_ scene: Scene, note: @escaping (String) -> Void) async {
         timeline.showsResizeCursor = false
         defer { timeline.showsResizeCursor = true }
-        let script = Script(editor: self, note: note)
-        switch scene {
-        case .e5: await script.e5()
-        case .e6: await script.e6()
-        }
+        await scene(self, note)
     }
 }
 
 @MainActor
-private struct Script {
+struct Script {
     let editor: VideoEditorWindowController
     let note: (String) -> Void
     var timeline: TimelineView { editor.timeline }

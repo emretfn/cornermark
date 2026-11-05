@@ -46,6 +46,7 @@ final class AppCoordinator {
 
         recording.onSaved = { [unowned self] finished in Task { await recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
+        recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
         updates.closeEditors = { [unowned self] in closeAllEditors() }
@@ -202,7 +203,7 @@ final class AppCoordinator {
     /// runs, and stops the recording when the scene ends. Anywhere but a scripted debug instance the link is refused.
     private func filmVideoEditor(_ folder: URL, scene name: String) {
         #if DEBUG
-        guard let host = env.recordingTestWindow, let scene = VideoEditorWindowController.Scene(rawValue: name),
+        guard let host = env.recordingTestWindow, let scene = VideoEditorWindowController.scenes[name],
               let editor = openVideoEditor(folder), let window = editor.window else {
             return Log.shell.error("recording refused: no film of the video editor here, scene=\(name, privacy: .public)")
         }

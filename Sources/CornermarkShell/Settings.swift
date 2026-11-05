@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCapture
+import CornermarkCore
 import Foundation
 
 struct AfterCapture: OptionSet, Codable, Equatable {
@@ -66,6 +67,8 @@ struct RecordingPreferences: Codable, Equatable {
     var dimOutside = true
     var hideDesktopIcons = false
     var hideNotifications = true
+    var clicks = ClickHighlight()
+    var keystrokes = KeystrokeDisplay()
 
     init() {}
 
@@ -83,6 +86,8 @@ struct RecordingPreferences: Codable, Equatable {
         dimOutside = get(.dimOutside, d.dimOutside)
         hideDesktopIcons = get(.hideDesktopIcons, d.hideDesktopIcons)
         hideNotifications = get(.hideNotifications, d.hideNotifications)
+        clicks = get(.clicks, d.clicks)
+        keystrokes = get(.keystrokes, d.keystrokes)
     }
 
     /// A frame rate that is not offered becomes the nearest one that is.
@@ -97,6 +102,17 @@ struct RecordingPreferences: Codable, Equatable {
         RecordingOptions(fps: fps, showsCursor: style != .editing && showCursor, quality: quality, density: density, limit: limit,
                          exclusion: ContentExclusion(hidesNotifications: hideNotifications, hidesDesktopIcons: hideDesktopIcons))
     }
+
+    /// Keys are watched only when shown, because typed text can be private. A project keeps every click so rings can be added later.
+    func inputCapture(for style: RecordingStyle) -> InputCapture {
+        InputCapture(clicks: style == .editing || clicks.isVisible, keys: keystrokes.isVisible ? keystrokes.keys : nil)
+    }
+
+    func marks(for style: RecordingStyle) -> InputMarks? {
+        style == .editing ? nil : InputMarks(clicks: clicks, keystrokes: keystrokes)
+    }
+
+    var showsInput: Bool { clicks.isVisible || keystrokes.isVisible }
 }
 
 /// Everything the user can configure, persisted as one JSON value.
