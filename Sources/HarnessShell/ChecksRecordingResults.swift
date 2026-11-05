@@ -162,7 +162,7 @@ func checkRecordingResults() async throws {
     check(project.video?.format == .project && qc.overlay.stack.first?.record.id == project.id && qc.overlay.stack.count == 2,
           "Record for Editing gets its own card on top of the stack")
     if let pcard = qc.overlay.card(forRecord: project.id), let pview = qc.overlay.cardView(for: pcard) {
-        check(click("card.play", in: pview) && q.opened.last?.lastPathComponent == RecordingProjectFile.videoName, "Play on a project opens its screen video")
+        check(pview.buttons[.play] == nil && pview.buttons[.edit] != nil, "a project's card offers Edit instead of Play")
         check(click("card.reveal", in: pview) && q.revealed.last == project.video!.location, "Reveal in Finder shows the project folder")
     }
 
@@ -193,7 +193,7 @@ func checkRecordingResults() async throws {
         check(iv.title.hasPrefix("Recording") && iv.duration == "0:00", "a recording's item reads Recording and carries its length", detail: "\(iv.title) \(iv.duration ?? "nil")")
     } else { check(false, "a recording item is shown") }
     h.select(recordIDs: [video.id])
-    check(h.actionButtons["edit"]?.isEnabled == false && h.actionButtons["copy"]?.isEnabled == true, "Edit is off for a recording, Copy is on")
+    check(h.actionButtons["edit"]?.isEnabled == false && h.actionButtons["copy"]?.isEnabled == true, "Edit is off for a plain video, Copy is on")
     q.pasteboard.clearContents()
     h.copySelected()
     check((q.pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL]) == [video.video!.file], "History Copy copies the video file")

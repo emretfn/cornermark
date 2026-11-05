@@ -10,6 +10,7 @@ extension CardAction {
         case .pin: return "pin"
         case .ocr: return "text.viewfinder"
         case .play: return "play.fill"
+        case .edit: return "slider.horizontal.3"
         case .reveal: return "folder"
         case .close: return "xmark"
         }
@@ -23,6 +24,7 @@ extension CardAction {
         case .pin: return "Pin to Screen"
         case .ocr: return "Copy Text (OCR)"
         case .play: return "Play"
+        case .edit: return "Edit"
         case .reveal: return "Reveal in Finder"
         case .close: return "Close"
         }
