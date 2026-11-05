@@ -18,12 +18,17 @@ let filmingControls = ProcessInfo.processInfo.environment["CORNERMARK_CONTROLS_F
 let filmingGifs = ProcessInfo.processInfo.environment["CORNERMARK_GIF_FILM"]
 let filmingInput = ProcessInfo.processInfo.environment["CORNERMARK_INPUT_FILM"]
 let trimFilming = ProcessInfo.processInfo.environment["CORNERMARK_TRIM_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming].allSatisfy { $0 == nil } ? 180 : 900)) {
+let cursorFilming = ProcessInfo.processInfo.environment["CORNERMARK_CURSOR_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, cursorFilming].allSatisfy { $0 == nil } ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let cursorFilming {
+        let ok = await CursorFilm.run(out: URL(fileURLWithPath: cursorFilming, isDirectory: true))
+        filmDone(ok)
+    }
     if let trimFilming {
         let ok = await VideoTrimFilm.run(out: URL(fileURLWithPath: trimFilming, isDirectory: true))
         filmDone(ok)
