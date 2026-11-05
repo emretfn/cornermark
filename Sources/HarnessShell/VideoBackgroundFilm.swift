@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCore
+import CornermarkDesign
 @testable import CornermarkVideoEditor
 @testable import CornermarkShell
 
@@ -82,6 +83,11 @@ enum VideoBackgroundFilm {
         editor.redo()
         await s.settle(editor)
         f.hold(1.2, "Edit > Redo.")
+        f.dark = true
+        f.refresh()
+        f.hold(2, "The same settings in Dark appearance.")
+        f.dark = false
+        f.refresh()
         await s.press(editor.view(identifier: "video.export") as! NSButton, in: editor, note: "Export")
         let plan = ExportPlan(project: editor.state.project, settings: ExportSettings(), video: editor.videoURL)
         let source = editor.state.project.source
@@ -119,7 +125,14 @@ enum VideoBackgroundFilm {
 
     private static func pick(_ id: String, _ f: Film, _ s: EditorStage, _ editor: VideoEditorWindowController, _ note: String) async {
         guard let tile = editor.view(identifier: id) as? NSButton else { return f.failures.append("no \(id)") }
-        await s.press(tile, in: editor, note: note)
+        // The fills scroll under the fixed frame settings, so the tile is brought into view the way a viewer would scroll to it.
+        editor.window?.contentView?.layoutSubtreeIfNeeded()
+        if let clip = tile.enclosingScrollView?.contentView, !clip.bounds.contains(tile.convert(tile.bounds, to: clip)) {
+            tile.scrollToVisible(tile.bounds.insetBy(dx: 0, dy: -DS.Space.s16))
+            await s.settle(editor)
+            f.hold(0.5, "Scrolling the fills")
+        }
+        await s.press(tile, in: editor, note: tile.accessibilityLabel() ?? id)
         f.hold(1.6, note)
     }
 
