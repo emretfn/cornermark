@@ -633,6 +633,7 @@ private func checkVideoEditorCursor(_ w: World, folder: URL) async throws {
     show?.performClick(nil)
     check(!editor.state.project.edits.cursor.isVisible && [size, style, motion, idle, typing].allSatisfy { ($0 as? NSControl)?.isEnabled == false },
           "with Show cursor off the other settings are off too")
+    snapshotEditor(editor, name: "video-editor-cursor-off")
     show?.performClick(nil)
 
     let steps = editor.state.project.edits
