@@ -34,7 +34,8 @@ final class ZoomLaneView: NSView {
         case hovering(x: CGFloat)
         case adding(from: CGFloat, to: CGFloat)
         case moving(UUID, grab: Double, downX: CGFloat, moved: Bool)
-        case resizing(UUID, ZoomLane.Edge)
+        /// `offset` is the edge's time less the pressed time, so the edge stays where it was under the pointer.
+        case resizing(UUID, ZoomLane.Edge, offset: Double, moved: Bool)
     }
 
     private enum Hit: Equatable {
@@ -79,6 +80,12 @@ final class ZoomLaneView: NSView {
         NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
+    /// The pointer rests on empty lane where a zoom fits, so the lane shows where a click puts one and says what a click or drag does.
+    var showsHint: Bool {
+        guard case .hovering(let x) = interaction, case .empty = hit(CGPoint(x: x, y: bounds.midY)) else { return false }
+        return clickGhost(at: x) != nil
+    }
+
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -87,7 +94,7 @@ final class ZoomLaneView: NSView {
         case .adding(let a, let b):
             drawGhost(CGRect(x: min(a, b), y: 2, width: max(abs(b - a), 2), height: bounds.height - 4), hint: false)
         case .hovering(let x):
-            if case .empty = hit(CGPoint(x: x, y: bounds.midY)), let ghost = clickGhost(at: x) { drawGhost(ghost, hint: true) }
+            if showsHint, let ghost = clickGhost(at: x) { drawGhost(ghost, hint: true) }
         default: break
         }
     }
@@ -205,8 +212,8 @@ final class ZoomLaneView: NSView {
             interaction = .moving(id, grab: time(p.x) - zoom.start, downX: p.x, moved: false)
         case .edge(let id, let edge):
             onSelect(id)
-            interaction = .resizing(id, edge)
-            onGesture(.resize(id, edge, to: time(p.x)), .began)
+            guard let zoom = zooms.first(where: { $0.id == id }) else { return }
+            interaction = .resizing(id, edge, offset: (edge == .start ? zoom.start : zoom.end) - time(p.x), moved: false)
         }
     }
 
@@ -219,8 +226,9 @@ final class ZoomLaneView: NSView {
             guard moved || abs(p.x - downX) >= Self.dragSlop else { return }
             interaction = .moving(id, grab: grab, downX: downX, moved: true)
             onGesture(.move(id, start: time(p.x) - grab), moved ? .moved : .began)
-        case .resizing(let id, let edge):
-            onGesture(.resize(id, edge, to: time(p.x)), .moved)
+        case .resizing(let id, let edge, let offset, let moved):
+            interaction = .resizing(id, edge, offset: offset, moved: true)
+            onGesture(.resize(id, edge, to: time(p.x) + offset), moved ? .moved : .began)
         default: break
         }
     }
@@ -234,8 +242,8 @@ final class ZoomLaneView: NSView {
             abs(to - from) < Self.dragSlop ? onAdd(time(from), nil) : onAdd(time(from), time(to))
         case .moving(let id, let grab, _, true):
             onGesture(.move(id, start: time(p.x) - grab), .ended)
-        case .resizing(let id, let edge):
-            onGesture(.resize(id, edge, to: time(p.x)), .ended)
+        case .resizing(let id, let edge, let offset, true):
+            onGesture(.resize(id, edge, to: time(p.x) + offset), .ended)
         default: break
         }
     }

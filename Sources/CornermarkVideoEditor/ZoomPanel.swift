@@ -93,7 +93,7 @@ final class ZoomPanel: NSStackView {
         setCustomSpacing(DS.Space.s4, after: modeRow)
         setCustomSpacing(DS.Space.s16, after: modeNote)
         for v in [levelRow, modeRow, modeNote] { v.widthAnchor.constraint(equalTo: widthAnchor).isActive = true }
-        presets.leadingAnchor.constraint(equalTo: leadingAnchor, constant: InspectorView.labelColumn + DS.Space.s8).isActive = true
+        // Five presets need the panel's whole width, so they sit under the level's row rather than in its control column.
         presets.setContentCompressionResistancePriority(.required, for: .horizontal)
     }
 
