@@ -92,9 +92,7 @@ func checkURLScheme() async throws {
 @MainActor
 func checkSettingsModel() async throws {
     section("settings model")
-    let suite = "local.emretufan.cornermark.harness.settings.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = MemoryDefaults()
 
     let store = SettingsStore(defaults: defaults)
     check(store.value == Settings(), "a fresh store holds the defaults")

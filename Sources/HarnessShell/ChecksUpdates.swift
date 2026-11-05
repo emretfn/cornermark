@@ -452,9 +452,7 @@ private func checkUpdateSettings() throws {
     let junk = try JSONDecoder().decode(Settings.self, from: Data(#"{"checkForUpdatesAutomatically": "no"}"#.utf8))
     check(junk.checkForUpdatesAutomatically, "a wrongly typed value falls back to on")
 
-    let suite = "local.emretufan.cornermark.harness.updates.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = MemoryDefaults()
     let store = SettingsStore(defaults: defaults)
     store.update { $0.checkForUpdatesAutomatically = false }
     check(!SettingsStore(defaults: defaults).value.checkForUpdatesAutomatically, "turning it off survives a relaunch")

@@ -226,6 +226,18 @@ enum Pix {
     }
 }
 
+/// Keeps a run's settings in memory, because a named suite leaves a file in ~/Library/Preferences for good.
+final class MemoryDefaults: UserDefaults {
+    private var values: [String: Any] = [:]
+
+    init() { super.init(suiteName: nil)! }
+
+    override func object(forKey key: String) -> Any? { values[key] }
+    override func set(_ value: Any?, forKey key: String) { values[key] = value }
+    override func removeObject(forKey key: String) { values[key] = nil }
+    override func dictionaryRepresentation() -> [String: Any] { values }
+}
+
 @MainActor
 final class World {
     let root: URL
@@ -261,7 +273,7 @@ final class World {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         suite = "local.emretufan.cornermark.harness.\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suite)!
+        defaults = MemoryDefaults()
         pasteboard = NSPasteboard(name: NSPasteboard.Name(suite))
         display = Pix.fixtureDisplay()
         source = FixtureScreenSource(displays: [display])
@@ -303,7 +315,6 @@ final class World {
         coordinator.pins.closeAll()
         coordinator.overlay.closeAll()
         pasteboard.releaseGlobally()
-        defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
     }
 

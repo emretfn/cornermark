@@ -45,8 +45,9 @@ final class Rig {
     init(desktop: CGImage? = nil) throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkReadme-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        suite = "local.emretufan.cornermark.readme.\(UUID().uuidString)"
+        suite = "local.emretufan.cornermark.readme"
         defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
         pasteboard = NSPasteboard(name: NSPasteboard.Name(suite))
         let frame = CGRect(origin: .zero, size: SampleScene.desktopSize)
         let display = DisplaySnapshot(displayID: 1, frame: frame, scale: 2, image: desktop ?? Wallpaper.image(width: 2880, height: 1800))
