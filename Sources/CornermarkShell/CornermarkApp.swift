@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCapture
+import CornermarkDesign
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -56,14 +57,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseDown, .rightMouseDown])
             panel.onOpenChange = { [weak button] open in button?.highlight(open) }
             // An image-only variable-length item is 10pt wider than the square one, so the length follows the label.
-            let apply: (UpdateState) -> Void = { [weak item] state in
+            let apply: () -> Void = { [weak item, unowned coordinator] in
                 guard let item, let button = item.button else { return }
-                applyStatusLabel(state, to: button)
-                item.length = statusTitle(state) == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+                let recording = coordinator.controls.status
+                applyStatusLabel(coordinator.updates.state, recording: recording, to: button)
+                item.length = statusTitle(coordinator.updates.state, recording: recording) == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            }
+            apply()
+            coordinator.updates.onStateChange = { _ in
+                apply()
                 panel.refresh()
             }
-            apply(coordinator.updates.state)
-            coordinator.updates.onStateChange = apply
+            coordinator.controls.onStatus = { _ in apply() }
         }
         statusItem = item
         menuPanel = panel
@@ -127,17 +132,32 @@ public enum CornermarkApp {
     }
 }
 
-/// The text next to the menu bar icon: the development badge and the update label, when there are any.
-func statusTitle(_ state: UpdateState) -> String? {
-    let parts = [AppVariant.current.statusBadge, state.statusLabel].compactMap { $0 }
+/// The text next to the menu bar icon: the development badge, then the length of a recording under way or the update label.
+func statusTitle(_ state: UpdateState, recording: RecordingStatus? = nil) -> String? {
+    let running = recording.map { $0.phase.isRunning } ?? false
+    let parts = [AppVariant.current.statusBadge, running ? recording?.timeText : state.statusLabel].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " ")
 }
 
-/// Shows the update label next to the icon, or the bare icon when there is none.
+/// While a recording runs, the icon is the danger-coloured record symbol, or the pause symbol, and the title is its length.
+/// Otherwise the icon is the viewfinder, with the update label when there is one.
 @MainActor
-func applyStatusLabel(_ state: UpdateState, to button: NSStatusBarButton) {
-    let label = statusTitle(state)
+func applyStatusLabel(_ state: UpdateState, recording: RecordingStatus? = nil, to button: NSStatusBarButton) {
+    let label = statusTitle(state, recording: recording)
     button.title = label ?? ""
+    button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
     button.imagePosition = label == nil ? .imageOnly : .imageLeading
-    button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : "\(AppVariant.current.name), update available")
+    switch recording?.phase {
+    case .recording?:
+        let red = NSImage.SymbolConfiguration(paletteColors: [DS.Color.dangerText])
+        button.image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(red)
+        button.setAccessibilityLabel("\(AppVariant.current.name), \(recording!.spoken)")
+    case .paused?:
+        button.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)
+        button.image?.isTemplate = true
+        button.setAccessibilityLabel("\(AppVariant.current.name), \(recording!.spoken)")
+    default:
+        button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: AppVariant.current.name)
+        button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : "\(AppVariant.current.name), update available")
+    }
 }

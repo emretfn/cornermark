@@ -60,6 +60,8 @@ final class AppEnvironment {
     var pointerSource: () -> PointerSource? = { nil }
     /// The window a scripted instance films. Nil in a normal instance.
     var recordingTestWindow: RecordingTestWindowHosting?
+    /// Where recordings in progress are noted, so one cut off by a crash is finished at the next launch. Nil keeps no notes.
+    var recordingJournal: RecordingJournal?
 
     var isOnscreen: Bool { presentation == .onscreen }
 

@@ -9,9 +9,9 @@ SCHEME="cornermark-dev"
 SUBSYSTEM="local.emretufan.cornermark"
 
 # Each ActionTable urlPath belongs to exactly one list. doctor.sh fails on a path in neither.
-SAFE_LINKS="history settings whats-new check-for-updates restore-overlay hide-overlays open record record/stop record/test-window"
+SAFE_LINKS="history settings whats-new check-for-updates restore-overlay hide-overlays open record record/stop record/test-window record/pause record/resume record/restart"
 # The links that start, end or prepare a recording. They may put the instance's own test window on screen and nothing else.
-RECORDING_LINKS="record record/stop record/test-window"
+RECORDING_LINKS="record record/stop record/test-window record/pause record/resume record/restart"
 REFUSED_LINKS="all-in-one capture-area capture-window capture-fullscreen previous-area scrolling ocr timer record-screen"
 
 die() { echo "$*" >&2; exit 1; }

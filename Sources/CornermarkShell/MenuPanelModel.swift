@@ -91,7 +91,7 @@ struct MenuPanelModel: Equatable {
         overlaysHidden: Bool,
         canRestoreOverlay: Bool,
         pins: [PinSummary],
-        isRecording: Bool = false,
+        recording: RecordingController.Phase = .idle,
         recent: [CaptureRecord],
         dateText: (Date) -> String = Self.dateText
     ) -> MenuPanelModel {
@@ -103,7 +103,7 @@ struct MenuPanelModel: Equatable {
             let key = settings.hotKey(for: spec.id)
             let spoken = key.map { ", " + $0.spokenString } ?? ""
             // While a recording runs, its tile stops it.
-            if spec.id == .recordScreen, isRecording {
+            if spec.id == .recordScreen, recording != .idle {
                 return Tile(item: .action(spec.id), symbol: "stop.circle", title: "Stop", shortcut: key?.displayString,
                             accessibilityLabel: "Stop Recording" + spoken)
             }
@@ -111,6 +111,14 @@ struct MenuPanelModel: Equatable {
                         accessibilityLabel: spec.title + spoken)
         }
         sections.append(.captures(tiles))
+
+        // The bar never takes the keyboard, so pausing and restarting by keyboard happens here.
+        if recording.isRunning {
+            let pause = ActionTable.spec(recording == .paused ? .resumeRecording : .pauseRecording)
+            let restart = ActionTable.spec(.restartRecording)
+            sections.append(.rows([Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
+                                   Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true)]))
+        }
 
         let newest = Array(recent.sorted { $0.createdAt > $1.createdAt }.prefix(recentLimit))
         if !newest.isEmpty {

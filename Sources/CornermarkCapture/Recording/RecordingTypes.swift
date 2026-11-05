@@ -46,8 +46,11 @@ public struct RecordingOptions: Equatable {
     public var quality: VideoQuality
     public var density: PixelDensity
     public var limit: SizeLimit
-    public init(fps: Int = 60, showsCursor: Bool = false, quality: VideoQuality = .high, density: PixelDensity = .retina, limit: SizeLimit = .none) {
-        self.fps = fps; self.showsCursor = showsCursor; self.quality = quality; self.density = density; self.limit = limit
+    /// What a display recording leaves out. A window recording films one window and nothing over it.
+    public var exclusion: ContentExclusion
+    public init(fps: Int = 60, showsCursor: Bool = false, quality: VideoQuality = .high, density: PixelDensity = .retina, limit: SizeLimit = .none,
+                exclusion: ContentExclusion = ContentExclusion()) {
+        self.fps = fps; self.showsCursor = showsCursor; self.quality = quality; self.density = density; self.limit = limit; self.exclusion = exclusion
     }
     public static let standard = RecordingOptions()
 }
@@ -86,6 +89,8 @@ public struct RecordingReport: Equatable {
     public var area: CGRect = .zero
     /// The pointer on the video's timeline, so `t == 0` is the first frame. Empty when nothing watched the pointer.
     public var pointer: [PointerSample] = []
+    /// The stretches a pause left out, on the source clock in seconds after the first frame.
+    public var pauses: [RecordingPause] = []
 
     public var dropRate: Double {
         let total = framesWritten + framesDropped
@@ -101,6 +106,22 @@ extension RecordingReport {
                           pointWidth: area.width, pointHeight: area.height, fps: format.fps,
                           duration: duration + 1.0 / Double(format.fps)),
             events: .init(pointer: pointer))
+    }
+}
+
+/// A stretch of the source clock that a pause kept out of the video. `from` is where the video stopped and `to` where it went on.
+public struct RecordingPause: Equatable, Sendable {
+    public var from: Double
+    public var to: Double
+    public init(from: Double, to: Double) { self.from = from; self.to = to }
+
+    /// Source times as video times: a time after a pause moves back by the pause's length, and a time inside one has no place in the video.
+    public static func videoTime(_ t: Double, skipping pauses: [RecordingPause]) -> Double? {
+        var shift = 0.0
+        for p in pauses {
+            if t >= p.to { shift += p.to - p.from } else if t > p.from { return nil }
+        }
+        return t - shift
     }
 }
 

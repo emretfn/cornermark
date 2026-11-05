@@ -59,6 +59,13 @@ struct RecordingPreferences: Codable, Equatable {
     /// Record Video draws the pointer into its picture. Record for Editing keeps it as a track either way, and this is whether it starts shown.
     var showCursor = true
     var showQuickAccess = true
+    static let countdownChoices = [0, 3, 5, 10]
+    /// Seconds counted down before the first frame. 0 starts at once, because recording is a frequent task.
+    var countdown = 0
+    /// Darkens everything outside an area while it records. The darkening is never in the video.
+    var dimOutside = true
+    var hideDesktopIcons = false
+    var hideNotifications = true
 
     init() {}
 
@@ -72,17 +79,23 @@ struct RecordingPreferences: Codable, Equatable {
         limit = get(.limit, d.limit)
         showCursor = get(.showCursor, d.showCursor)
         showQuickAccess = get(.showQuickAccess, d.showQuickAccess)
+        countdown = get(.countdown, d.countdown)
+        dimOutside = get(.dimOutside, d.dimOutside)
+        hideDesktopIcons = get(.hideDesktopIcons, d.hideDesktopIcons)
+        hideNotifications = get(.hideNotifications, d.hideNotifications)
     }
 
     /// A frame rate that is not offered becomes the nearest one that is.
     func normalized() -> RecordingPreferences {
         var p = self
         p.fps = Self.fpsChoices.min { abs($0 - fps) < abs($1 - fps) } ?? 60
+        p.countdown = Self.countdownChoices.min { abs($0 - countdown) < abs($1 - countdown) } ?? 0
         return p
     }
 
     func options(for style: RecordingStyle) -> RecordingOptions {
-        RecordingOptions(fps: fps, showsCursor: style == .video && showCursor, quality: quality, density: density, limit: limit)
+        RecordingOptions(fps: fps, showsCursor: style == .video && showCursor, quality: quality, density: density, limit: limit,
+                         exclusion: ContentExclusion(hidesNotifications: hideNotifications, hidesDesktopIcons: hideDesktopIcons))
     }
 }
 

@@ -134,12 +134,23 @@ private func checkMenuPanelModel() async throws {
     check(base.tiles.first { $0.item == .action(.area) }?.accessibilityLabel == "Capture Area, Control Shift 2", "and speaks it with the long title",
           detail: base.tiles.first { $0.item == .action(.area) }?.accessibilityLabel ?? "nil")
     check(base.tiles.compactMap(\.shortcut).count == 9, "all nine tiles show one by default")
-    let recording = MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], isRecording: true, recent: [])
+    let recording = MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .recording, recent: [])
     let stop = recording.tiles.last
     check(stop?.item == .action(.recordScreen) && stop?.title == "Stop" && stop?.symbol == "stop.circle" && stop?.shortcut == "\u{2303}\u{21E7}9",
           "while recording the Record tile turns into Stop with the same shortcut", detail: "\(String(describing: stop))")
     check(stop?.accessibilityLabel == "Stop Recording, Control Shift 9", "and says so", detail: stop?.accessibilityLabel ?? "nil")
     check(recording.tiles.dropLast() == base.tiles.dropLast(), "the other tiles stay as they are")
+    func controlRows(_ m: MenuPanelModel) -> [String] {
+        m.sections.flatMap { section -> [String] in
+            if case .rows(let rows) = section { return rows.filter { [.action(.pauseRecording), .action(.resumeRecording), .action(.restartRecording)].contains($0.item) }.map(\.title) }
+            return []
+        }
+    }
+    check(controlRows(recording) == ["Pause Recording", "Discard and Restart"], "while recording the panel offers Pause and Discard and Restart, a keyboard path to both", detail: "\(controlRows(recording))")
+    let paused = MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .paused, recent: [])
+    check(controlRows(paused) == ["Resume Recording", "Discard and Restart"], "while paused it offers Resume", detail: "\(controlRows(paused))")
+    check(controlRows(base).isEmpty && controlRows(MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .countingDown(2), recent: [])).isEmpty,
+          "with nothing filming yet there are no recording rows")
     var custom = Settings()
     custom.customShortcuts["area"] = HotKey(keyCode: 40, modifiers: UInt32(controlKey | optionKey))
     custom.disabledShortcuts.insert("window")
