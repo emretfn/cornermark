@@ -9,7 +9,7 @@ final class CountdownPanel: OverlayWindow {
     init(display: DisplayGeometry, host: OverlayHost) {
         let size = CountdownView.size
         let frame = CGRect(x: display.frame.midX - size.width / 2, y: display.frame.midY - size.height / 2, width: size.width, height: size.height)
-        view = CountdownView(frame: CGRect(origin: .zero, size: size))
+        view = CountdownView(frame: CGRect(origin: .zero, size: size), hint: "Esc to cancel")
         super.init(frame: frame)
         keyHost = host
         contentView = view
@@ -20,15 +20,24 @@ final class CountdownPanel: OverlayWindow {
     }
 }
 
-private final class CountdownView: NSView {
+/// Large digits on a card, with a short line under them. A capture's timer and a recording's countdown both use it.
+public final class CountdownView: NSView {
     /// The card plus the transparent margin that holds the `hud` elevation's shadow.
     static let inset = DS.Space.s32
     static let card = CGSize(width: 160, height: 160)
-    static let size = CGSize(width: card.width + 2 * inset, height: card.height + 2 * inset)
+    public static let size = CGSize(width: card.width + 2 * inset, height: card.height + 2 * inset)
 
-    var remaining = 0 { didSet { needsDisplay = true } }
+    public var remaining = 0 { didSet { needsDisplay = true } }
+    private let hint: String
 
-    override func draw(_ dirtyRect: NSRect) {
+    public init(frame: CGRect, hint: String) {
+        self.hint = hint
+        super.init(frame: frame)
+    }
+
+    required init?(coder: NSCoder) { fatalError("CountdownView is created in code") }
+
+    public override func draw(_ dirtyRect: NSRect) {
         let card = bounds.insetBy(dx: Self.inset, dy: Self.inset)
         DS.Elevation.hud.draw(NSBezierPath.continuous(card, radius: DS.Radius.xl), fill: DS.Color.bgHud)
 
@@ -36,7 +45,7 @@ private final class CountdownView: NSView {
         let hintBox = CGRect(x: card.minX, y: card.minY + DS.Space.s16, width: card.width, height: hint.lineHeight)
         let digit = DS.Text.numeral
         let digitBox = CGRect(x: card.minX, y: hintBox.maxY + DS.Space.s8, width: card.width, height: digit.lineHeight)
-        for (text, style, color, box) in [("\(remaining)", digit, DS.Color.textPrimary, digitBox), ("Esc to cancel", hint, DS.Color.textSecondary, hintBox)] {
+        for (text, style, color, box) in [("\(remaining)", digit, DS.Color.textPrimary, digitBox), (self.hint, hint, DS.Color.textSecondary, hintBox)] {
             var attributes = style.attributes(color: color)
             let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
             paragraph.alignment = .center

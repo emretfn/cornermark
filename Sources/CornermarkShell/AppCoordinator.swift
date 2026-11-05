@@ -16,6 +16,7 @@ final class AppCoordinator {
     let hud: HUD
     let updates: UpdateController
     let recording: RecordingController
+    let controls: RecordingControls
     let thumbnails = ThumbnailCache()
     private(set) var hotKeys: HotKeyManager?
     private(set) var history: HistoryWindowController?
@@ -39,6 +40,7 @@ final class AppCoordinator {
         hud = HUD(env: env)
         updates = UpdateController(env: env, hud: hud)
         recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
+        controls = RecordingControls(env: env, recording: recording)
 
         recording.onSaved = { [unowned self] finished in Task { await recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
@@ -68,6 +70,9 @@ final class AppCoordinator {
         case .openRecording(let folder): openVideoEditor(folder)
         case .startRecording(let target, let style): startRecording(target, style)
         case .stopRecording: recording.stop()
+        case .controlRecording(.pause): recording.pause()
+        case .controlRecording(.resume): recording.resume()
+        case .controlRecording(.restart): recording.restart()
         case .openRecordingTestWindow: openRecordingTestWindow()
         case .quit: env.quit()
         }
@@ -98,6 +103,23 @@ final class AppCoordinator {
     private func startRecording(_ target: RecordingTarget, _ style: RecordingStyle) {
         guard env.hasScreenPermission() else { return showPermissionWindow() }
         recording.start(target, style: style, preferences: settings.value.recording)
+    }
+
+    /// Finishes every recording a crash cut off, lists it, and says so. A recording already listed is not listed twice.
+    func recoverRecordings() async {
+        guard let journal = env.recordingJournal else { return }
+        for entry in journal.entries() {
+            do {
+                let finished = try await RecordingRecovery.finish(entry)
+                let listed = env.store.list().contains { $0.video?.location.standardizedFileURL.path == entry.location.standardizedFileURL.path }
+                if !listed { await recordingFinished(finished) }
+                Log.shell.notice("recording recovered location=\(entry.location.lastPathComponent, privacy: .public) format=\(entry.format.rawValue, privacy: .public) seconds=\(String(format: "%.3f", finished.video.duration), privacy: .public) size=\(Int(finished.pixelSize.width), privacy: .public)x\(Int(finished.pixelSize.height), privacy: .public) alreadyListed=\(listed, privacy: .public)")
+                hud.show("Recovered a recording that was cut off", symbol: "arrow.uturn.backward.circle.fill")
+            } catch {
+                Log.shell.error("recording not recovered location=\(entry.location.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
+            journal.close(entry)
+        }
     }
 
     /// Lists the recording in history and shows its card. The video stays where the recorder saved it.
@@ -449,6 +471,7 @@ final class AppCoordinator {
     }
 
     func startMaintenance() {
+        Task { await recoverRecordings() }
         announceUpdateIfNeeded()
         prune()
         checkForUpdatesIfWanted()

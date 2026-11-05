@@ -12,6 +12,9 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     private var stream: SCStream?
     private var prepared: (filter: SCContentFilter, config: SCStreamConfiguration, format: FrameFormat)?
     private var deliver: ((VideoFrame) -> Void)?
+    private var display: SCDisplay?
+    private var refresh: Task<Void, Never>?
+    private var plan: ContentExclusion.Plan?
     public private(set) var pointArea = CGRect.zero
 
     public init(target: RecordingTarget, options: RecordingOptions) {
@@ -32,6 +35,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         config.queueDepth = 6
         let filter: SCContentFilter
         let format: FrameFormat
+        var plan: ContentExclusion.Plan?
 
         switch target {
         case .window(let id):
@@ -43,8 +47,8 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
                                width: window.frame.width, height: window.frame.height)
         case .display(let requested, let area):
             guard let display = Self.display(requested, area: area, in: content) else { throw RecordingError.displayNotFound }
-            let ownPID = ProcessInfo.processInfo.processIdentifier
-            filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { $0.owningApplication?.processID == ownPID })
+            (filter, plan) = Self.filter(display, content, options.exclusion)
+            self.display = display
             let frame = Self.appKitFrame(of: display.displayID)
             guard let rect = StreamGeometry.sourceRect(area: area ?? frame, displayFrame: frame) else { throw RecordingError.displayNotFound }
             format = StreamGeometry.format(of: rect, scale: Double(filter.pointPixelScale), options: options)
@@ -53,6 +57,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         }
         config.width = format.width
         config.height = format.height
+        self.plan = plan
         prepared = (filter, config, format)
         return format
     }
@@ -69,9 +74,36 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
             throw Self.map(error)
         }
         self.stream = stream
+        // Finder windows are filmed by name while desktop icons are hidden, so one opened mid-recording joins the filter here.
+        if display != nil, options.exclusion.hidesDesktopIcons { refresh = Task { [weak self] in await self?.refreshFilter() } }
+    }
+
+    private func refreshFilter() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let stream, let display, let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else { continue }
+            let (next, plan) = Self.filter(display, content, options.exclusion)
+            guard plan != self.plan else { continue }
+            try? await stream.updateContentFilter(next)
+            self.plan = plan
+        }
+    }
+
+    /// The exclusion plan as a content filter: excluded applications, and the windows of theirs that are filmed anyway.
+    static func filter(_ display: SCDisplay, _ content: SCShareableContent, _ exclusion: ContentExclusion) -> (SCContentFilter, ContentExclusion.Plan) {
+        let apps = content.applications.map { ContentExclusion.App(pid: $0.processID, bundleID: $0.bundleIdentifier) }
+        let windows = content.windows.compactMap { w in
+            w.owningApplication.map { ContentExclusion.Window(id: w.windowID, ownerPID: $0.processID, layer: w.windowLayer) }
+        }
+        let plan = exclusion.plan(apps: apps, windows: windows, ownPID: ProcessInfo.processInfo.processIdentifier)
+        let filter = SCContentFilter(display: display, excludingApplications: content.applications.filter { plan.excludedApps.contains($0.processID) },
+                                     exceptingWindows: content.windows.filter { plan.exceptedWindows.contains($0.windowID) })
+        return (filter, plan)
     }
 
     public func stop() async {
+        refresh?.cancel()
+        refresh = nil
         deliver = nil
         guard let stream else { return }
         self.stream = nil

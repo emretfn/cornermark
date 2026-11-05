@@ -12,6 +12,10 @@ public final class Recorder {
     private var track = PointerTrackBuilder()
     private let trackLock = NSLock()
     public private(set) var format: FrameFormat?
+    /// What the pictures show, in global AppKit points. Valid once `start` returns.
+    public var pointArea: CGRect { source.pointArea }
+    /// The length of the video so far. A pause does not grow it.
+    public var seconds: Double { writer?.seconds ?? 0 }
 
     public init(source: FrameSource, output: URL, pointer: PointerSource? = nil, quality: VideoQuality = .high) {
         self.source = source
@@ -44,6 +48,9 @@ public final class Recorder {
         }
     }
 
+    public func pause() { writer?.pause() }
+    public func resume() { writer?.resume() }
+
     public func stop() async throws -> RecordingReport {
         await source.stop()
         pointer?.stop()
@@ -51,9 +58,21 @@ public final class Recorder {
         self.writer = nil
         var report = try await writer.finish()
         report.area = source.pointArea
-        report.pointer = trackLock.withLock {
-            track.samples(firstFrameTime: report.firstFrameTime, lastTime: report.firstFrameTime + report.duration)
+        let paused = report.pauses.reduce(0) { $0 + $1.to - $1.from }
+        let samples = trackLock.withLock {
+            track.samples(firstFrameTime: report.firstFrameTime, lastTime: report.firstFrameTime + report.duration + paused)
+        }
+        report.pointer = samples.compactMap { s in
+            RecordingPause.videoTime(s.t, skipping: report.pauses).map { PointerSample(t: $0, x: s.x, y: s.y) }
         }
         return report
+    }
+
+    /// Ends the recording and deletes its file.
+    public func cancel() async {
+        await source.stop()
+        pointer?.stop()
+        writer?.cancel()
+        writer = nil
     }
 }
