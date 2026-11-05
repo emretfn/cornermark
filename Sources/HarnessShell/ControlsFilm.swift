@@ -250,7 +250,7 @@ enum ControlsFilm {
 
 /// The left half of a controls film: the fixture display, live, with the app's recording windows on it, and a menu bar strip.
 @MainActor
-private final class Stage {
+final class Stage {
     static let k: CGFloat = 0.62
     static let origin = CGPoint(x: 16, y: 226)
     static let menuHeight: CGFloat = 24
