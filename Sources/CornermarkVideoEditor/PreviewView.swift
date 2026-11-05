@@ -15,11 +15,19 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCursor() } } }
+    var state: FrameState? { didSet { if oldValue != state { placeCursor(); placeCamera() } } }
     /// Where the recording sits on the finished video.
     var canvas: VideoCanvas? { didSet { if oldValue != canvas { needsLayout = true } } }
     /// The picture the background shows when its fill is an added image.
     var backgroundPicture: CGImage? { didSet { if backgroundPicture !== oldValue { drawnBackdrop = nil; needsLayout = true } } }
+    /// The camera file's picture at the playhead. Shown only where `state` places the camera.
+    var cameraImage: CGImage? {
+        didSet {
+            guard cameraImage !== oldValue else { return }
+            withoutAnimation { cameraPicture.contents = cameraImage }
+            placeCamera()
+        }
+    }
     /// Room around the picture. None in preview-only mode, where the picture fills the window.
     var inset: CGFloat = DS.Space.s16 { didSet { needsLayout = true } }
 
@@ -27,6 +35,9 @@ final class PreviewView: NSView {
     private let stage = CALayer()
     private let picture = CALayer()
     private let pointer = CAShapeLayer()
+    /// The camera's shadow, and inside it the clipped picture, drawn as `CameraBubblePainter` draws it in export.
+    private let cameraHolder = CALayer()
+    private let cameraPicture = CALayer()
     /// What the stage shows now, so a layout that changes nothing draws nothing.
     private var drawnBackdrop: (canvas: VideoCanvas, width: Int, height: Int)?
 
@@ -51,6 +62,13 @@ final class PreviewView: NSView {
         pointer.lineWidth = PointerShape.lineWidth
         pointer.lineJoin = .round
         pointer.isHidden = true
+        cameraPicture.contentsGravity = .resizeAspectFill
+        cameraPicture.masksToBounds = true
+        cameraPicture.borderColor = CameraBubblePainter.edge
+        cameraHolder.shadowColor = CameraBubblePainter.shadow
+        cameraHolder.isHidden = true
+        cameraHolder.addSublayer(cameraPicture)
+        picture.addSublayer(cameraHolder)
         picture.addSublayer(pointer)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -89,6 +107,7 @@ final class PreviewView: NSView {
         }
         drawBackdrop(canvas)
         placeCursor()
+        placeCamera()
     }
 
     /// The video fitted into the view, in the view's bottom-left coordinates.
@@ -122,6 +141,32 @@ final class PreviewView: NSView {
             pointer.isHidden = false
             pointer.position = CGPoint(x: cursor.x * kx, y: size.height - cursor.y * ky)
             pointer.setAffineTransform(CGAffineTransform(scaleX: cursor.scale * kx, y: -cursor.scale * ky))
+        }
+    }
+
+    /// Camera rects count from the area's top-left corner with y down, like pointer samples.
+    private func placeCamera() {
+        withoutAnimation {
+            guard let placed = state?.camera, cameraImage != nil, pointSize.width > 0, pointSize.height > 0 else {
+                cameraHolder.isHidden = true
+                return
+            }
+            let size = picture.bounds.size
+            let kx = size.width / pointSize.width, ky = size.height / pointSize.height
+            let r = placed.rect
+            let frame = CGRect(x: r.minX * kx, y: size.height - r.maxY * ky, width: r.width * kx, height: r.height * ky)
+            let bubble = CGFloat(1 - placed.fill)
+            cameraHolder.isHidden = false
+            cameraHolder.frame = frame
+            cameraHolder.shadowOpacity = Float(0.35 * bubble)
+            cameraHolder.shadowRadius = frame.height * 0.04
+            cameraHolder.shadowOffset = CGSize(width: 0, height: -frame.height * 0.02)
+            cameraHolder.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: min(placed.cornerRadius * kx, frame.height / 2),
+                                             cornerHeight: min(placed.cornerRadius * kx, frame.height / 2), transform: nil)
+            cameraPicture.frame = CGRect(origin: .zero, size: frame.size)
+            cameraPicture.cornerRadius = min(placed.cornerRadius * kx, min(frame.width, frame.height) / 2)
+            cameraPicture.borderWidth = bubble > 0 ? 1 : 0
+            cameraPicture.setAffineTransform(placed.isMirrored ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
         }
     }
 
