@@ -135,7 +135,7 @@ func checkRecordingCamera() async throws {
     c.hud.show("waiting")
     let made = cameras.count
     check(await start("editing"), "without camera access a recording still starts")
-    check(bubble.panel == nil && cameras.count == made && c.hud.lastMessage == "Allow camera access in Settings to show the camera",
+    check(bubble.panel == nil && cameras.count == made && c.hud.lastMessage == "Allow camera access in Settings > Camera to show the camera",
           "but shows no camera, makes no camera source, and says why", detail: c.hud.lastMessage ?? "nil")
     if let folder = await stop()?.video?.location {
         check(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("camera.mp4").path), "and keeps no camera file")
@@ -143,6 +143,18 @@ func checkRecordingCamera() async throws {
     check(requests == 1, "a recording never asks for camera access")
     link("")
     check(c.recording.cameraLook == nil, "a camera link with nothing recording is refused")
+
+    section("camera from the keyboard")
+    func cameraRow(_ full: Bool?) -> MenuPanelModel.Row? {
+        let model = MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .recording,
+                                        cameraFullScreen: full, recent: [])
+        for section in model.sections { if case .rows(let rows) = section, let row = rows.first(where: { $0.item == .action(.recordingCamera) }) { return row } }
+        return nil
+    }
+    check(cameraRow(nil) == nil, "with no camera the menu panel offers no camera row")
+    check(cameraRow(false)?.title == "Fill with Camera" && cameraRow(true)?.title == "Shrink Camera to Bubble",
+          "while the camera shows, the menu panel offers its click by keyboard, named for what it does next")
+    check(AppAction.make(.recordingCamera, timerSeconds: 5) == .changeCamera(.toggleFullScreen), "and the row toggles full screen")
 
     section("camera of an isolated instance")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)

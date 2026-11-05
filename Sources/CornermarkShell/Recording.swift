@@ -273,7 +273,7 @@ final class RecordingController {
                 Log.shell.notice("recording camera wanted=\(request.preferences.camera.isVisible, privacy: .public) source=\(cameraKind, privacy: .public) access=\(self.env.cameraAccess().rawValue, privacy: .public) inPicture=\(recorder.cameraInPicture, privacy: .public) failure=\(recorder.cameraFailure.map(String.init(describing:)) ?? "none", privacy: .public) requests=\(CameraAccess.requests, privacy: .public) sessions=\(LiveCameraSource.sessionsOpened, privacy: .public)")
                 if recorder.cameraFailure != nil {
                     cameraLook = nil
-                    onNotice("The camera could not start. Recording without it.")
+                    onNotice("The camera could not start, so this recording has no camera. Quit other apps using the camera and record again.")
                 }
                 Log.shell.notice("recording started project=\(name, privacy: .public) style=\(request.style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) hideNotifications=\(options.exclusion.hidesNotifications, privacy: .public) hideDesktopIcons=\(options.exclusion.hidesDesktopIcons, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
@@ -293,7 +293,7 @@ final class RecordingController {
             cameraLook = nil
             guard env.cameraAccess() != .allowed else { return nil }
             Log.shell.error("recording camera unavailable: camera access is \(self.env.cameraAccess().rawValue, privacy: .public), recording without the camera")
-            onNotice("Allow camera access in Settings to show the camera")
+            onNotice("Allow camera access in Settings > Camera to show the camera")
             return nil
         }
         guard let cameraLook else { return nil }

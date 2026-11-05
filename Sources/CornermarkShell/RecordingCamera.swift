@@ -83,6 +83,7 @@ final class CameraBubbleView: NSView {
             guard isFullScreen != oldValue else { return }
             hint.symbol = isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
             setAccessibilityHelp(isFullScreen ? "Shrinks the camera back to a bubble" : "Fills the recording with the camera")
+            setAccessibilityValue(isFullScreen ? "Full screen" : "Bubble")
         }
     }
 
@@ -108,6 +109,7 @@ final class CameraBubbleView: NSView {
         setAccessibilityRole(.button)
         setAccessibilityLabel("Camera")
         setAccessibilityHelp("Fills the recording with the camera")
+        setAccessibilityValue("Bubble")
         setAccessibilityIdentifier("recording.camera")
     }
 
