@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCapture
+import CornermarkCore
 
 /// Why an environment will not record a target. Nothing was filmed when one of these is thrown.
 enum RecordingRefusal: Error, Equatable, CustomStringConvertible {
@@ -27,22 +28,21 @@ protocol RecordingTestWindowHosting: AnyObject {
 }
 
 enum RecordingOutput {
-    /// `Cornermark Recording 2026-11-03 at 14.05.09.mp4`
-    static func fileName(for date: Date) -> String {
+    /// `Cornermark Recording 2026-11-03 at 14.05.09`, the name of a recording's folder.
+    static func folderName(for date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "'Cornermark Recording' yyyy-MM-dd 'at' HH.mm.ss"
-        return "\(f.string(from: date)).mp4"
+        return f.string(from: date)
     }
 
     /// Never overwrites: a second recording within the same second gets " 2", " 3", and so on.
-    static func uniqueURL(in folder: URL, for date: Date) -> URL {
-        let base = fileName(for: date)
-        var url = folder.appendingPathComponent(base)
+    static func uniqueFolder(in folder: URL, for date: Date) -> URL {
+        let base = folderName(for: date)
+        var url = folder.appendingPathComponent(base, isDirectory: true)
         var n = 2
-        let stem = (base as NSString).deletingPathExtension
         while FileManager.default.fileExists(atPath: url.path) {
-            url = folder.appendingPathComponent("\(stem) \(n).mp4")
+            url = folder.appendingPathComponent("\(base) \(n)", isDirectory: true)
             n += 1
         }
         return url
@@ -58,6 +58,7 @@ final class RecordingController {
     private let folder: () -> URL
     private(set) var phase = Phase.idle
     private var recorder: Recorder?
+    private var projectFolder: URL?
     private var stopWhenStarted = false
     private var activity: NSObjectProtocol?
     var onSaved: (RecordingReport) -> Void = { _ in }
@@ -79,8 +80,14 @@ final class RecordingController {
             Log.shell.error("recording refused: cannot create the folder: \(error.localizedDescription, privacy: .public)")
             return onFailed("Could not save the recording")
         }
-        let output = RecordingOutput.uniqueURL(in: folder(), for: env.clock())
-        let recorder = Recorder(source: source, output: output)
+        let project = RecordingOutput.uniqueFolder(in: folder(), for: env.clock())
+        do { try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false) } catch {
+            Log.shell.error("recording refused: cannot create the project folder: \(error.localizedDescription, privacy: .public)")
+            return onFailed("Could not save the recording")
+        }
+        projectFolder = project
+        let output = project.appendingPathComponent(RecordingProjectFile.videoName)
+        let recorder = Recorder(source: source, output: output, pointer: env.pointerSource())
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
             Task { @MainActor in self?.sourceEnded(error) }
@@ -93,7 +100,7 @@ final class RecordingController {
             do {
                 try await recorder.start()
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
-                Log.shell.notice("recording started file=\(output.lastPathComponent, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(RecordingOptions.standard.fps, privacy: .public)")
+                Log.shell.notice("recording started project=\(project.lastPathComponent, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(RecordingOptions.standard.fps, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
                 if stopWhenStarted { await finish() }
             } catch {
@@ -125,9 +132,11 @@ final class RecordingController {
         phase = .stopping
         do {
             let report = try await recorder.stop()
+            guard let folder = projectFolder else { throw RecordingError.noFrames }
+            try RecordingProjectFile.write(report.project, to: folder)
             let rate = String(format: "%.3f", report.dropRate * 100)
             let seconds = String(format: "%.3f", report.duration)
-            Log.shell.notice("recording finished file=\(report.url.lastPathComponent, privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) bytes=\(report.fileBytes, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
+            Log.shell.notice("recording finished project=\(folder.lastPathComponent, privacy: .public) file=\(report.url.lastPathComponent, privacy: .public) pointerSamples=\(report.pointer.count, privacy: .public) firstFrame=\(String(format: "%.6f", report.firstFrameTime), privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) bytes=\(report.fileBytes, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
             reset()
             onSaved(report)
         } catch {
@@ -139,6 +148,10 @@ final class RecordingController {
 
     private func reset() {
         recorder = nil
+        if let folder = projectFolder, (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
+            try? FileManager.default.removeItem(at: folder)
+        }
+        projectFolder = nil
         phase = .idle
         env.recordingTestWindow?.close()
         if let activity { ProcessInfo.processInfo.endActivity(activity) }

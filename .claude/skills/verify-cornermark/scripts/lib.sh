@@ -64,6 +64,9 @@ tcc_log() {
 # A dialog, or sandboxd asking on this instance's behalf about a protected folder. An old answer to the dialog hides the first but not the second.
 tcc_alarms() { tcc_log "$1" | grep -e AUTHREQ_PROMPTING -e "pid=$PID, .*com\.apple\.sandboxd" || true; }
 
+# A locked session composes no windows, so a window stream ends after under a second and the recording is a stub. The synthetic display is not affected.
+screen_locked() { ioreg -n Root -d1 2>/dev/null | grep -q '"CGSSessionScreenIsLocked"=Yes'; }
+
 # The window number the instance logged for its test window, kept by link.sh so later links can be held to it.
 test_window_id() { cat "$ROOT/test-window.id" 2>/dev/null || true; }
 

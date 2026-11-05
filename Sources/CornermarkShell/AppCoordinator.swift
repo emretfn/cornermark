@@ -36,7 +36,7 @@ final class AppCoordinator {
         updates = UpdateController(env: env, hud: hud)
         recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
 
-        recording.onSaved = { [unowned self] report in hud.show("Saved \(report.url.lastPathComponent)") }
+        recording.onSaved = { [unowned self] report in hud.show("Saved \(report.url.deletingLastPathComponent().lastPathComponent)") }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }

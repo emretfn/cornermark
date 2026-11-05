@@ -55,6 +55,7 @@ extension AppEnvironment {
         env.confirmUpdate = confirmUpdate
         env.presentUpdateAlert = presentUpdateAlert
         env.frameSource = { target, options in StreamFrameSource(target: target, fps: options.fps) }
+        env.pointerSource = { LivePointerSource() }
         return env
     }
 
@@ -86,6 +87,7 @@ extension AppEnvironment {
         let testWindow = RecordingTestWindow()
         env.recordingTestWindow = testWindow
         env.frameSource = { target, options in try isolatedFrameSource(target, options, testWindow: testWindow) }
+        env.pointerSource = { ScriptedPointerSource() }
         env.willPresent = { window in
             Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")
         }

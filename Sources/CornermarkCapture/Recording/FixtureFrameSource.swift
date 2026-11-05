@@ -4,8 +4,9 @@ import AVFoundation
 /// A canned display showing `SyntheticScene`, with no screen and no permission involved.
 public final class FixtureFrameSource: FrameSource {
     public enum Pacing {
-        /// Delivers `frames` pictures from `start` itself, spaced exactly `1/fps` apart on the picture clock. `skipping` leaves holes.
-        case scripted(frames: Int, skipping: Set<Int> = [])
+        /// Delivers `frames` pictures from `start` itself, spaced exactly `1/fps` apart on the picture clock, the first one at `origin` seconds.
+        /// `skipping` leaves holes.
+        case scripted(frames: Int, skipping: Set<Int> = [], origin: Double = 0)
         /// Delivers at the real rate until `stop`.
         case realtime
     }
@@ -28,6 +29,7 @@ public final class FixtureFrameSource: FrameSource {
     private let queue = DispatchQueue(label: "cornermark.fixture-frames")
     private var timer: DispatchSourceTimer?
     private var crop = CGRect.zero
+    public private(set) var pointArea = CGRect.zero
 
     public init(displayFrame: CGRect = FixtureFrameSource.displayFrame, scale: Double = 1, area: CGRect? = nil, fps: Int = 60, pacing: Pacing) {
         self.displayFrame = displayFrame; self.scale = scale; self.area = area; self.fps = fps; self.pacing = pacing
@@ -37,6 +39,7 @@ public final class FixtureFrameSource: FrameSource {
         guard let rect = StreamGeometry.sourceRect(area: area ?? displayFrame, displayFrame: displayFrame) else {
             throw RecordingError.source("The area is outside the display")
         }
+        pointArea = CGRect(x: rect.minX + displayFrame.minX, y: displayFrame.maxY - rect.maxY, width: rect.width, height: rect.height)
         crop = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
         return StreamGeometry.format(of: rect, scale: scale, fps: fps)
     }
@@ -44,10 +47,11 @@ public final class FixtureFrameSource: FrameSource {
     public func start(_ deliver: @escaping (VideoFrame) -> Void) async throws {
         let format = try await prepare()
         switch pacing {
-        case .scripted(let frames, let skipping):
+        case .scripted(let frames, let skipping, let origin):
+            let start = CMTime(seconds: origin, preferredTimescale: CMTimeScale(fps))
             for i in 0..<frames where !skipping.contains(i) {
                 let t = CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))
-                deliver(VideoFrame(pixels: try render(format, at: t.seconds), time: t))
+                deliver(VideoFrame(pixels: try render(format, at: t.seconds), time: CMTimeAdd(start, t)))
                 framesDelivered += 1
             }
         case .realtime:

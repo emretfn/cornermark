@@ -31,6 +31,7 @@ elif in_list "$path" "$RECORDING_LINKS"; then
         record)
             [ $# -eq 2 ] || die "usage: link.sh record window=<test window id> | link.sh record display=1[&x=..&y=..&width=..&height=..]"
             if [[ "$2" =~ ^window=[0-9]+$ ]]; then
+                ! screen_locked || die "refused: the screen is locked, so a window recording would end after under a second. Record the synthetic display (display=1) or wait until the session is unlocked."
                 [ -n "$(test_window_id)" ] || die "refused: this instance has no test window. Send record/test-window first."
                 [ "${2#window=}" = "$(test_window_id)" ] || die "refused: window ${2#window=} is not this instance's test window ($(test_window_id))."
             elif [[ "$2" =~ ^display=1(&(x|y|width|height)=[0-9]+)*$ ]]; then

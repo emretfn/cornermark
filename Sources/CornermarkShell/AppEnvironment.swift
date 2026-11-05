@@ -56,6 +56,8 @@ final class AppEnvironment {
     var willPresent: (NSWindow) -> Void = { _ in }
     /// Makes the picture source for a recording, or throws `RecordingRefusal`. The scripted instance only films its own test window.
     var frameSource: (RecordingTarget, RecordingOptions) throws -> FrameSource = { _, _ in throw RecordingRefusal.unavailable }
+    /// Where the pointer comes from during a recording. Nil means nothing watches it. A scripted instance replays a path and never reads the real pointer.
+    var pointerSource: () -> PointerSource? = { nil }
     /// The window a scripted instance films. Nil in a normal instance.
     var recordingTestWindow: RecordingTestWindowHosting?
 

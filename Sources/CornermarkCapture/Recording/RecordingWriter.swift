@@ -73,7 +73,7 @@ final class RecordingWriter {
     func finish() async throws -> RecordingReport {
         lock.lock()
         finished = true
-        let count = written, last = lastTime.seconds
+        let count = written, last = lastTime.seconds, first = origin?.seconds ?? 0
         lock.unlock()
         guard count > 0 else {
             writer.cancelWriting()
@@ -85,7 +85,7 @@ final class RecordingWriter {
         guard writer.status == .completed else { throw RecordingError.writer(writer.error?.localizedDescription ?? "The file was not finished") }
         let slots = Int((last * Double(format.fps)).rounded()) + 1
         let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        return RecordingReport(url: url, format: format, framesWritten: count, framesDropped: max(0, slots - count), duration: last, fileBytes: bytes)
+        return RecordingReport(url: url, format: format, framesWritten: count, framesDropped: max(0, slots - count), duration: last, fileBytes: bytes, firstFrameTime: first)
     }
 
     func cancel() {

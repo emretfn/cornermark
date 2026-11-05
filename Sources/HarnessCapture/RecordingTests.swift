@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CornermarkCapture
+import CornermarkCore
 
 let recordingScratch = scratch + "recording/"
 
@@ -141,4 +142,50 @@ func runRecordingTests() async {
           "an area sticking out is clipped to the display")
     check(StreamGeometry.sourceRect(area: CGRect(x: 3000, y: 0, width: 10, height: 10), displayFrame: main) == nil, "an area off the display gives nothing")
     check(StreamGeometry.format(of: CGRect(x: 0, y: 0, width: 100.5, height: 50), scale: 2, fps: 60) == FrameFormat(width: 200, height: 100, fps: 60), "a Retina area doubles in pixels with even sides")
+}
+
+@MainActor
+func runProjectTimelineTests() async {
+    section("recording project timeline")
+    let area = CGRect(x: 1440, y: -100, width: 200, height: 100)
+    check(PointerGeometry.local(CGPoint(x: 1450, y: -10), in: area) == CGPoint(x: 10, y: 10), "a global point near the top-left of an area is near (0, 0) of it")
+    check(PointerGeometry.local(CGPoint(x: 1640, y: -100), in: area) == CGPoint(x: 200, y: 100), "and its bottom-right corner is its far corner")
+    check(PointerScript.tour.position(at: 0.3).map { $0.x == 0.15 && $0.y == 0.2 } == true && PointerScript.tour.position(at: 7.0 + 0.3).map { $0.x == 0.15 && $0.y == 0.2 } == true,
+          "the default pointer script rests at its first stop and starts over after a lap")
+    do {
+        // Frames start at 5.0 s on the source clock and the pointer script starts 0.25 s earlier, both at exact times.
+        let firstFrame = 5.0, lead = 0.25, fps = 30, frames = 90
+        let width = 1280.0, height = 720.0
+        let script = PointerScript([.init(t: 0, x: 0.1, y: 0.1), .init(t: 1, x: 0.9, y: 0.2), .init(t: 2, x: 0.5, y: 0.9), .init(t: 4, x: 0.2, y: 0.3)])
+        let pointer = ScriptedPointerSource(script: script, rate: 120, pacing: .fixed(origin: firstFrame - lead, count: 120 * 6))
+        try? FileManager.default.createDirectory(atPath: recordingScratch, withIntermediateDirectories: true)
+        let url = URL(fileURLWithPath: recordingScratch + "timeline.mp4")
+        let recorder = Recorder(source: FixtureFrameSource(fps: fps, pacing: .scripted(frames: frames, origin: firstFrame)), output: url, pointer: pointer)
+        try await recorder.start()
+        let report = try await recorder.stop()
+        let video = try await inspectVideo(url)
+
+        check(report.firstFrameTime == firstFrame, "the report carries the first frame's time on the source clock", detail: "\(report.firstFrameTime)")
+        check(abs(video.duration - 3.0) < 0.05 && video.frames == frames, "while the file itself starts at 0 and lasts 3.0 s", detail: "\(video.duration) s, \(video.frames) frames")
+        check(report.area == CGRect(x: 0, y: 0, width: width, height: height), "and the report says which area was filmed", detail: "\(report.area)")
+        guard let first = report.pointer.first, let last = report.pointer.last else { return check(false, "the pointer track has samples") }
+        check(first.t == 0, "the pointer track starts at the first frame, not at the pointer's own start", detail: "\(first.t)")
+        check(last.t >= report.duration && last.t < report.duration + 1.0 / 120 + 1e-9, "and stops at the first reading past the last frame", detail: "\(last.t) vs \(report.duration)")
+        let exact = report.pointer.allSatisfy { sample in
+            guard let at = script.position(at: sample.t + lead) else { return false }
+            return abs(sample.x - at.x * width) < 1e-6 && abs(sample.y - at.y * height) < 1e-6
+        }
+        check(exact, "every sample sits where the script put the pointer at that moment, offset by the 0.25 s lead")
+
+        let project = report.project
+        let worst = (0..<frames).map { i -> Double in
+            let t = Double(i) / Double(fps)
+            guard let want = script.position(at: t + lead), let got = frameState(project, outputTime: t).cursor else { return .infinity }
+            return hypot(got.x - want.x * width, got.y - want.y * height)
+        }.max() ?? .infinity
+        check(worst < 1.0, "frameState puts the pointer within one point of the script at every output frame", detail: "worst \(worst) pt")
+        check(project.source.duration > report.duration && abs(project.source.duration - 3.0) < 1e-9, "the project lasts as long as the file", detail: "\(project.source.duration)")
+    } catch {
+        check(false, "the timeline check threw", detail: "\(error)")
+    }
 }

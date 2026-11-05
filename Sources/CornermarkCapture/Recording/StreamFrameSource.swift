@@ -12,6 +12,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     private var stream: SCStream?
     private var prepared: (filter: SCContentFilter, config: SCStreamConfiguration, format: FrameFormat)?
     private var deliver: ((VideoFrame) -> Void)?
+    public private(set) var pointArea = CGRect.zero
 
     public init(target: RecordingTarget, fps: Int) {
         self.target = target
@@ -37,6 +38,9 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
             guard let window = content.windows.first(where: { $0.windowID == id }) else { throw RecordingError.windowNotFound(id) }
             filter = SCContentFilter(desktopIndependentWindow: window)
             format = StreamGeometry.format(of: filter.contentRect, scale: Double(filter.pointPixelScale), fps: fps)
+            // A window's frame is in Quartz global points, with the origin at the top-left of the main display.
+            pointArea = CGRect(x: window.frame.minX, y: CGDisplayBounds(CGMainDisplayID()).height - window.frame.maxY,
+                               width: window.frame.width, height: window.frame.height)
         case .display(let requested, let area):
             guard let display = Self.display(requested, area: area, in: content) else { throw RecordingError.displayNotFound }
             let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -44,6 +48,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
             let frame = Self.appKitFrame(of: display.displayID)
             guard let rect = StreamGeometry.sourceRect(area: area ?? frame, displayFrame: frame) else { throw RecordingError.displayNotFound }
             format = StreamGeometry.format(of: rect, scale: Double(filter.pointPixelScale), fps: fps)
+            pointArea = CGRect(x: rect.minX + frame.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
             if area != nil { config.sourceRect = rect }
         }
         config.width = format.width

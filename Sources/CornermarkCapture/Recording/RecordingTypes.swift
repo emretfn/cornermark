@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreGraphics
+import CornermarkCore
 
 /// What a recording films. Areas are in global AppKit points (bottom-left origin), like every other capture rect.
 public enum RecordingTarget: Equatable {
@@ -40,10 +41,27 @@ public struct RecordingReport: Equatable {
     /// Seconds from the first to the last frame.
     public var duration: Double
     public var fileBytes: Int
+    /// The first frame's time on the source's own clock. Everything else the recorder noted, such as the pointer, is measured from it.
+    public var firstFrameTime: Double = 0
+    /// What the pictures show, in global AppKit points.
+    public var area: CGRect = .zero
+    /// The pointer on the video's timeline, so `t == 0` is the first frame. Empty when nothing watched the pointer.
+    public var pointer: [PointerSample] = []
 
     public var dropRate: Double {
         let total = framesWritten + framesDropped
         return total == 0 ? 0 : Double(framesDropped) / Double(total)
+    }
+}
+
+extension RecordingReport {
+    /// The project that describes this recording, with every edit at its default. The video is the file the report names.
+    public var project: RecordingProject {
+        RecordingProject(
+            source: .init(video: url.lastPathComponent, pixelWidth: format.width, pixelHeight: format.height,
+                          pointWidth: area.width, pointHeight: area.height, fps: format.fps,
+                          duration: duration + 1.0 / Double(format.fps)),
+            events: .init(pointer: pointer))
     }
 }
 

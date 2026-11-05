@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CornermarkCapture
+import CornermarkCore
 @testable import CornermarkShell
 
 @MainActor
@@ -30,9 +31,13 @@ private func summarize(_ url: URL) async -> VideoSummary? {
                         isH264: formats.contains { CMFormatDescriptionGetMediaSubType($0) == kCMVideoCodecType_H264 })
 }
 
+/// Every recording is a folder with its video inside, so these are the videos.
 private func recordings(in folder: URL) -> [URL] {
-    ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "mp4" }.sorted { $0.path < $1.path }
+    let folders = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []).filter { $0.hasDirectoryPath }.sorted { $0.path < $1.path }
+    return folders.map { $0.appendingPathComponent(RecordingProjectFile.videoName) }.filter { FileManager.default.fileExists(atPath: $0.path) }
 }
+
+private func projects(in folder: URL) -> [URL] { recordings(in: folder).map { $0.deletingLastPathComponent() } }
 
 @MainActor
 func checkRecording() async throws {
@@ -113,7 +118,19 @@ func checkRecording() async throws {
     check(await waitUntil { w.coordinator.recording.phase == .idle && w.coordinator.hud.lastMessage?.hasPrefix("Saved ") == true }, "the recording finishes and says so", detail: "\(w.coordinator.hud.lastMessage ?? "nil")")
     let folder = w.saveDir
     let files = recordings(in: folder)
-    check(files.map(\.lastPathComponent) == ["Cornermark Recording 2026-11-03 at 14.05.09.mp4"], "it lands in the save folder under a dated name", detail: "\(files.map(\.lastPathComponent))")
+    check(projects(in: folder).map(\.lastPathComponent) == ["Cornermark Recording 2026-11-03 at 14.05.09"], "it lands in the save folder as a project folder with a dated name", detail: "\(projects(in: folder).map(\.lastPathComponent))")
+    check(w.coordinator.hud.lastMessage == "Saved Cornermark Recording 2026-11-03 at 14.05.09", "and the message names the project", detail: "\(w.coordinator.hud.lastMessage ?? "nil")")
+    if let project = projects(in: folder).first, let saved = try? RecordingProjectFile.read(from: project) {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: project.path)) ?? []).sorted()
+        check(names == ["project.json", "screen.mp4"], "the folder holds the video and the project file and nothing else", detail: "\(names)")
+        check(saved.source.video == "screen.mp4" && saved.source.pixelWidth == 400 && saved.source.pixelHeight == 300 && saved.source.fps == 60,
+              "the project names the video and its size", detail: "\(saved.source)")
+        check(saved.source.pointWidth == 401 && saved.source.pointHeight == 301, "and the filmed area in points, which pointer samples are measured in", detail: "\(saved.source)")
+        check(abs(saved.source.duration - 0.5) < 1e-9, "and it lasts as long as the 30 frames at 60 fps", detail: "\(saved.source.duration)")
+        check(saved.events.pointer.isEmpty && saved.edits.cursor == CursorSettings(), "an environment with no pointer source stores an empty track and the default cursor")
+    } else {
+        check(false, "the project file can be read back")
+    }
     if let file = files.first, let video = await summarize(file) {
         check(video.isH264 && video.width == 400 && video.height == 300 && video.frames == 30, "as 30 H.264 frames of 400x300, the area rounded to even sides", detail: "\(video)")
     } else {
@@ -121,12 +138,13 @@ func checkRecording() async throws {
     }
 
     check(link("record?display=1") && link("record/stop"), "a second recording in the same second starts and stops")
-    check(await waitUntil { recordings(in: folder).count == 2 && w.coordinator.recording.phase == .idle }, "and gets its own name", detail: "\(recordings(in: folder).map(\.lastPathComponent))")
-    check(recordings(in: folder).map(\.lastPathComponent).contains("Cornermark Recording 2026-11-03 at 14.05.09 2.mp4"), "with a number appended", detail: "\(recordings(in: folder).map(\.lastPathComponent))")
+    check(await waitUntil { recordings(in: folder).count == 2 && w.coordinator.recording.phase == .idle }, "and gets its own name", detail: "\(projects(in: folder).map(\.lastPathComponent))")
+    check(projects(in: folder).map(\.lastPathComponent).contains("Cornermark Recording 2026-11-03 at 14.05.09 2"), "with a number appended", detail: "\(projects(in: folder).map(\.lastPathComponent))")
 
     w.env.frameSource = { _, _ in throw RecordingRefusal.notTestWindow(9) }
     check(link("record?window=9") && w.coordinator.recording.phase == .idle && recordings(in: folder).count == 2 && w.coordinator.hud.lastMessage == "Recording not allowed",
           "a refused target starts nothing and writes nothing")
+    check(((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).count == 2, "not even an empty folder")
 
     section("recording in a scripted instance")
     let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)
@@ -144,6 +162,15 @@ func checkRecording() async throws {
     check(await waitUntil(10) { c.recording.phase == .idle && c.hud.lastMessage?.hasPrefix("Saved ") == true }, "and the file is saved")
     let saved = recordings(in: env.defaultSaveFolder)
     check(saved.count == 1 && saved[0].resolvingSymlinksInPath().path.hasPrefix(rootURL.resolvingSymlinksInPath().path + "/"), "inside the instance's own root", detail: "\(saved)")
+    if let project = saved.first.map({ $0.deletingLastPathComponent() }), let stored = try? RecordingProjectFile.read(from: project) {
+        let track = stored.events.pointer
+        check(track.count > 8 && Set(track.map(\.x)).count > 4, "a scripted instance stores a moving pointer track from its own script", detail: "\(track.count) samples")
+        check(track.first.map { $0.t <= 0 } == true && track.last.map { $0.t >= stored.source.duration - 1.0 / 30 } == true, "that spans the whole video", detail: "\(track.first?.t ?? 9) ... \(track.last?.t ?? 9) of \(stored.source.duration)")
+        let box = CGRect(x: 0, y: 0, width: stored.source.pointWidth, height: stored.source.pointHeight)
+        check(stored.source.pointWidth == 320 && stored.source.pointHeight == 180 && track.allSatisfy { box.contains(CGPoint(x: $0.x, y: $0.y)) }, "and every sample lies inside the filmed 320x180 area", detail: "\(stored.source)")
+    } else {
+        check(false, "the scripted project can be read back")
+    }
     if let file = saved.first, let video = await summarize(file) {
         check(video.isH264 && video.width == 320 && video.height == 180 && video.frames > 20, "as an H.264 video of the area", detail: "\(video)")
     } else {
