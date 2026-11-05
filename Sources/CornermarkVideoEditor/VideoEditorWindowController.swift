@@ -12,11 +12,23 @@ public struct VideoEditorState: Equatable {
     public var isPreviewOnly = false
     public var volume: Float = 1
     public var isMuted = false
+    public var export = ExportPhase.closed
+    public var exportSettings = ExportSettings()
 
     public init(project: RecordingProject) {
         self.project = project
         transport = Transport(duration: project.source.duration)
     }
+}
+
+public enum ExportEvent: Equatable {
+    case started(ExportPlan)
+    case finished(ExportReport)
+    /// At this fraction of the frames, with no file left behind.
+    case cancelled(Double)
+    case failed(String)
+    /// The edits could not be written to the project file first, so nothing was exported.
+    case notSaved(String)
 }
 
 public enum VideoEditorError: Error, Equatable {
@@ -47,14 +59,20 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     /// Called once as the window closes, after the project file was written if it changed.
     public var onClose: (Closed) -> Void = { _ in }
+    /// Where a finished export is written.
+    public var exportFolder: () -> URL = { FileManager.default.temporaryDirectory }
+    public var onExport: (ExportEvent) -> Void = { _ in }
 
-    private let saved: RecordingProject
+    private var saved: RecordingProject
     private var frames: SourceFrames
     private let clock: () -> Double
     private let preview = PreviewView()
     private let transportBar = TransportBar()
     private let timeline = TimelineView()
     private let inspector = InspectorView()
+    private let header = HeaderBar()
+    private let exportPanel = ExportPanel()
+    private var exportJob: Task<ExportReport, Error>?
     private let bottomRule = Separator(axis: .horizontal)
     private var editingConstraints: [NSLayoutConstraint] = []
     private var previewOnlyConstraints: [NSLayoutConstraint] = []
@@ -106,6 +124,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func ready() async { await preparation?.value }
 
     public var videoURL: URL { folder.appendingPathComponent(state.project.source.video) }
+    /// Read once: the source is never written after recording.
+    private lazy var sourceBytes: Int64? = ((try? FileManager.default.attributesOfItem(atPath: videoURL.path))?[.size] as? NSNumber)?.int64Value
 
     /// Finds a control by accessibility identifier anywhere in the window.
     public func view(identifier: String) -> NSView? {
@@ -127,19 +147,24 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private func buildContent(in window: NSWindow) {
         let content = NSView()
         window.contentView = content
-        for v in [inspector, preview, transportBar, bottomRule, timeline] as [NSView] {
+        for v in [header, inspector, preview, transportBar, bottomRule, timeline, exportPanel] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
+        exportPanel.isHidden = true
         preview.pointSize = CGSize(width: max(state.project.source.pointWidth, 1), height: max(state.project.source.pointHeight, 1))
         timeline.duration = state.project.source.duration
         timeline.frameStep = 1 / Double(max(state.project.source.fps, 1))
         timeline.aspect = state.project.source.pointHeight > 0 ? CGFloat(state.project.source.pointWidth / state.project.source.pointHeight) : 16 / 9
         NSLayoutConstraint.activate([
-            inspector.topAnchor.constraint(equalTo: content.topAnchor),
+            header.topAnchor.constraint(equalTo: content.topAnchor),
+            header.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            inspector.topAnchor.constraint(equalTo: header.bottomAnchor),
             inspector.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            preview.topAnchor.constraint(equalTo: content.topAnchor),
             preview.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            exportPanel.topAnchor.constraint(equalTo: header.bottomAnchor, constant: DS.Space.s4 - ExportPanel.inset),
+            exportPanel.trailingAnchor.constraint(equalTo: header.exportButton.trailingAnchor, constant: ExportPanel.inset),
             transportBar.topAnchor.constraint(equalTo: preview.bottomAnchor),
             transportBar.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
             transportBar.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
@@ -151,12 +176,14 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             timeline.heightAnchor.constraint(equalToConstant: TimelineView.Metrics.height),
         ])
         editingConstraints = [
+            preview.topAnchor.constraint(equalTo: header.bottomAnchor),
             inspector.bottomAnchor.constraint(equalTo: bottomRule.topAnchor),
             preview.leadingAnchor.constraint(equalTo: inspector.trailingAnchor),
             transportBar.bottomAnchor.constraint(equalTo: bottomRule.topAnchor),
             bottomRule.bottomAnchor.constraint(equalTo: timeline.topAnchor),
         ]
         previewOnlyConstraints = [
+            preview.topAnchor.constraint(equalTo: content.topAnchor),
             preview.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             transportBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ]
@@ -176,6 +203,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             }
         }
         transportBar.onVolume = { [unowned self] in setVolume($0) }
+        header.exportButton.onPress { [unowned self] in state.export == .closed ? openExport() : closeExport() }
+        exportPanel.onSettings = { [unowned self] in setExportSettings($0) }
+        exportPanel.onExport = { [unowned self] in startExport() }
+        exportPanel.onCancel = { [unowned self] in state.export.isExporting ? cancelExport() : closeExport() }
         timeline.onScrub = { [unowned self] t, phase in scrub(to: t, phase) }
     }
 
@@ -288,11 +319,135 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let on = state.isPreviewOnly
         NSLayoutConstraint.deactivate(on ? editingConstraints : previewOnlyConstraints)
         NSLayoutConstraint.activate(on ? previewOnlyConstraints : editingConstraints)
-        for v in [inspector, timeline, bottomRule] as [NSView] { v.isHidden = on }
+        if on { closeExport() }
+        for v in [header, inspector, timeline, bottomRule] as [NSView] { v.isHidden = on }
         preview.inset = on ? 0 : DS.Space.s16
         // Watching is a dark surface, like the capture overlay: the letterbox and the playback row recede behind the picture.
         window?.appearance = on ? NSAppearance(named: .darkAqua) : nil
         window?.contentView?.layoutSubtreeIfNeeded()
+    }
+
+    // MARK: Export
+
+    public func openExport() {
+        guard state.export == .closed, !state.isPreviewOnly else { return }
+        state.export = .choosing
+        refresh()
+        setPanelVisible(true)
+        window?.makeFirstResponder(exportPanel.firstControl)
+    }
+
+    public func closeExport() {
+        guard state.export == .choosing else { return }
+        state.export = .closed
+        refresh()
+        setPanelVisible(false)
+        window?.makeFirstResponder(header.exportButton)
+    }
+
+    public func setExportSettings(_ settings: ExportSettings) {
+        state.exportSettings = settings
+        refresh()
+    }
+
+    /// Writes changed edits to the project file, then renders the project as it is now. Edits made while it runs go into the next export.
+    public func startExport() {
+        guard state.export == .choosing else { return }
+        if state.project != saved {
+            do { try saveProject() } catch { return onExport(.notSaved(error.localizedDescription)) }
+        }
+        let project = state.project, settings = state.exportSettings, video = videoURL
+        let output = Self.uniqueFile(in: exportFolder(), name: folder.lastPathComponent)
+        state.export = .exporting(0)
+        refresh()
+        onExport(.started(ExportPlan(project: project, settings: settings, sourceBytes: sourceBytes)))
+        let job = Task.detached {
+            try await VideoExporter.export(project: project, video: video, settings: settings, to: output) { [weak self] fraction in
+                Task { @MainActor in self?.exportProgressed(fraction) }
+            }
+        }
+        exportJob = job
+        Task { [weak self] in
+            let result = await job.result
+            self?.exportEnded(result)
+        }
+    }
+
+    /// The file it was writing is removed.
+    public func cancelExport() { exportJob?.cancel() }
+
+    private func exportProgressed(_ fraction: Double) {
+        guard case .exporting(let shown) = state.export, fraction > shown else { return }
+        state.export = .exporting(fraction)
+        exportPanel.show(state.export, settings: state.exportSettings, project: state.project, sourceBytes: sourceBytes)
+    }
+
+    private func exportEnded(_ result: Result<ExportReport, Error>) {
+        guard case .exporting(let reached) = state.export else { return }
+        exportJob = nil
+        switch result {
+        case .success(let report):
+            state.export = .closed
+            refresh()
+            setPanelVisible(false)
+            window?.makeFirstResponder(header.exportButton)
+            announce("Export finished")
+            onExport(.finished(report))
+        case .failure(let error):
+            state.export = .choosing
+            refresh()
+            window?.makeFirstResponder(exportPanel.firstControl)
+            let cancelled = error is CancellationError
+            announce(cancelled ? "Export cancelled" : "Export failed")
+            onExport(cancelled ? .cancelled(reached) : .failed(String(describing: error)))
+        }
+    }
+
+    private func announce(_ text: String) {
+        NSAccessibility.post(element: exportPanel, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+
+    static func uniqueFile(in folder: URL, name: String) -> URL {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var url = folder.appendingPathComponent("\(name).mp4")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("\(name) \(n).mp4")
+            n += 1
+        }
+        return url
+    }
+
+    private func setPanelVisible(_ on: Bool) {
+        guard let layer = exportPanel.layer ?? { exportPanel.wantsLayer = true; return exportPanel.layer }() else { return }
+        guard window?.isVisible == true else { exportPanel.isHidden = !on; return }
+        exportPanel.isHidden = false
+        layer.removeAllAnimations()
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = on ? 0 : 1
+        fade.toValue = on ? 1 : 0
+        fade.duration = on ? DS.Motion.Duration.base : DS.Motion.Duration.fast
+        fade.timingFunction = DS.Motion.Curve.easeOut
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, !on, state.export == .closed else { return }
+            exportPanel.isHidden = true
+        }
+        layer.add(fade, forKey: "fade")
+        if on && !DS.Motion.isReduced {
+            let grow = CABasicAnimation(keyPath: "transform")
+            let corner = CGPoint(x: layer.bounds.width - ExportPanel.inset, y: layer.bounds.height - ExportPanel.inset)
+            var t = CATransform3DMakeTranslation(corner.x, corner.y, 0)
+            t = CATransform3DScale(t, DS.Motion.enterScale, DS.Motion.enterScale, 1)
+            t = CATransform3DTranslate(t, -corner.x, -corner.y, 0)
+            grow.fromValue = t
+            grow.toValue = CATransform3DIdentity
+            grow.duration = DS.Motion.Duration.base
+            grow.timingFunction = DS.Motion.Curve.easeOut
+            layer.add(grow, forKey: "grow")
+        }
+        CATransaction.commit()
     }
 
     // MARK: Frames
@@ -323,6 +478,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     private func refresh() {
         inspector.show(state.section, cursor: state.project.edits.cursor)
+        header.show(state.export)
+        exportPanel.show(state.export, settings: state.exportSettings, project: state.project, sourceBytes: sourceBytes)
         updateTransportBar(state.transport.time(at: clock()))
     }
 
@@ -346,17 +503,23 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     public func windowWillClose(_ notification: Notification) {
         preparation?.cancel()
+        exportJob?.cancel()
         displayLink?.invalidate()
         displayLink = nil
         state.transport.pause(now: clock())
         frames.follow(sourceTime: state.transport.time(at: clock()), playing: false)
         guard state.project != saved else { return onClose(.unchanged) }
         do {
-            try RecordingProjectFile.write(state.project, to: folder)
+            try saveProject()
             onClose(.saved)
         } catch {
             onClose(.failed(error.localizedDescription))
         }
+    }
+
+    private func saveProject() throws {
+        try RecordingProjectFile.write(state.project, to: folder)
+        saved = state.project
     }
 
     public func windowDidExitFullScreen(_ notification: Notification) {

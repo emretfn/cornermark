@@ -8,19 +8,12 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 
 let filming = ProcessInfo.processInfo.environment["CORNERMARK_OVERLAY_FILM"]
-let previewing = ProcessInfo.processInfo.environment["CORNERMARK_PROJECT_PREVIEW"] != nil
-DispatchQueue.global().asyncAfter(deadline: .now() + (previewing || filming != nil ? 900 : 90)) {
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming != nil ? 900 : 90)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
-    if let project = ProcessInfo.processInfo.environment["CORNERMARK_PROJECT_PREVIEW"],
-       let out = ProcessInfo.processInfo.environment["CORNERMARK_PROJECT_PREVIEW_OUT"] {
-        let unchanged = await ProjectPreview.run(project: URL(fileURLWithPath: project, isDirectory: true), out: URL(fileURLWithPath: out, isDirectory: true))
-        print(unchanged ? "SOURCE UNCHANGED" : "SOURCE CHANGED OR PREVIEW FAILED")
-        exit(unchanged ? 0 : 1)
-    }
     if let filming {
         let ok = await OverlayFilm.run(out: URL(fileURLWithPath: filming, isDirectory: true))
         print(ok ? "FILM DONE" : "FILM FAILED")

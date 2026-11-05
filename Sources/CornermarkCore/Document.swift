@@ -114,6 +114,7 @@ public enum CaptureKind: String, Codable, CaseIterable, Sendable {
 }
 
 /// A finished recording. The video stays where the recorder saved it, so deleting the history entry never deletes the video.
+/// An export nobody saved yet is the exception: it lives in the entry's own folder and goes with it, see `CaptureStore.addOwnedVideo`.
 public struct RecordedVideo: Codable, Hashable, Sendable {
     public enum Format: String, Codable, Sendable {
         /// One MP4 file with the pointer in its picture.
@@ -159,4 +160,10 @@ public struct CaptureRecord: Codable, Hashable, Identifiable, Sendable {
     }
 
     public var isRecording: Bool { video != nil }
+
+    /// The video lives in this entry's own folder, as an export nobody saved yet does, and leaves with the entry.
+    public var ownsVideo: Bool {
+        guard let video, video.format == .video else { return false }
+        return video.location.deletingLastPathComponent().lastPathComponent == directoryName
+    }
 }

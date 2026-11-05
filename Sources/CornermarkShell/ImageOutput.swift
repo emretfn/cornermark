@@ -62,4 +62,6 @@ enum ImageOutput {
     }
 
     static func dimensionText(_ size: CGSize) -> String { "\(Int(size.width)) \u{00D7} \(Int(size.height))" }
+
+    static func byteText(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
 }

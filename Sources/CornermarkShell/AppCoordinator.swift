@@ -71,6 +71,7 @@ final class AppCoordinator {
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
         case .openRecording(let folder): openVideoEditor(folder)
+        case .exportRecording(let folder): openVideoEditor(folder).map { $0.openExport(); $0.startExport() }
         case .startRecording(let target, let style): startRecording(target, style)
         case .stopRecording: recording.stop()
         case .controlRecording(.pause): recording.pause()
@@ -287,7 +288,7 @@ final class AppCoordinator {
         case .reveal:
             reveal(card.record)
         case .save:
-            save(card.image)
+            if card.record.ownsVideo { saveVideo(card.record) } else { save(card.image) }
         case .annotate:
             overlay.close(card)
             openEditor(card.record)

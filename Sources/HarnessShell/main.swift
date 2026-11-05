@@ -11,15 +11,21 @@ ShortcutRecorderView.playRefusedSound = {}
 
 let filming = ProcessInfo.processInfo.environment["CORNERMARK_RESULTS_FILM"]
 let editorFilming = ProcessInfo.processInfo.environment["CORNERMARK_EDITOR_FILM"]
+let exportFilming = ProcessInfo.processInfo.environment["CORNERMARK_EXPORT_FILM"]
 let filmingControls = ProcessInfo.processInfo.environment["CORNERMARK_CONTROLS_FILM"]
 let filmingGifs = ProcessInfo.processInfo.environment["CORNERMARK_GIF_FILM"]
 let filmingInput = ProcessInfo.processInfo.environment["CORNERMARK_INPUT_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && editorFilming == nil && filmingControls == nil && filmingGifs == nil && filmingInput == nil ? 180 : 900)) {
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && editorFilming == nil && exportFilming == nil && filmingControls == nil && filmingGifs == nil && filmingInput == nil ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let exportFilming {
+        let ok = await VideoExportFilm.run(out: URL(fileURLWithPath: exportFilming, isDirectory: true))
+        print(ok ? "FILM DONE" : "FILM FAILED")
+        exit(ok ? 0 : 1)
+    }
     if let editorFilming {
         let ok = await VideoEditorFilm.run(out: URL(fileURLWithPath: editorFilming, isDirectory: true))
         print(ok ? "FILM DONE" : "FILM FAILED")
@@ -80,6 +86,7 @@ Task { @MainActor in
         try await checkGifRecording()
         try await checkRecordingInput()
         try await checkVideoEditor()
+        try await checkVideoExport()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")
