@@ -15,15 +15,30 @@ public struct CursorSettings: Codable, Equatable, Sendable {
     public var isVisible: Bool
     /// 1 is the system pointer's size.
     public var scale: Double
+    public var style: CursorStyle
+    public var motion: CursorMotion
+    /// Fades the pointer out once it has been still for `CursorTrack.idleDelay`.
+    public var hidesWhenIdle: Bool
+    /// Fades the pointer out at a key press without Command or Control, until it next moves.
+    public var hidesWhenTyping: Bool
 
-    public init(isVisible: Bool = true, scale: Double = 1) { self.isVisible = isVisible; self.scale = scale }
+    public init(isVisible: Bool = true, scale: Double = 1, style: CursorStyle = .white, motion: CursorMotion = .natural,
+                hidesWhenIdle: Bool = false, hidesWhenTyping: Bool = false) {
+        self.isVisible = isVisible; self.scale = scale; self.style = style; self.motion = motion
+        self.hidesWhenIdle = hidesWhenIdle; self.hidesWhenTyping = hidesWhenTyping
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        isVisible = try c.decodeIfPresent(Bool.self, forKey: .isVisible) ?? true
-        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? 1
+        let d = CursorSettings()
+        isVisible = try c.decodeIfPresent(Bool.self, forKey: .isVisible) ?? d.isVisible
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? d.scale
+        style = (try? c.decodeIfPresent(CursorStyle.self, forKey: .style)) ?? d.style
+        motion = (try? c.decodeIfPresent(CursorMotion.self, forKey: .motion)) ?? d.motion
+        hidesWhenIdle = (try? c.decodeIfPresent(Bool.self, forKey: .hidesWhenIdle)) ?? d.hidesWhenIdle
+        hidesWhenTyping = (try? c.decodeIfPresent(Bool.self, forKey: .hidesWhenTyping)) ?? d.hidesWhenTyping
     }
-    private enum Keys: String, CodingKey { case isVisible, scale }
+    private enum Keys: String, CodingKey { case isVisible, scale, style, motion, hidesWhenIdle, hidesWhenTyping }
 }
 
 /// A recording and everything that can still change about it. The source video is written once and never touched again,
@@ -157,6 +172,13 @@ public struct CursorFrame: Equatable, Sendable {
     public var x: Double
     public var y: Double
     public var scale: Double
+    public var style: CursorStyle
+    /// Above 0: a pointer faded all the way out is no pointer.
+    public var opacity: Double
+
+    public init(x: Double, y: Double, scale: Double, style: CursorStyle = .white, opacity: Double = 1) {
+        self.x = x; self.y = y; self.scale = scale; self.style = style; self.opacity = opacity
+    }
 }
 
 /// Everything a renderer needs to draw one output frame. Preview and export both ask for it, so they cannot disagree.
@@ -170,12 +192,7 @@ public struct FrameState: Equatable, Sendable {
 /// The frame at `outputTime` seconds of the finished video. Pure: the same project and time always give the same answer.
 public func frameState(_ project: RecordingProject, outputTime: Double) -> FrameState {
     let sourceTime = project.timeline.sourceTime(at: outputTime)
-    let settings = project.edits.cursor
-    guard settings.isVisible, let at = PointerTrack.position(project.events.pointer, at: sourceTime) else {
-        return FrameState(sourceTime: sourceTime, cursor: nil)
-    }
-    let scale = min(max(settings.scale, CursorSettings.scaleRange.lowerBound), CursorSettings.scaleRange.upperBound)
-    return FrameState(sourceTime: sourceTime, cursor: CursorFrame(x: at.x, y: at.y, scale: scale))
+    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime))
 }
 
 public enum PointerTrack {

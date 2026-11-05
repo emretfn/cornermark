@@ -3,7 +3,7 @@ import CornermarkCore
 import CornermarkDesign
 import QuartzCore
 
-/// The finished video at the playhead: the source frame `frameState` names, and the pointer it places, in the outline export draws.
+/// The finished video at the playhead: the source frame `frameState` names, and the pointer it places, in the look export draws.
 /// Both are layers, so a new frame costs the main thread a property change and Core Animation composites it.
 /// The picture is content, so only the backdrop around it follows the appearance.
 final class PreviewView: NSView {
@@ -21,6 +21,7 @@ final class PreviewView: NSView {
 
     private let picture = CALayer()
     private let pointer = CAShapeLayer()
+    private var pointerStyle = CursorStyle.white
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -30,14 +31,8 @@ final class PreviewView: NSView {
         picture.backgroundColor = CGColor(gray: 0, alpha: 1)
         picture.borderWidth = 1
         picture.masksToBounds = true
-        let outline = CGMutablePath()
-        outline.addLines(between: PointerShape.outline)
-        outline.closeSubpath()
-        pointer.path = outline
-        pointer.fillColor = PointerShape.fill
-        pointer.strokeColor = PointerShape.stroke
-        pointer.lineWidth = PointerShape.lineWidth
         pointer.lineJoin = .round
+        dress(.white)
         pointer.isHidden = true
         picture.addSublayer(pointer)
         setAccessibilityElement(true)
@@ -87,10 +82,21 @@ final class PreviewView: NSView {
             }
             let size = picture.bounds.size
             let kx = size.width / pointSize.width, ky = size.height / pointSize.height
+            if cursor.style != pointerStyle { dress(cursor.style) }
             pointer.isHidden = false
+            pointer.opacity = Float(cursor.opacity)
             pointer.position = CGPoint(x: cursor.x * kx, y: size.height - cursor.y * ky)
             pointer.setAffineTransform(CGAffineTransform(scaleX: cursor.scale * kx, y: -cursor.scale * ky))
         }
+    }
+
+    private func dress(_ style: CursorStyle) {
+        let look = PointerShape.look(style)
+        pointer.path = look.path
+        pointer.fillColor = look.fill
+        pointer.strokeColor = look.stroke
+        pointer.lineWidth = look.lineWidth
+        pointerStyle = style
     }
 
     private func withoutAnimation(_ body: () -> Void) {
