@@ -275,8 +275,8 @@ private func checkVideoEditorClips(_ w: World, folder: URL, videoHash: String) a
     editor.selectClip(0)
     Synth.key(window, 53, "\u{1b}")
     check(editor.state.selectedClip == nil && !editor.state.isPreviewOnly, "Esc lets go of the picked clip")
-    Synth.key(window, 11, "b")
-    check(clips() == [[0, 0.25], [1.25, 2]], "B without Command is not taken")
+    let fell = SilentNoResponder.catching { Synth.key(window, 11, "b") }
+    check(clips() == [[0, 0.25], [1.25, 2]] && fell == ["keyDown:"], "B without Command is not taken")
 
     editor.seek(to: 0.1)
     let f = 1.0 / Double(project.source.fps)
@@ -473,8 +473,8 @@ private func checkVideoEditorPlayback(_ w: World, folder: URL) async throws {
     clock.now += 1
     editor.tick()
     check(!editor.state.transport.isPlaying && editor.state.transport.time(at: clock.now) == 0.5, "Space again pauses where it was")
-    Synth.key(window, 49, " ", modifiers: .command)
-    check(!editor.state.transport.isPlaying, "Command-Space is not taken")
+    let fell = SilentNoResponder.catching { Synth.key(window, 49, " ", modifiers: .command) }
+    check(!editor.state.transport.isPlaying && fell == ["keyDown:"], "Command-Space is not taken")
 
     end?.performClick(nil)
     check(editor.state.transport.time(at: clock.now) == project.source.duration && end?.isEnabled == false, "Go to End moves to the last moment")

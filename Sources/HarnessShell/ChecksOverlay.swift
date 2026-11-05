@@ -174,8 +174,8 @@ func checkPins() async throws {
     Synth.key(win, 126, modifiers: .shift); check(win.frame.origin == CGPoint(x: o.x + 10, y: o.y + 10), "shift+up nudges 10 pt up")
     Synth.key(win, 123, modifiers: .shift); Synth.key(win, 125, modifiers: .shift)
     check(win.frame.origin == o, "shift+left and shift+down return to the start")
-    Synth.key(win, 0, "a")
-    check(win.frame.origin == o && pins.pins.count == 1, "other keys do nothing")
+    let fell = SilentNoResponder.catching { Synth.key(win, 0, "a") }
+    check(win.frame.origin == o && pins.pins.count == 1 && fell == ["keyDown:"], "other keys do nothing and pass on unhandled")
 
     pin.opacity = 0.5
     check(win.alphaValue == 0.5, "opacity sets the window alpha")

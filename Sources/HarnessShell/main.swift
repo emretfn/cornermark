@@ -1,11 +1,13 @@
 import AppKit
 import CornermarkCapture
 import Foundation
+import CornermarkDesign
 @testable import CornermarkShell
 
 try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
 
 let app = NSApplication.shared
+SilentNoResponder.install()
 app.setActivationPolicy(.prohibited)
 ShortcutRecorderView.playRefusedSound = {}
 
@@ -24,40 +26,33 @@ DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, e
 Task { @MainActor in
     if let trimFilming {
         let ok = await VideoTrimFilm.run(out: URL(fileURLWithPath: trimFilming, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let exportFilming {
         let ok = await VideoExportFilm.run(out: URL(fileURLWithPath: exportFilming, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let editorFilming {
         let ok = await VideoEditorFilm.run(out: URL(fileURLWithPath: editorFilming, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let filming {
         let ok = await ResultsFilm.run(out: URL(fileURLWithPath: filming, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let filmingControls {
         let recovery = ProcessInfo.processInfo.environment["CORNERMARK_RECOVERY_EVIDENCE"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         let ok = await ControlsFilm.run(out: URL(fileURLWithPath: filmingControls, isDirectory: true), recovery: recovery)
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let filmingInput {
         let ok = await InputFilm.run(out: URL(fileURLWithPath: filmingInput, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let filmingGifs {
         let instance = ProcessInfo.processInfo.environment["CORNERMARK_INSTANCE_GIF"].map { URL(fileURLWithPath: $0) }
         let ok = await GifFilm.run(out: URL(fileURLWithPath: filmingGifs, isDirectory: true), instanceGif: instance)
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     let standardKeysBefore = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("cornermark") })
     print("screens: \(NSScreen.screens.count), activation policy prohibited: \(NSApp.activationPolicy() == .prohibited)")
@@ -103,12 +98,21 @@ Task { @MainActor in
     check(standardKeysBefore == standardKeysAfter, "standard UserDefaults gained no cornermark keys")
     check(nothingOnScreen(), "at the end no window was ever visible and the app never became active")
     check(NSApp.activationPolicy() == .prohibited, "activation policy still .prohibited")
+    check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))
     check(LiveInputSource.tapsCreated == 0, "no event tap was created in this run", detail: "\(LiveInputSource.tapsCreated)")
     check(LiveMicrophoneSource.sessionsOpened == 0 && MicrophoneAccess.requests == 0, "no real audio device was opened and microphone access was never requested",
           detail: "devices \(LiveMicrophoneSource.sessionsOpened), requests \(MicrophoneAccess.requests)")
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)
+}
+
+/// A film passes only when every key it sent was handled, since an unhandled one would have beeped.
+func filmDone(_ ok: Bool) -> Never {
+    let silent = SilentNoResponder.count == 0
+    if !silent { print("FAIL a key fell through to a system beep: \(SilentNoResponder.selectors.joined(separator: " "))") }
+    print(ok && silent ? "FILM DONE" : "FILM FAILED")
+    exit(ok && silent ? 0 : 1)
 }
 
 app.run()
