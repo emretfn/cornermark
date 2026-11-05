@@ -196,7 +196,7 @@ final class VideoExporterTests: XCTestCase {
     func testFramesFollowThePointerTrack() throws {
         let project = RecordingProject(source: .init(pixelWidth: 200, pixelHeight: 100, pointWidth: 100, pointHeight: 50, fps: 30, duration: 1),
                                        events: .init(pointer: [PointerSample(t: 0, x: 20, y: 10)]))
-        let renderer = ExportFrameRenderer(plan: ExportPlan(project: project, settings: ExportSettings()), source: project.source)
+        let renderer = ExportFrameRenderer(plan: ExportPlan(project: project, settings: ExportSettings()), project: project, folder: nil)
         let image = try XCTUnwrap(renderer.image(frameState(project, outputTime: 0), source: nil))
         let pixels = try XCTUnwrap(image.dataProvider?.data as Data?)
         func grey(_ x: Int, _ y: Int) -> UInt8 { pixels[y * image.bytesPerRow + x * 4 + 1] }
