@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkCapture
 import Foundation
 import CornermarkDesign
 
@@ -10,7 +11,7 @@ SilentNoResponder.install()
 app.setActivationPolicy(.prohibited)
 
 let filming = ProcessInfo.processInfo.environment["CORNERMARK_OVERLAY_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + (filming != nil ? 900 : 90)) {
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming != nil ? 900 : 180)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -33,6 +34,8 @@ Task { @MainActor in
     await runRecordingControlTests()
     await runProjectTimelineTests()
     await runInputTests()
+    await runAudioTests()
+    check(LiveMicrophoneSource.sessionsOpened == 0 && MicrophoneAccess.requests == 0, "no real audio device was opened and microphone access was never requested")
     check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
