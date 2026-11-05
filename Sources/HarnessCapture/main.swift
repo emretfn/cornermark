@@ -1,10 +1,12 @@
 import AppKit
 import Foundation
+import CornermarkDesign
 
 try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
 try? FileManager.default.createDirectory(atPath: multiScratch, withIntermediateDirectories: true)
 
 let app = NSApplication.shared
+SilentNoResponder.install()
 app.setActivationPolicy(.prohibited)
 
 let filming = ProcessInfo.processInfo.environment["CORNERMARK_OVERLAY_FILM"]
@@ -31,6 +33,7 @@ Task { @MainActor in
     await runRecordingControlTests()
     await runProjectTimelineTests()
     await runInputTests()
+    check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)
