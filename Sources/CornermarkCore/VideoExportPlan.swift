@@ -75,6 +75,10 @@ public struct ExportPlan: Equatable, Sendable {
         }
         width = Self.even(full.width * scale)
         height = Self.even(full.height * scale)
+        // The canvas is whole points, so its shape is a hair off a picked ratio; the short side sets the long one, so 1080 at 9:16 is 1080 × 1920.
+        if let ratio = project.edits.background.aspect.value {
+            if ratio >= 1 { width = Self.even(Double(height) * ratio) } else { height = Self.even(Double(width) / ratio) }
+        }
         fps = max(source.fps, 1)
         frameCount = max(1, Int((project.outputDuration * Double(fps)).rounded()))
         bitRate = max(Self.minimumBitRate, Int(Double(width * height * fps) * settings.quality.bitsPerPixel))

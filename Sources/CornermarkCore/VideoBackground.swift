@@ -28,9 +28,10 @@ public struct VideoBackground: Codable, Equatable, Sendable {
     public var cornerRadius: Double
     /// A picture the viewer added, a file in the project folder. It stays here when another fill is picked, so it can be picked again.
     public var image: String?
+    public var aspect: VideoAspect
 
-    public init(fill: Fill = .none, padding: Double = 64, shadow: Double = 50, cornerRadius: Double = 12, image: String? = nil) {
-        self.fill = fill; self.padding = padding; self.shadow = shadow; self.cornerRadius = cornerRadius; self.image = image
+    public init(fill: Fill = .none, padding: Double = 64, shadow: Double = 50, cornerRadius: Double = 12, image: String? = nil, aspect: VideoAspect = .auto) {
+        self.fill = fill; self.padding = padding; self.shadow = shadow; self.cornerRadius = cornerRadius; self.image = image; self.aspect = aspect
     }
 
     public init(from decoder: Decoder) throws {
@@ -41,8 +42,9 @@ public struct VideoBackground: Codable, Equatable, Sendable {
         shadow = (try? c.decodeIfPresent(Double.self, forKey: .shadow)) ?? d.shadow
         cornerRadius = (try? c.decodeIfPresent(Double.self, forKey: .cornerRadius)) ?? d.cornerRadius
         image = (try? c.decodeIfPresent(String.self, forKey: .image)) ?? nil
+        aspect = (try? c.decodeIfPresent(VideoAspect.self, forKey: .aspect)) ?? d.aspect
     }
-    private enum Keys: String, CodingKey { case fill, padding, shadow, cornerRadius, image }
+    private enum Keys: String, CodingKey { case fill, padding, shadow, cornerRadius, image, aspect }
 
     /// The `BuiltinBackgrounds` palettes offered as wallpapers, in panel order.
     public static let wallpapers = [2, 6, 10, 14, 11, 4]
@@ -52,6 +54,48 @@ public struct VideoBackground: Codable, Equatable, Sendable {
         guard let image, !image.contains("/"),
               let source = CGImageSourceCreateWithURL(folder.appendingPathComponent(image) as CFURL, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+}
+
+/// The finished video's shape. Auto keeps the shape the recording and its padding give; a ratio grows the video to it around them.
+public enum VideoAspect: Hashable, Codable, Sendable {
+    case auto
+    /// One of `presets`.
+    case ratio(width: Int, height: Int)
+    /// Typed by the viewer. Only the shape counts: the export panel picks the size.
+    case custom(width: Int, height: Int)
+
+    public static let presets: [VideoAspect] = [
+        .auto, .ratio(width: 1, height: 1), .ratio(width: 5, height: 4), .ratio(width: 4, height: 3), .ratio(width: 3, height: 2),
+        .ratio(width: 16, height: 9), .ratio(width: 4, height: 5), .ratio(width: 3, height: 4), .ratio(width: 9, height: 16),
+    ]
+    /// Width over height. Past it a video would be a sliver.
+    public static let limit = 0.25...4.0
+    public static let sides = 1...9999
+
+    /// Sides kept in `sides` and the shape in `limit`, the short side raised to meet it.
+    public static func custom(_ width: Int, _ height: Int) -> VideoAspect {
+        var w = min(max(width, sides.lowerBound), sides.upperBound), h = min(max(height, sides.lowerBound), sides.upperBound)
+        if Double(w) / Double(h) > limit.upperBound { h = Int((Double(w) / limit.upperBound).rounded(.up)) }
+        if Double(w) / Double(h) < limit.lowerBound { w = Int((Double(h) * limit.lowerBound).rounded(.up)) }
+        return .custom(width: w, height: h)
+    }
+
+    /// Width over height, nil for Auto.
+    public var value: Double? {
+        switch self {
+        case .auto: return nil
+        case .ratio(let w, let h), .custom(let w, let h):
+            return min(max(Double(max(w, 1)) / Double(max(h, 1)), Self.limit.lowerBound), Self.limit.upperBound)
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .auto: return "Auto"
+        case .ratio(let w, let h): return "\(w):\(h)"
+        case .custom: return "Custom"
+        }
     }
 }
 
@@ -65,20 +109,22 @@ public struct VideoCanvas: Equatable, Sendable {
     public var shadow: Double
     public var fill: VideoBackground.Fill
 
-    /// Without a fill the recording is the whole video and the frame settings do nothing, since a video has no transparency.
+    /// Without a fill the frame settings do nothing, since a video has no transparency: the recording fills the video, or with a
+    /// ratio sits in its middle between black bars. A ratio grows the video around the recording and its padding, never cuts it.
     public init(source: RecordingProject.Source, background: VideoBackground) {
         let content = CGSize(width: max(source.pointWidth, 1), height: max(source.pointHeight, 1))
         fill = background.fill
-        guard background.fill != .none else {
-            size = content; frame = CGRect(origin: .zero, size: content); cornerRadius = 0; shadow = 0
-            return
-        }
         let range = VideoBackground.self
-        let pad = min(max(background.padding, range.paddingRange.lowerBound), range.paddingRange.upperBound).rounded()
-        size = CGSize(width: content.width + 2 * pad, height: content.height + 2 * pad)
-        frame = CGRect(origin: CGPoint(x: pad, y: pad), size: content)
-        cornerRadius = min(min(max(background.cornerRadius, 0), range.cornerRange.upperBound), min(content.width, content.height) / 2)
-        shadow = min(max(background.shadow, 0), range.shadowRange.upperBound) / range.shadowRange.upperBound
+        let framed = background.fill != .none
+        let pad = framed ? min(max(background.padding, range.paddingRange.lowerBound), range.paddingRange.upperBound).rounded() : 0
+        var w = content.width + 2 * pad, h = content.height + 2 * pad
+        if let ratio = background.aspect.value {
+            if w / h < ratio { w = (h * ratio).rounded(.up) } else { h = (w / ratio).rounded(.up) }
+        }
+        size = CGSize(width: w, height: h)
+        frame = CGRect(origin: CGPoint(x: ((w - content.width) / 2).rounded(), y: ((h - content.height) / 2).rounded()), size: content)
+        cornerRadius = framed ? min(min(max(background.cornerRadius, 0), range.cornerRange.upperBound), min(content.width, content.height) / 2) : 0
+        shadow = framed ? min(max(background.shadow, 0), range.shadowRange.upperBound) / range.shadowRange.upperBound : 0
     }
 
     public var hasBackdrop: Bool { fill != .none }
