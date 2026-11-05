@@ -228,6 +228,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 240, height: 240)
             let count = 24
+            // Each clip shows pictures of its own stretch, so a picture may be off by half a slot at most, not by a keyframe interval.
+            let slack = CMTime(seconds: duration / Double(count) / 2, preferredTimescale: 600)
+            generator.requestedTimeToleranceBefore = slack
+            generator.requestedTimeToleranceAfter = slack
             var images: [CGImage] = []
             for i in 0..<count {
                 if Task.isCancelled { return }
