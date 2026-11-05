@@ -171,7 +171,7 @@ enum URLCommand {
         return AppAction.make(spec.id, timerSeconds: seconds).map { .success($0) } ?? .failure(.unknownPath(rawPath))
     }
 
-    /// `window=<id>` films one window. `style=video` or `style=editing` says what it becomes. `display=<id>`, or `x`, `y`, `width` and `height`, or both, film a display or an area of it.
+    /// `window=<id>` films one window. `style=video`, `style=editing` or `style=gif` says what it becomes. `display=<id>`, or `x`, `y`, `width` and `height`, or both, film a display or an area of it.
     /// A link that names no target is refused, so a stray link never starts filming the screen.
     static func recordingTarget(_ query: [String: String]) -> Result<RecordingTarget, URLCommandError> {
         let areaKeys = ["x", "y", "width", "height"]

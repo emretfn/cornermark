@@ -1,5 +1,13 @@
 import AppKit
+import CornermarkCore
 import CornermarkDesign
+
+extension RecordedVideo.Format {
+    /// What Quick Access and History call a recording in this format.
+    var noun: String { self == .gif ? "GIF" : "Recording" }
+    /// The glyph beside a recording's length.
+    var symbol: String { self == .gif ? "photo.stack.fill" : "video.fill" }
+}
 
 extension CardAction {
     var symbol: String {
@@ -10,6 +18,7 @@ extension CardAction {
         case .pin: return "pin"
         case .ocr: return "text.viewfinder"
         case .play: return "play.fill"
+        case .makeGif: return "photo.stack"
         case .reveal: return "folder"
         case .close: return "xmark"
         }
@@ -23,6 +32,7 @@ extension CardAction {
         case .pin: return "Pin to Screen"
         case .ocr: return "Copy Text (OCR)"
         case .play: return "Play"
+        case .makeGif: return "Convert to GIF"
         case .reveal: return "Reveal in Finder"
         case .close: return "Close"
         }
@@ -85,7 +95,9 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         setAccessibilityIdentifier("quickaccess.card")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("\(card.record.isRecording ? "Recording" : "Capture"), \(card.info.replacingOccurrences(of: "  \u{00B7}  ", with: ", "))")
+        // A GIF's info line already starts with its noun.
+        let spoken = card.info.replacingOccurrences(of: "  \u{00B7}  ", with: ", ")
+        setAccessibilityLabel(card.record.video?.format == .gif ? spoken : "\(card.record.video?.format.noun ?? "Capture"), \(spoken)")
         for action in card.actions {
             let b = action.makeButton()
             b.target = self
@@ -139,10 +151,10 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         }
 
         var line = NSRect(x: DS.Space.s12, y: imageArea.maxY + DS.Space.s6, width: bounds.width - 2 * DS.Space.s12, height: DS.Text.readout.lineHeight)
-        if card.record.isRecording {
-            // The glyph says "video" without relying on the duration's format alone.
+        if let video = card.record.video {
+            // The glyph says "video" or "GIF" without relying on the duration's format alone.
             let glyph = NSRect(x: line.minX, y: line.minY, width: DS.Size.iconSmall, height: line.height)
-            Glyph.draw("video.fill", in: glyph, pointSize: DS.Size.iconSmall - 2, DS.Color.textSecondary)
+            Glyph.draw(video.format.symbol, in: glyph, pointSize: DS.Size.iconSmall - 2, DS.Color.textSecondary)
             line.origin.x = glyph.maxX + DS.Space.s4
             line.size.width -= glyph.width + DS.Space.s4
         }

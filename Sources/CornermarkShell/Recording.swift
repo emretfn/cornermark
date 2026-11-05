@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CornermarkCapture
 import CornermarkCore
+import ImageIO
 
 /// Why an environment will not record a target. Nothing was filmed when one of these is thrown.
 enum RecordingRefusal: Error, Equatable, CustomStringConvertible {
@@ -40,8 +41,54 @@ enum RecordingOutput {
     /// Never overwrites: a second recording within the same second gets " 2", " 3", and so on.
     static func uniqueFolder(in folder: URL, for date: Date) -> URL { unique(in: folder, base: folderName(for: date), suffix: "", isDirectory: true) }
 
-    /// A finished video's file, `Cornermark Recording 2026-11-03 at 14.05.09.mp4`, never overwriting either.
-    static func uniqueVideo(in folder: URL, for date: Date) -> URL { unique(in: folder, base: folderName(for: date), suffix: ".mp4", isDirectory: false) }
+    /// A finished file, `Cornermark Recording 2026-11-03 at 14.05.09.mp4` or `.gif`, never overwriting either.
+    static func uniqueFile(in folder: URL, for date: Date, extension ext: String) -> URL {
+        unique(in: folder, base: folderName(for: date), suffix: ".\(ext)", isDirectory: false)
+    }
+
+    /// A GIF made from an existing video sits beside it under the same name, never overwriting.
+    static func gifBeside(_ video: URL) -> URL {
+        unique(in: video.deletingLastPathComponent(), base: video.deletingPathExtension().lastPathComponent, suffix: ".gif", isDirectory: false)
+    }
+
+    /// Where a recording in `style` lands, with nothing created yet.
+    static func destination(_ style: RecordingStyle, in folder: URL, for date: Date) -> RecordedVideo {
+        let location: URL
+        switch style {
+        case .editing: location = uniqueFolder(in: folder, for: date)
+        case .video: location = uniqueFile(in: folder, for: date, extension: "mp4")
+        case .gif: location = uniqueFile(in: folder, for: date, extension: "gif")
+        }
+        return RecordedVideo(location: location, format: style.format, duration: 0)
+    }
+
+    /// Writes the GIF a recording asked for from the video it filmed, then removes that video. When the GIF cannot be made the video
+    /// is kept beside where the GIF would be, as a plain recording, so nothing filmed is lost. `failed` says which happened.
+    static func finishGif(_ gif: URL, kind: CaptureKind) async -> (recording: FinishedRecording, failed: Bool)? {
+        let film = RecordedVideo(location: gif, format: .gif, duration: 0).film
+        do {
+            let made = try await makeGif(from: film, to: gif, kind: kind)
+            try? FileManager.default.removeItem(at: film)
+            return (made, false)
+        } catch {
+            Log.shell.error("gif not written file=\(gif.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            try? FileManager.default.removeItem(at: gif)
+            let kept = unique(in: gif.deletingLastPathComponent(), base: gif.deletingPathExtension().lastPathComponent, suffix: ".mp4", isDirectory: false)
+            guard (try? FileManager.default.moveItem(at: film, to: kept)) != nil else { return nil }
+            let asset = AVURLAsset(url: kept)
+            let seconds = (try? await asset.load(.duration).seconds) ?? 0
+            let size = (try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)) ?? .zero
+            return (FinishedRecording(video: RecordedVideo(location: kept, format: .video, duration: seconds), pixelSize: size, kind: kind), true)
+        }
+    }
+
+    /// Writes `gif` from the video at `video`, which stays as it is.
+    static func makeGif(from video: URL, to gif: URL, kind: CaptureKind) async throws -> FinishedRecording {
+        let report = try await GifConverter.convert(video, to: gif)
+        Log.shell.notice("gif written file=\(gif.lastPathComponent, privacy: .public) from=\(video.lastPathComponent, privacy: .public) frames=\(report.frames, privacy: .public) size=\(report.width, privacy: .public)x\(report.height, privacy: .public) seconds=\(String(format: "%.2f", report.duration), privacy: .public) bytes=\(report.bytes, privacy: .public)")
+        return FinishedRecording(video: RecordedVideo(location: gif, format: .gif, duration: report.duration),
+                                 pixelSize: CGSize(width: report.width, height: report.height), kind: kind)
+    }
 
     private static func unique(in folder: URL, base: String, suffix: String, isDirectory: Bool) -> URL {
         var url = folder.appendingPathComponent(base + suffix, isDirectory: isDirectory)
@@ -60,6 +107,16 @@ struct FinishedRecording: Equatable {
     var pixelSize: CGSize
     /// What was filmed, in the terms history already uses.
     var kind: CaptureKind
+}
+
+extension RecordingStyle {
+    var format: RecordedVideo.Format {
+        switch self {
+        case .video: return .video
+        case .editing: return .project
+        case .gif: return .gif
+        }
+    }
 }
 
 extension RecordingTarget {
@@ -106,9 +163,8 @@ final class RecordingController {
     private(set) var preferences = RecordingPreferences()
     private var request: Request?
     private var recorder: Recorder?
-    /// Set for a recording for editing, whose project is written beside its video when it finishes.
-    private var projectFolder: URL?
-    private var output: URL?
+    /// Where the recording lands. Its `film` is the file the recorder writes.
+    private var destination: RecordedVideo?
     private var journalEntry: RecordingJournal.Entry?
     /// A stop before the first frame with no countdown still records, so a link pair `record` then `record/stop` makes a file.
     private var stopRequested = false
@@ -142,20 +198,14 @@ final class RecordingController {
             Log.shell.error("recording refused: cannot create the folder: \(error.localizedDescription, privacy: .public)")
             return onFailed("Could not save the recording")
         }
-        let output: URL
-        switch style {
-        case .editing:
-            let project = RecordingOutput.uniqueFolder(in: folder(), for: env.clock())
-            do { try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false) } catch {
+        let destination = RecordingOutput.destination(style, in: folder(), for: env.clock())
+        if destination.format == .project {
+            do { try FileManager.default.createDirectory(at: destination.location, withIntermediateDirectories: false) } catch {
                 Log.shell.error("recording refused: cannot create the project folder: \(error.localizedDescription, privacy: .public)")
                 return onFailed("Could not save the recording")
             }
-            projectFolder = project
-            output = project.appendingPathComponent(RecordingProjectFile.videoName)
-        case .video:
-            output = RecordingOutput.uniqueVideo(in: folder(), for: env.clock())
         }
-        self.output = output
+        self.destination = destination
         self.target = target
         self.preferences = preferences
         request = Request(target: target, style: style, preferences: preferences)
@@ -166,11 +216,11 @@ final class RecordingController {
 
     /// Prepares the source, counts down when asked, then films.
     private func launch(_ source: FrameSource) {
-        guard let request, let output else { return }
+        guard let request, let destination else { return }
         let options = request.preferences.options(for: request.style)
-        let name = (projectFolder ?? output).lastPathComponent
-        // A finished video has its pointer in the picture, so nothing watches it.
-        let recorder = Recorder(source: source, output: output, pointer: request.style == .editing ? env.pointerSource() : nil, quality: options.quality)
+        let name = destination.location.lastPathComponent
+        // A finished video or GIF has its pointer in the picture, so nothing watches it.
+        let recorder = Recorder(source: source, output: destination.film, pointer: request.style == .editing ? env.pointerSource() : nil, quality: options.quality)
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
             Task { @MainActor in self?.sourceEnded(error) }
@@ -195,7 +245,7 @@ final class RecordingController {
                     return reset()
                 }
                 try await recorder.start()
-                journalEntry = env.recordingJournal?.open(location: projectFolder ?? output, format: projectFolder == nil ? .video : .project,
+                journalEntry = env.recordingJournal?.open(location: destination.location, format: destination.format,
                                                           kind: request.target.captureKind, area: recorder.pointArea)
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
                 Log.shell.notice("recording started project=\(name, privacy: .public) style=\(request.style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) hideNotifications=\(options.exclusion.hidesNotifications, privacy: .public) hideDesktopIcons=\(options.exclusion.hidesDesktopIcons, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
@@ -259,27 +309,34 @@ final class RecordingController {
     }
 
     private func finish() async {
-        guard let recorder, let request, phase.isRunning else { return }
+        guard let recorder, let request, let destination, phase.isRunning else { return }
         phase = .stopping
         do {
             let report = try await recorder.stop()
-            if let folder = projectFolder {
+            if destination.format == .project {
                 var project = report.project
                 project.edits.cursor.isVisible = request.preferences.showCursor
-                try RecordingProjectFile.write(project, to: folder)
+                try RecordingProjectFile.write(project, to: destination.location)
             }
-            if let journalEntry { env.recordingJournal?.close(journalEntry) }
+            // A GIF's journal entry stays open until the GIF is written, so a crash while it is made is recovered at the next launch.
+            let entry = journalEntry
             journalEntry = nil
+            if destination.format != .gif, let entry { env.recordingJournal?.close(entry) }
             let rate = String(format: "%.3f", report.dropRate * 100)
             let seconds = String(format: "%.3f", report.duration)
-            let saved = projectFolder ?? report.url
-            let name = saved.lastPathComponent, style = request.style
+            let name = destination.location.lastPathComponent, style = request.style, kind = request.target.captureKind
             let finished = FinishedRecording(
-                video: RecordedVideo(location: saved, format: projectFolder == nil ? .video : .project, duration: report.project.source.duration),
-                pixelSize: CGSize(width: report.format.width, height: report.format.height), kind: request.target.captureKind)
+                video: RecordedVideo(location: destination.location, format: destination.format, duration: report.project.source.duration),
+                pixelSize: CGSize(width: report.format.width, height: report.format.height), kind: kind)
             Log.shell.notice("recording finished project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) file=\(report.url.lastPathComponent, privacy: .public) pointerSamples=\(report.pointer.count, privacy: .public) firstFrame=\(String(format: "%.6f", report.firstFrameTime), privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) pauses=\(report.pauses.count, privacy: .public) bytes=\(report.fileBytes, privacy: .public) bitRate=\(report.bitRate, privacy: .public) cursorShown=\(request.preferences.showCursor, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
             reset()
-            onSaved(finished)
+            guard destination.format == .gif else { return onSaved(finished) }
+            // The recorder is free again while the GIF is made, so a new recording can start.
+            let made = await RecordingOutput.finishGif(destination.location, kind: kind)
+            if let entry { env.recordingJournal?.close(entry) }
+            guard let made else { return onFailed("Could not save the recording") }
+            if made.failed { onFailed("Could not convert the recording to GIF. It is saved as a video.") }
+            onSaved(made.recording)
         } catch {
             Log.shell.error("recording failed to finish: \(String(describing: error), privacy: .public)")
             reset()
@@ -289,13 +346,13 @@ final class RecordingController {
 
     private func reset() {
         recorder = nil
-        if let folder = projectFolder, (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
-            try? FileManager.default.removeItem(at: folder)
+        if let destination, destination.format == .project,
+           (try? FileManager.default.contentsOfDirectory(atPath: destination.location.path))?.isEmpty == true {
+            try? FileManager.default.removeItem(at: destination.location)
         }
         if let journalEntry { env.recordingJournal?.close(journalEntry) }
         journalEntry = nil
-        projectFolder = nil
-        output = nil
+        destination = nil
         request = nil
         area = nil
         target = nil
@@ -309,6 +366,13 @@ final class RecordingController {
 /// The picture a recording shows in Quick Access and History: its first frame.
 enum VideoPoster {
     static let maxPixel = 1920
+
+    static func image(of video: RecordedVideo) async -> CGImage? {
+        if video.format == .gif {
+            return CGImageSourceCreateWithURL(video.file as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+        }
+        return await image(of: video.file)
+    }
 
     static func image(of file: URL) async -> CGImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))

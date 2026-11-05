@@ -166,7 +166,7 @@ func checkCardActions() async throws {
     c.handleCaptured(CaptureOutput(image: text, kind: .area, pointScale: 1))
     var card = c.overlay.stack[0]
     var view = c.overlay.cardView(for: card)!
-    check(Set(view.buttons.keys) == Set(CardAction.offered(forRecording: false)) && view.buttons.values.allSatisfy { $0.isHidden }, "card has Copy, Save, Annotate, Pin, OCR, Close; hidden until hover")
+    check(Set(view.buttons.keys) == Set(CardAction.offered(for: nil)) && view.buttons.values.allSatisfy { $0.isHidden }, "card has Copy, Save, Annotate, Pin, OCR, Close; hidden until hover")
 
     view.mouseEntered(with: Synth.enterExit(.mouseEntered, in: c.overlay.panel(for: card)!))
     check(card.state == .hovering && view.buttons.values.allSatisfy { !$0.isHidden }, "mouseEntered: state .hovering and buttons shown")

@@ -120,9 +120,11 @@ public struct RecordedVideo: Codable, Hashable, Sendable {
         case video
         /// A Record for Editing folder: the video and its project file side by side.
         case project
+        /// One animated GIF with the pointer in its picture.
+        case gif
     }
 
-    /// The MP4 file, or the project folder.
+    /// The MP4 file, the project folder, or the GIF file.
     public var location: URL
     public var format: Format
     /// Seconds from the first frame to the end of the last one.
@@ -132,6 +134,11 @@ public struct RecordedVideo: Codable, Hashable, Sendable {
 
     /// The file a player opens.
     public var file: URL { format == .project ? location.appendingPathComponent(RecordingProjectFile.videoName) : location }
+
+    /// The H.264 file the recorder writes. A GIF is made from a hidden video beside it once the recording ends.
+    public var film: URL {
+        format == .gif ? location.deletingLastPathComponent().appendingPathComponent(".\(location.lastPathComponent).mp4") : file
+    }
 }
 
 /// One entry in capture history. `directory` holds image.png and, once edited, project.json plus assets.

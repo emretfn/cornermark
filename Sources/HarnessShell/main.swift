@@ -10,7 +10,8 @@ ShortcutRecorderView.playRefusedSound = {}
 
 let filming = ProcessInfo.processInfo.environment["CORNERMARK_RESULTS_FILM"]
 let filmingControls = ProcessInfo.processInfo.environment["CORNERMARK_CONTROLS_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && filmingControls == nil ? 180 : 900)) {
+let filmingGifs = ProcessInfo.processInfo.environment["CORNERMARK_GIF_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil && filmingControls == nil && filmingGifs == nil ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -24,6 +25,12 @@ Task { @MainActor in
     if let filmingControls {
         let recovery = ProcessInfo.processInfo.environment["CORNERMARK_RECOVERY_EVIDENCE"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         let ok = await ControlsFilm.run(out: URL(fileURLWithPath: filmingControls, isDirectory: true), recovery: recovery)
+        print(ok ? "FILM DONE" : "FILM FAILED")
+        exit(ok ? 0 : 1)
+    }
+    if let filmingGifs {
+        let instance = ProcessInfo.processInfo.environment["CORNERMARK_INSTANCE_GIF"].map { URL(fileURLWithPath: $0) }
+        let ok = await GifFilm.run(out: URL(fileURLWithPath: filmingGifs, isDirectory: true), instanceGif: instance)
         print(ok ? "FILM DONE" : "FILM FAILED")
         exit(ok ? 0 : 1)
     }
@@ -57,6 +64,7 @@ Task { @MainActor in
         try await checkRecordingResults()
         try await checkRecordingControls()
         try await checkRecordingRecovery()
+        try await checkGifRecording()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

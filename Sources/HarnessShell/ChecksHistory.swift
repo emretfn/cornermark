@@ -61,7 +61,8 @@ func checkHistory() async throws {
 
     let first = h.records[0]
     h.select(recordIDs: [first.id])
-    check(h.selectedRecords.map(\.id) == [first.id] && h.actionButtons.values.allSatisfy(\.isEnabled), "selecting enables the action buttons")
+    check(h.selectedRecords.map(\.id) == [first.id] && h.actionButtons.filter { $0.key != "gif" }.values.allSatisfy(\.isEnabled)
+          && h.actionButtons["gif"]?.isEnabled == false, "selecting a picture enables the action buttons, all but Convert to GIF")
     h.select(recordIDs: [])
     check(h.actionButtons.values.allSatisfy { !$0.isEnabled }, "no selection disables them")
 

@@ -50,6 +50,7 @@ func checkRecording() async throws {
         ("cornermark://record?x=10.5&y=-20&width=300&height=200", .startRecording(.display(nil, area: CGRect(x: 10.5, y: -20, width: 300, height: 200)), .editing)),
         ("cornermark://record?display=1&style=video", .startRecording(.display(1, area: nil), .video)),
         ("cornermark://record?window=42&style=editing", .startRecording(.window(42), .editing)),
+        ("cornermark://record?display=1&style=gif", .startRecording(.display(1, area: nil), .gif)),
         ("cornermark://record-screen", .capture(.recording)),
         ("cornermark://record/stop", .stopRecording), ("cornermark:///record/stop", .stopRecording), ("cornermark://record/stop/", .stopRecording),
         ("cornermark://record/test-window", .openRecordingTestWindow),
@@ -61,7 +62,7 @@ func checkRecording() async throws {
         "cornermark://record?display=0", "cornermark://record?display=main",
         "cornermark://record?x=1&y=2", "cornermark://record?x=1&y=2&width=0&height=5", "cornermark://record?x=1&y=2&width=5&height=-1",
         "cornermark://record?x=a&y=2&width=5&height=5", "cornermark://record?x=nan&y=2&width=5&height=5",
-        "cornermark://record?display=1&style=gif", "cornermark://record?display=1&style=",
+        "cornermark://record?display=1&style=GIF", "cornermark://record?display=1&style=",
     ]
     for s in rejected {
         if case .failure(.invalidRecording) = parse(s) { check(true, "rejects \(s)") } else { check(false, "rejects \(s)", detail: "\(parse(s))") }

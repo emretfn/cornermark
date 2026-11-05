@@ -143,7 +143,8 @@ func checkRecordingResults() async throws {
     check(FileManager.default.fileExists(atPath: q.store.paths(for: video).image.path), "history keeps its first frame as the picture")
     guard let card = qc.overlay.card(forRecord: video.id), let view = qc.overlay.cardView(for: card) else { return check(false, "a Quick Access card appears") }
     check(qc.hud.lastMessage == nil, "the card is the confirmation, so no HUD shows", detail: qc.hud.lastMessage ?? "nil")
-    check(view.buttons.keys.sorted { "\($0)" < "\($1)" } == [.close, .copy, .play, .reveal], "the card offers Copy, Play, Reveal in Finder and Close", detail: "\(view.buttons.keys)")
+    check(view.buttons.keys.sorted { "\($0)" < "\($1)" } == [.close, .copy, .makeGif, .play, .reveal], "the card offers Copy, Play, Convert to GIF, Reveal in Finder and Close",
+          detail: "\(view.buttons.keys)")
     check(card.info == "0:00  \u{00B7}  1280 \u{00D7} 720", "and reads its length and size", detail: card.info)
     check(card.thumbnail.width == 640 && card.thumbnail.height == 360, "its thumbnail is the video's first frame", detail: "\(card.thumbnail.width)x\(card.thumbnail.height)")
     check(click("card.copy", in: view), "Copy clicked")
