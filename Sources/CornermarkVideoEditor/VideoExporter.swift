@@ -107,34 +107,20 @@ public enum VideoExporter {
                                progress: @Sendable (Double) -> Void) async throws -> Int {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        output.alwaysCopiesSampleData = false
-        reader.add(output)
-        guard reader.startReading() else { throw ExportError.writer(reader.error?.localizedDescription ?? "the source could not be read") }
-        defer { reader.cancelReading() }
-
-        func next() -> (time: Double, image: CGImage)? {
-            while let sample = output.copyNextSampleBuffer() {
-                guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-                var image: CGImage?
-                VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
-                if let image { return (CMSampleBufferGetPresentationTimeStamp(sample).seconds, image) }
-            }
-            return nil
-        }
-
+        let timeline = project.timeline
         let renderer = ExportFrameRenderer(plan: plan, source: project.source)
         let sink = Sink(writer: writer)
-        var pending = next()
-        var current: CGImage?
+        var reader: ClipReader?
         var reported = -1
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.fps))
         for k in 0..<plan.frameCount {
             try Task.checkCancellation()
-            let state = frameState(project, outputTime: plan.time(ofFrame: k))
-            while let p = pending, p.time <= state.sourceTime + 1e-6 { current = p.image; pending = next() }
-            if current == nil { current = pending?.image }
+            let t = plan.time(ofFrame: k)
+            let state = frameState(project, outputTime: t)
+            // A cut leaves the frames between two clips unread: each clip gets a reader of its own that starts at the clip.
+            let clip = timeline.clipIndex(at: t)
+            if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
+            let current = reader?.image(at: state.sourceTime)
             let buffer = try encoder.makeBuffer()
             try draw(into: buffer) { renderer.draw(state, source: current, in: $0) }
             try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
@@ -156,6 +142,44 @@ public enum VideoExporter {
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         else { throw ExportError.writer("a frame could not be drawn") }
         body(ctx)
+    }
+}
+
+/// Reads one clip's source frames in order and answers with the last frame at or before a moment, the frame a player shows then.
+private final class ClipReader {
+    let clip: Int
+    private let reader: AVAssetReader
+    private let output: AVAssetReaderTrackOutput
+    private var pending: (time: Double, image: CGImage)?
+    private var current: CGImage?
+
+    init(asset: AVAsset, track: AVAssetTrack, clip: Int, range: Clip) throws {
+        self.clip = clip
+        reader = try AVAssetReader(asset: asset)
+        reader.timeRange = CMTimeRange(start: CMTime(seconds: range.start, preferredTimescale: 600),
+                                       end: CMTime(seconds: range.end, preferredTimescale: 600))
+        output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        output.alwaysCopiesSampleData = false
+        reader.add(output)
+        guard reader.startReading() else { throw ExportError.writer(reader.error?.localizedDescription ?? "the source could not be read") }
+        pending = next()
+    }
+
+    deinit { reader.cancelReading() }
+
+    func image(at sourceTime: Double) -> CGImage? {
+        while let p = pending, p.time <= sourceTime + 1e-6 { current = p.image; pending = next() }
+        return current ?? pending?.image
+    }
+
+    private func next() -> (time: Double, image: CGImage)? {
+        while let sample = output.copyNextSampleBuffer() {
+            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+            var image: CGImage?
+            VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
+            if let image { return (CMSampleBufferGetPresentationTimeStamp(sample).seconds, image) }
+        }
+        return nil
     }
 }
 

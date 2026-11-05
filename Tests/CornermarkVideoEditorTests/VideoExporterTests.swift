@@ -57,6 +57,44 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual((try FileManager.default.contentsOfDirectory(atPath: folder.path)).sorted(), ["export.mp4", "screen.mp4"], "no partial file is left")
     }
 
+    /// The grey level of each frame of `url`, decoded in order.
+    private func levels(_ url: URL) async throws -> [Int] {
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        XCTAssertTrue(reader.startReading())
+        var out: [Int] = []
+        while let sample = output.copyNextSampleBuffer(), let buffer = CMSampleBufferGetImageBuffer(sample) {
+            CVPixelBufferLockBaseAddress(buffer, .readOnly)
+            let p = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+            let row = CVPixelBufferGetBytesPerRow(buffer)
+            out.append(Int(p[CVPixelBufferGetHeight(buffer) / 2 * row + 40 * 4 + 1]))
+            CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+        }
+        return out
+    }
+
+    func testATrimmedExportIsAsLongAsItsClipsAndCutsOnTheirFrames() async throws {
+        var (source, project) = try await makeSource()
+        project.events = .init()
+        project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 0.7, end: 0.9)]
+        let out = folder.appendingPathComponent("trimmed.mp4")
+        let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: out)
+        XCTAssertEqual(report.framesWritten, 21)
+        XCTAssertEqual(report.duration, 0.7, accuracy: 0.5 / 30, "the file is as long as what the clips keep")
+        let shown = try await levels(out)
+        let expected = (Array(0..<15) + Array(21..<27)).map { $0 * 8 }
+        XCTAssertEqual(shown.count, expected.count)
+        for (k, (got, want)) in zip(shown, expected).enumerated() {
+            XCTAssertEqual(got, want, accuracy: 4, "output frame \(k) shows source frame \(want / 8)")
+        }
+        XCTAssertEqual(shown[14], 14 * 8, accuracy: 4, "the last frame before the cut is source frame 14")
+        XCTAssertEqual(shown[15], 21 * 8, accuracy: 4, "the first frame after the cut is source frame 21, not 15")
+    }
+
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")
