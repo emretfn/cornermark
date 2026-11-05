@@ -60,6 +60,12 @@ final class AppEnvironment {
     var pointerSource: () -> PointerSource? = { nil }
     var inputSource: (InputCapture) -> InputSource? = { _ in nil }
     var hasInputPermission: () -> Bool = { false }
+    /// The camera for a recording. A scripted instance draws a synthetic one and never opens a real camera.
+    var cameraSource: () -> CameraSource? = { nil }
+    /// Reads camera access without asking.
+    var cameraAccess: () -> CameraAccess = { .denied }
+    /// Shows the system's camera prompt. Only the live app has one, and only a click in Settings calls it.
+    var requestCameraAccess: (@escaping (Bool) -> Void) -> Void = { $0(false) }
     /// The window a scripted instance films. Nil in a normal instance.
     var recordingTestWindow: RecordingTestWindowHosting?
     /// Where recordings in progress are noted, so one cut off by a crash is finished at the next launch. Nil keeps no notes.

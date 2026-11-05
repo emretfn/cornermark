@@ -31,6 +31,7 @@ Task { @MainActor in
     await runRecordingControlTests()
     await runProjectTimelineTests()
     await runInputTests()
+    await runCameraTests()
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)

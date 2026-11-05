@@ -462,7 +462,7 @@ extension KeystrokeDisplay.Theme {
 }
 
 /// A dot in a status colour. Drawn at draw time through `Glyph`, so the colour follows light and dark.
-private final class StatusDot: NSView {
+final class StatusDot: NSView {
     var color: NSColor = DS.Color.textSecondary { didSet { needsDisplay = true } }
     override var intrinsicContentSize: NSSize { NSSize(width: DS.Size.icon, height: DS.Size.icon) }
     override func draw(_ dirtyRect: NSRect) { Glyph.draw("circle.fill", in: bounds, pointSize: DS.Size.iconSmall - 4, color) }
@@ -533,7 +533,7 @@ final class SettingsWindowController: NSWindowController {
     private let scroll = NSScrollView()
 
     init(ctx: SettingsContext) {
-        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), PermissionsPane(ctx)]
+        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), CameraPane(ctx), PermissionsPane(ctx)]
         self.panes = panes
         selectedPane = panes[0]
         items = panes.map { SidebarItem(symbol: $0.symbol, title: $0.paneTitle) }

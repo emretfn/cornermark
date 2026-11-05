@@ -45,25 +45,26 @@ public struct ExportFrameRenderer: Sendable {
 
     public static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin.
-    public func draw(_ state: FrameState, source: CGImage?, in ctx: CGContext) {
+    /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin. `camera` is the camera file's picture at the same moment.
+    public func draw(_ state: FrameState, source: CGImage?, camera: CGImage? = nil, in ctx: CGContext) {
         let full = CGRect(x: 0, y: 0, width: width, height: height)
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
         ctx.fill(full)
         ctx.interpolationQuality = .high
         if let source { ctx.draw(source, in: full) }
-        guard let cursor = state.cursor else { return }
+        guard state.cursor != nil || (state.camera != nil && camera != nil) else { return }
         ctx.saveGState()
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: CGFloat(width) / pointSize.width, y: -CGFloat(height) / pointSize.height)
-        PointerShape.draw(cursor, in: ctx)
+        if let placed = state.camera, let camera { CameraBubblePainter.draw(camera, placed, in: ctx) }
+        if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
         ctx.restoreGState()
     }
 
-    public func image(_ state: FrameState, source: CGImage?) -> CGImage? {
+    public func image(_ state: FrameState, source: CGImage?, camera: CGImage? = nil) -> CGImage? {
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: Self.colorSpace,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-        draw(state, source: source, in: ctx)
+        draw(state, source: source, camera: camera, in: ctx)
         return ctx.makeImage()
     }
 }
@@ -124,6 +125,9 @@ public enum VideoExporter {
             return nil
         }
 
+        // A project whose camera file is gone still exports, without the camera.
+        var camera: ForwardFrames?
+        if let name = project.source.camera { camera = try? await ForwardFrames(url: video.deletingLastPathComponent().appendingPathComponent(name)) }
         let renderer = ExportFrameRenderer(plan: plan, source: project.source)
         let sink = Sink(writer: writer)
         var pending = next()
@@ -136,7 +140,8 @@ public enum VideoExporter {
             while let p = pending, p.time <= state.sourceTime + 1e-6 { current = p.image; pending = next() }
             if current == nil { current = pending?.image }
             let buffer = try encoder.makeBuffer()
-            try draw(into: buffer) { renderer.draw(state, source: current, in: $0) }
+            let cameraImage = state.camera == nil ? nil : camera?.image(at: state.sourceTime)
+            try draw(into: buffer) { renderer.draw(state, source: current, camera: cameraImage, in: $0) }
             try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
             try await sink.append(encoder.take())
             let percent = (k + 1) * 100 / plan.frameCount
@@ -156,6 +161,43 @@ public enum VideoExporter {
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         else { throw ExportError.writer("a frame could not be drawn") }
         body(ctx)
+    }
+}
+
+/// Reads a video forward and hands out the picture showing at a time, for a second track such as the camera's.
+private final class ForwardFrames {
+    private let reader: AVAssetReader
+    private let output: AVAssetReaderTrackOutput
+    private var pending: (time: Double, image: CGImage)?
+    private var current: CGImage?
+
+    init(url: URL) async throws {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
+        reader = try AVAssetReader(asset: asset)
+        output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        output.alwaysCopiesSampleData = false
+        reader.add(output)
+        guard reader.startReading() else { throw ExportError.writer(reader.error?.localizedDescription ?? "the camera could not be read") }
+        pending = next()
+    }
+
+    deinit { reader.cancelReading() }
+
+    private func next() -> (time: Double, image: CGImage)? {
+        while let sample = output.copyNextSampleBuffer() {
+            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+            var image: CGImage?
+            VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
+            if let image { return (CMSampleBufferGetPresentationTimeStamp(sample).seconds, image) }
+        }
+        return nil
+    }
+
+    /// Times must not go back.
+    func image(at t: Double) -> CGImage? {
+        while let p = pending, p.time <= t + 1e-6 { current = p.image; pending = next() }
+        return current ?? pending?.image
     }
 }
 

@@ -61,6 +61,9 @@ extension AppEnvironment {
         env.pointerSource = { LivePointerSource() }
         env.inputSource = { LiveInputSource(capture: $0) }
         env.hasInputPermission = { LiveInputSource.isPermitted }
+        env.cameraSource = { LiveCameraSource() }
+        env.cameraAccess = { CameraAccess.current }
+        env.requestCameraAccess = { CameraAccess.request($0) }
         env.recordingJournal = RecordingJournal(folder: support.appendingPathComponent("\(AppVariant.current.name)/Unfinished Recordings", isDirectory: true))
         return env
     }
@@ -96,6 +99,12 @@ extension AppEnvironment {
         env.pointerSource = { ScriptedPointerSource() }
         env.inputSource = { ScriptedInputSource(capture: $0) }
         env.hasInputPermission = { true }
+        env.cameraSource = { ScriptedCameraSource() }
+        env.cameraAccess = { .allowed }
+        env.requestCameraAccess = { done in
+            Log.shell.error("camera access request refused: a scripted instance never asks")
+            done(false)
+        }
         env.recordingJournal = RecordingJournal(folder: root.appendingPathComponent("unfinished", isDirectory: true))
         env.willPresent = { window in
             Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")

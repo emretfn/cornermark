@@ -1,6 +1,20 @@
+import AVFoundation
 import CoreGraphics
 import CornermarkCore
 import Foundation
+
+/// The camera recorded beside the screen.
+public struct CameraRecording {
+    public var source: CameraSource
+    /// Record for Editing writes the camera to this file, on the video's timeline. Nil draws the camera into the picture.
+    public var output: URL?
+    public var look: CameraLook
+    /// Every camera picture as it arrives, on the camera's queue, for the bubble on screen.
+    public var preview: ((CVPixelBuffer) -> Void)?
+    public init(source: CameraSource, output: URL?, look: CameraLook, preview: ((CVPixelBuffer) -> Void)? = nil) {
+        self.source = source; self.output = output; self.look = look; self.preview = preview
+    }
+}
 
 /// One recording, from the first frame to the finished file. The pointer, clicks and keys, when watched, are kept as tracks beside the video.
 public final class Recorder {
@@ -13,7 +27,22 @@ public final class Recorder {
     private let input: InputSource?
     private let marks: InputMarks?
     private let quality: VideoQuality
+    private let camera: CameraRecording?
     private var writer: RecordingWriter?
+    /// Camera state, guarded by `pictureLock`, which also keeps the frames reaching the writers in time order.
+    private let pictureLock = NSLock()
+    private var cameraWriter: RecordingWriter?
+    private var cameraCompositor: CameraCompositor?
+    private var latestCamera: CVPixelBuffer?
+    private var blankCamera: CVPixelBuffer?
+    private var lastScreen: VideoFrame?
+    private var lastScreenTime = -Double.infinity
+    private var lastEmitted = -Double.infinity
+    private var cameraPictures = 0
+    private var cameraFills = 0
+    /// Why the camera is not recorded, when one was asked for and could not start.
+    public private(set) var cameraFailure: CameraUnavailable?
+    public var cameraInPicture: Bool { pictureLock.withLock { cameraCompositor != nil } }
     private var compositor: InputCompositor?
     private var track = PointerTrackBuilder()
     private var clicks: [ClickEvent] = []
@@ -31,13 +60,14 @@ public final class Recorder {
     public var seconds: Double { writer?.seconds ?? 0 }
 
     public init(source: FrameSource, output: URL, pointer: PointerSource? = nil, input: InputSource? = nil, marks: InputMarks? = nil,
-                quality: VideoQuality = .high) {
+                camera: CameraRecording? = nil, quality: VideoQuality = .high) {
         self.source = source
         self.output = output
         self.pointer = pointer
         self.input = input
         self.marks = marks.flatMap { $0.isVisible ? $0 : nil }
         self.quality = quality
+        self.camera = camera
     }
 
     public var onFailure: ((Error) -> Void)? {
@@ -68,36 +98,121 @@ public final class Recorder {
             inputFailure = error as? InputUnavailable ?? .tapFailed
         }
         if let marks { compositor = InputCompositor(marks: marks, format: format, area: source.pointArea.size) }
+        startCamera(format)
         do {
-            try await source.start { [weak self, writer] frame in
-                guard let self, self.compositor != nil else { return writer.append(frame) }
-                let pictures = self.trackLock.withLock {
-                    self.compositor?.pictures(for: frame, clicks: Array(self.clicks.suffix(Self.recentClicks)), keys: Array(self.keys.suffix(Self.recentKeys))) ?? [frame]
+            try await source.start { [weak self] frame in
+                guard let self else { return }
+                self.pictureLock.withLock {
+                    if self.camera != nil {
+                        self.lastScreen = frame
+                        self.lastScreenTime = frame.time.seconds
+                    }
+                    self.emit(frame)
                 }
-                pictures.forEach(writer.append)
             }
         } catch {
             input?.stop()
             pointer?.stop()
+            stopCamera()
+            cameraWriter?.cancel()
+            cameraWriter = nil
             writer.cancel()
             self.writer = nil
             throw error
         }
     }
 
+    /// The camera starts before the pictures, so the first frame already has the camera's picture.
+    private func startCamera(_ format: FrameFormat) {
+        guard let camera else { return }
+        let size = camera.source.pixelSize
+        do {
+            if let output = camera.output {
+                let cameraFormat = FrameFormat(width: Int(size.width), height: Int(size.height), fps: format.fps)
+                cameraWriter = try RecordingWriter(url: output, format: cameraFormat, realTime: source.deliversInRealTime, quality: quality)
+                blankCamera = SyntheticCamera.blank(cameraFormat)
+            } else {
+                cameraCompositor = CameraCompositor(format: format, area: source.pointArea.size)
+            }
+            try camera.source.start { [weak self] picture in self?.cameraArrived(picture) }
+        } catch {
+            cameraFailure = error as? CameraUnavailable ?? .failed(String(describing: error))
+            cameraWriter?.cancel()
+            pictureLock.withLock {
+                cameraWriter = nil
+                cameraCompositor = nil
+            }
+        }
+    }
+
+    private func stopCamera() { camera?.source.stop() }
+
+    /// A live stream sends nothing while the screen is still, which would freeze the camera with it. A camera picture that comes after
+    /// the screen has been quiet this long makes a frame of its own from the last screen picture.
+    private var quietScreen: Double { max(3.0 / Double(format?.fps ?? 60), 0.05) }
+
+    private func cameraArrived(_ picture: CameraPicture) {
+        camera?.preview?(picture.pixels)
+        pictureLock.withLock {
+            cameraPictures += 1
+            latestCamera = picture.pixels
+            guard let last = lastScreen, picture.time - lastScreenTime > quietScreen, picture.time > lastEmitted else { return }
+            cameraFills += 1
+            emit(VideoFrame(pixels: last.pixels, time: CMTime(seconds: picture.time, preferredTimescale: 600_000)))
+        }
+    }
+
+    /// Sends one picture to the file, and the camera's picture at the same moment to the camera's file, so both share a timeline.
+    /// Called with `pictureLock` held.
+    private func emit(_ frame: VideoFrame) {
+        guard let writer else { return }
+        if camera != nil {
+            guard frame.time.seconds > lastEmitted else { return }
+            lastEmitted = frame.time.seconds
+        }
+        var picture = frame
+        if let cameraCompositor, let latestCamera, let look = camera?.look.current {
+            picture = cameraCompositor.picture(latestCamera, bubble: look, over: frame)
+        }
+        if let cameraWriter, let pixels = latestCamera ?? blankCamera { cameraWriter.append(VideoFrame(pixels: pixels, time: frame.time)) }
+        guard compositor != nil else { return writer.append(picture) }
+        let pictures = trackLock.withLock {
+            compositor?.pictures(for: picture, clicks: Array(clicks.suffix(Self.recentClicks)), keys: Array(keys.suffix(Self.recentKeys))) ?? [picture]
+        }
+        pictures.forEach(writer.append)
+    }
+
     public func pause() {
-        writer?.pause()
+        pictureLock.withLock {
+            writer?.pause()
+            cameraWriter?.pause()
+        }
         trackLock.withLock { compositor?.forget() }
     }
-    public func resume() { writer?.resume() }
+
+    public func resume() {
+        pictureLock.withLock {
+            writer?.resume()
+            cameraWriter?.resume()
+        }
+    }
 
     public func stop() async throws -> RecordingReport {
         await source.stop()
         pointer?.stop()
         input?.stop()
+        stopCamera()
         guard let writer else { throw RecordingError.noFrames }
-        self.writer = nil
-        var report = try await writer.finish()
+        let cameraWriter = pictureLock.withLock { () -> RecordingWriter? in
+            self.writer = nil
+            defer { self.cameraWriter = nil }
+            return self.cameraWriter
+        }
+        var report: RecordingReport
+        do { report = try await writer.finish() } catch {
+            cameraWriter?.cancel()
+            throw error
+        }
         report.area = source.pointArea
         let paused = report.pauses.reduce(0) { $0 + $1.to - $1.from }
         let samples = trackLock.withLock {
@@ -115,6 +230,20 @@ public final class Recorder {
         }
         report.clicks = rawClicks.compactMap { c in videoTime(c.t).map { ClickEvent(t: $0, x: c.x, y: c.y) } }
         report.keys = rawKeys.compactMap { k in videoTime(k.t).map { KeyEvent(t: $0, label: k.label, isCommand: k.isCommand) } }
+        if let camera, cameraFailure == nil {
+            var file: URL?
+            if let cameraWriter {
+                do { file = try await cameraWriter.finish().url } catch {
+                    cameraFailure = .failed(String(describing: error))
+                }
+            }
+            if cameraFailure == nil {
+                var bubble = camera.look.current
+                bubble.fullScreen = CameraSpans.onVideo(bubble.fullScreen, firstFrame: report.firstFrameTime, end: end, pauses: report.pauses)
+                let (pictures, filled) = pictureLock.withLock { (cameraPictures, cameraFills) }
+                report.camera = CameraTrackReport(file: file, pictures: pictures, filled: filled, bubble: bubble)
+            }
+        }
         return report
     }
 
@@ -123,7 +252,25 @@ public final class Recorder {
         await source.stop()
         pointer?.stop()
         input?.stop()
-        writer?.cancel()
-        writer = nil
+        stopCamera()
+        pictureLock.withLock {
+            writer?.cancel()
+            writer = nil
+            cameraWriter?.cancel()
+            cameraWriter = nil
+        }
+    }
+}
+
+public enum CameraSpans {
+    /// Spans on the source clock as spans of the video: an end inside a pause moves to where the pause began, an end past the
+    /// recording to its end, and a span left with no length is dropped.
+    public static func onVideo(_ spans: [CameraSpan], firstFrame: Double, end: Double, pauses: [RecordingPause]) -> [CameraSpan] {
+        func place(_ t: Double) -> Double {
+            var since = min(max(t - firstFrame, 0), end)
+            if let p = pauses.first(where: { since > $0.from && since < $0.to }) { since = p.from }
+            return RecordingPause.videoTime(since, skipping: pauses) ?? 0
+        }
+        return spans.map { CameraSpan(from: place($0.from), to: place($0.to)) }.filter { $0.to > $0.from }
     }
 }

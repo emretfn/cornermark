@@ -85,6 +85,7 @@ Task { @MainActor in
         try await checkRecordingRecovery()
         try await checkGifRecording()
         try await checkRecordingInput()
+        try await checkRecordingCamera()
         try await checkVideoEditor()
         try await checkVideoExport()
         try await takeSnapshots()
