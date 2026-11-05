@@ -51,13 +51,21 @@ public struct ExportFrameRenderer: Sendable {
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
         ctx.fill(full)
         ctx.interpolationQuality = .high
-        if let source { ctx.draw(source, in: full) }
+        if let source { ctx.draw(source, in: Self.pictureRect(state.camera, in: full)) }
         guard let cursor = state.cursor else { return }
+        let camera = state.camera
         ctx.saveGState()
         ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: CGFloat(width) / pointSize.width, y: -CGFloat(height) / pointSize.height)
+        ctx.scaleBy(x: CGFloat(width) / (pointSize.width * camera.width), y: -CGFloat(height) / (pointSize.height * camera.height))
+        ctx.translateBy(x: -pointSize.width * camera.x, y: -pointSize.height * camera.y)
         PointerShape.draw(cursor, in: ctx)
         ctx.restoreGState()
+    }
+
+    /// Where the whole recording lands so that `camera` fills `frame`, in y-up coordinates.
+    public static func pictureRect(_ camera: ZoomRect, in frame: CGRect) -> CGRect {
+        let w = frame.width / camera.width, h = frame.height / camera.height
+        return CGRect(x: frame.minX - camera.x * w, y: frame.minY - (1 - camera.y - camera.height) * h, width: w, height: h)
     }
 
     public func image(_ state: FrameState, source: CGImage?) -> CGImage? {

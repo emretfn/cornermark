@@ -3,7 +3,8 @@ import CornermarkCore
 import CornermarkDesign
 import QuartzCore
 
-/// The finished video at the playhead: the source frame `frameState` names, and the pointer it places, in the outline export draws.
+/// The finished video at the playhead: the source frame `frameState` names, cropped to its camera, and the pointer it places, in
+/// the outline export draws.
 /// Both are layers, so a new frame costs the main thread a property change and Core Animation composites it.
 /// The picture is content, so only the backdrop around it follows the appearance.
 final class PreviewView: NSView {
@@ -15,7 +16,7 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCursor() } } }
+    var state: FrameState? { didSet { if oldValue != state { place() } } }
     /// Room around the picture. None in preview-only mode, where the picture fills the window.
     var inset: CGFloat = DS.Space.s16 { didSet { needsLayout = true } }
 
@@ -66,7 +67,7 @@ final class PreviewView: NSView {
     override func layout() {
         super.layout()
         withoutAnimation { picture.frame = pictureRect }
-        placeCursor()
+        place()
     }
 
     /// Where the picture sits: the recorded area fitted into the view, in the view's bottom-left coordinates.
@@ -78,17 +79,20 @@ final class PreviewView: NSView {
         return CGRect(x: (box.midX - w / 2).rounded(), y: (box.midY - h / 2).rounded(), width: w, height: h)
     }
 
-    /// Pointer samples count from the recorded area's top-left corner with y down; the picture layer counts from its bottom-left.
-    private func placeCursor() {
+    /// The camera picks the part of the picture shown; `contentsRect` counts from the picture's bottom-left, the camera from its top-left.
+    /// Pointer samples count from the recorded area's top-left corner with y down, and move with the camera.
+    private func place() {
         withoutAnimation {
+            let camera = state?.camera ?? .full
+            picture.contentsRect = CGRect(x: camera.x, y: 1 - camera.y - camera.height, width: camera.width, height: camera.height)
             guard let cursor = state?.cursor, pointSize.width > 0, pointSize.height > 0 else {
                 pointer.isHidden = true
                 return
             }
             let size = picture.bounds.size
-            let kx = size.width / pointSize.width, ky = size.height / pointSize.height
+            let kx = size.width / (pointSize.width * camera.width), ky = size.height / (pointSize.height * camera.height)
             pointer.isHidden = false
-            pointer.position = CGPoint(x: cursor.x * kx, y: size.height - cursor.y * ky)
+            pointer.position = CGPoint(x: (cursor.x - camera.x * pointSize.width) * kx, y: size.height - (cursor.y - camera.y * pointSize.height) * ky)
             pointer.setAffineTransform(CGAffineTransform(scaleX: cursor.scale * kx, y: -cursor.scale * ky))
         }
     }

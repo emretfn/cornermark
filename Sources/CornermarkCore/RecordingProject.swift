@@ -93,10 +93,12 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// What the finished video keeps of the recording, in order. A project read from a file always has at least one;
         /// one written before clips existed keeps the whole recording.
         public var clips: [Clip]
+        /// Ordered and apart, on the finished video's timeline.
+        public var zooms: [Zoom]
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = []) {
-            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips
+                    clips: [Clip] = [], zooms: [Zoom] = []) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.zooms = zooms.sorted { $0.start < $1.start }
         }
 
         public init(from decoder: Decoder) throws {
@@ -105,8 +107,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             clicks = (try? c.decodeIfPresent(ClickHighlight.self, forKey: .clicks)) ?? ClickHighlight()
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
+            zooms = (((try? c.decodeIfPresent([Lossy<Zoom>].self, forKey: .zooms)) ?? nil)?.compactMap(\.value) ?? []).sorted { $0.start < $1.start }
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, zooms }
     }
 
     public var version: Int
@@ -165,17 +168,21 @@ public struct FrameState: Equatable, Sendable {
     public var sourceTime: Double
     /// Nil when the viewer hid the pointer or the recording has none.
     public var cursor: CursorFrame?
+    /// The part of the recorded area the frame shows. The pointer is placed in the recording's points, so it moves with the picture.
+    public var camera: ZoomRect = .full
 }
 
 /// The frame at `outputTime` seconds of the finished video. Pure: the same project and time always give the same answer.
 public func frameState(_ project: RecordingProject, outputTime: Double) -> FrameState {
     let sourceTime = project.timeline.sourceTime(at: outputTime)
+    // Zooms sit on the finished video's timeline, so the camera follows output time after clips have mapped it to the source.
+    let camera = ZoomCamera.rect(project.edits.zooms, at: outputTime)
     let settings = project.edits.cursor
     guard settings.isVisible, let at = PointerTrack.position(project.events.pointer, at: sourceTime) else {
-        return FrameState(sourceTime: sourceTime, cursor: nil)
+        return FrameState(sourceTime: sourceTime, cursor: nil, camera: camera)
     }
     let scale = min(max(settings.scale, CursorSettings.scaleRange.lowerBound), CursorSettings.scaleRange.upperBound)
-    return FrameState(sourceTime: sourceTime, cursor: CursorFrame(x: at.x, y: at.y, scale: scale))
+    return FrameState(sourceTime: sourceTime, cursor: CursorFrame(x: at.x, y: at.y, scale: scale), camera: camera)
 }
 
 public enum PointerTrack {
