@@ -155,6 +155,16 @@ func checkHistoryChrome() async throws {
               "the bar's buttons are s8 apart on one centre line")
     }
 
+    win.setContentSize(win.contentRect(forFrameRect: NSRect(origin: .zero, size: win.minSize)).size)
+    content.layoutSubtreeIfNeeded()
+    let fitted = ["copy", "edit", "restore", "reveal", "gif", "delete"].compactMap { findView("history.\($0)", in: content) as? Button }
+    let fittedRects = fitted.map { $0.convert($0.bounds, to: content) }
+    check(win.frame.width == 720 && fitted.count == 6
+          && zip(fittedRects, fittedRects.dropFirst()).allSatisfy { $0.maxX + DS.Space.s8 - 0.5 <= $1.minX }
+          && fittedRects.last.map { $0.maxX <= content.bounds.width - DS.Space.s12 + 0.5 } == true
+          && zip(fitted, fittedRects).allSatisfy { $1.width >= $0.fittingSize.width - 0.5 },
+          "at the 720 pt minimum width the six bar buttons keep their s8 gaps and full width", detail: "\(fittedRects) in \(content.bounds.width)")
+
     win.setContentSize(NSSize(width: 920, height: 1800))
     content.layoutSubtreeIfNeeded()
     h.collectionView.layoutSubtreeIfNeeded()

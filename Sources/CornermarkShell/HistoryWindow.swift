@@ -5,7 +5,7 @@ import CornermarkEditor
 
 struct HistoryActions {
     var restore: (CaptureRecord) -> Void = { _ in }
-    /// Edits a picture and plays a recording.
+    /// Edits a picture or a recording for editing, and plays a plain video.
     var edit: (CaptureRecord) -> Void = { _ in }
     var copy: (CaptureRecord) -> Void = { _ in }
     var reveal: (CaptureRecord) -> Void = { _ in }
@@ -363,8 +363,8 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     private func updateButtons() {
         let selected = selectedRecords
         actionButtons.values.forEach { $0.isEnabled = !selected.isEmpty }
-        // Edit opens the picture editor, which a recording does not have yet.
-        actionButtons["edit"]?.isEnabled = selected.contains { !$0.isRecording }
+        // Edit opens a picture or a recording for editing. A plain video has nothing to edit.
+        actionButtons["edit"]?.isEnabled = selected.contains { !$0.isRecording || $0.opensVideoEditor }
         actionButtons["gif"]?.isEnabled = selected.contains(where: Self.makesGif)
     }
 
@@ -380,7 +380,7 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         let selected = selectedRecords
         let run = actions[keyPath: action]
         if action == \HistoryActions.copy { return selected.prefix(1).forEach(run) }
-        if action == \HistoryActions.edit { return selected.filter { !$0.isRecording }.forEach(run) }
+        if action == \HistoryActions.edit { return selected.filter { !$0.isRecording || $0.opensVideoEditor }.forEach(run) }
         if action == \HistoryActions.makeGif { return selected.filter(Self.makesGif).forEach(run) }
         selected.forEach(run)
     }

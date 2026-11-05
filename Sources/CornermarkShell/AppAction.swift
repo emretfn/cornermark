@@ -1,11 +1,12 @@
 import AppKit
 import CornermarkCapture
+import CornermarkCore
 import UniformTypeIdentifiers
 
 enum ActionID: String, CaseIterable {
     case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer, recordScreen
     case restoreOverlay, hideOverlays, history, settings, checkForUpdates, whatsNew, openFile, quit
-    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording
+    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording, editRecording
 }
 
 /// What the recording controls do to a recording that is under way.
@@ -54,6 +55,7 @@ enum ActionTable {
         ActionSpec(id: .resumeRecording, title: "Resume Recording", symbol: "play.fill", hotKey: nil, urlPath: "record/resume", menuGroup: nil),
         ActionSpec(id: .restartRecording, title: "Restart Recording", symbol: "arrow.counterclockwise", hotKey: nil, urlPath: "record/restart", menuGroup: nil),
         ActionSpec(id: .recordTestWindow, title: "Show Recording Test Window", symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
+        ActionSpec(id: .editRecording, title: "Edit Recording", symbol: "slider.horizontal.3", hotKey: nil, urlPath: "edit-recording", menuGroup: nil),
         ActionSpec(id: .quit, title: "Quit Cornermark", symbol: "power", hotKey: nil, urlPath: nil, menuGroup: 3),
     ]
 
@@ -75,6 +77,7 @@ enum AppAction: Equatable {
     case stopRecording
     case controlRecording(RecordingControl)
     case openRecordingTestWindow
+    case openRecording(URL)
     case quit
 
     var id: ActionID {
@@ -104,11 +107,12 @@ enum AppAction: Equatable {
         case .controlRecording(.resume): return .resumeRecording
         case .controlRecording(.restart): return .restartRecording
         case .openRecordingTestWindow: return .recordTestWindow
+        case .openRecording: return .editRecording
         case .quit: return .quit
         }
     }
 
-    /// The action for a menu item or hotkey; nil for `.openFile` and `.record`, which need a URL.
+    /// The action for a menu item or hotkey; nil for `.openFile`, `.record` and `.editRecording`, which need a URL.
     static func make(_ id: ActionID, timerSeconds: Int) -> AppAction? {
         switch id {
         case .allInOne: return .capture(.allInOne)
@@ -132,7 +136,7 @@ enum AppAction: Equatable {
         case .pauseRecording: return .controlRecording(.pause)
         case .resumeRecording: return .controlRecording(.resume)
         case .restartRecording: return .controlRecording(.restart)
-        case .openFile, .record: return nil
+        case .openFile, .record, .editRecording: return nil
         }
     }
 }
@@ -143,6 +147,7 @@ enum URLCommandError: Error, Equatable {
     case unknownPath(String)
     case invalidFile(String)
     case invalidRecording(String)
+    case invalidProject(String)
 }
 
 enum URLCommand {
@@ -161,6 +166,10 @@ enum URLCommand {
         if spec.id == .openFile {
             guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
             return validatedImageURL(path: path).map { .openFile($0) }
+        }
+        if spec.id == .editRecording {
+            guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
+            return validatedProjectFolder(path: path).map { .openRecording($0) }
         }
         if spec.id == .record {
             // A link records for editing unless it asks for a plain video, which keeps older links meaning what they did.
@@ -196,6 +205,18 @@ enum URLCommand {
         }
         guard display != nil || area != nil else { return .failure(.invalidRecording("name a window, a display or an area")) }
         return .success(.display(display, area: area))
+    }
+
+    /// A recording's project folder: an absolute path to a folder that holds `project.json`.
+    static func validatedProjectFolder(path rawPath: String) -> Result<URL, URLCommandError> {
+        guard rawPath.hasPrefix("/") else { return .failure(.invalidProject(rawPath)) }
+        let folder = URL(fileURLWithPath: rawPath, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue,
+              FileManager.default.fileExists(atPath: folder.appendingPathComponent(RecordingProjectFile.projectName).path) else {
+            return .failure(.invalidProject(rawPath))
+        }
+        return .success(folder)
     }
 
     static func validatedImageURL(path rawPath: String) -> Result<URL, URLCommandError> {

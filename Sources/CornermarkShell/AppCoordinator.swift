@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkEditor
+import CornermarkVideoEditor
 import ImageIO
 
 /// Wires the pieces together. Every user intent enters through `perform(_:)`.
@@ -23,6 +24,9 @@ final class AppCoordinator {
     private(set) var permissionWindow: PermissionWindowController?
     private(set) var whatsNewWindow: WhatsNewWindowController?
     private(set) var editors: [UUID: EditorWindowController] = [:]
+    var videoEditors: [URL: VideoEditorWindowController] = [:]
+    /// Builds the video editor for a project folder. A harness swaps it to decode frames on its own clock.
+    var makeVideoEditor: (URL) throws -> VideoEditorWindowController = VideoEditorWindowController.open(folder:)
     private(set) var loginError: String?
     private var maintenanceTimer: Timer?
     /// Recordings a GIF is being made from.
@@ -65,6 +69,7 @@ final class AppCoordinator {
         case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
+        case .openRecording(let folder): openVideoEditor(folder)
         case .startRecording(let target, let style): startRecording(target, style)
         case .stopRecording: recording.stop()
         case .controlRecording(.pause): recording.pause()
@@ -136,7 +141,7 @@ final class AppCoordinator {
     }
 
     /// The recording's file, or nil after saying it is gone.
-    private func videoFile(_ record: CaptureRecord) -> RecordedVideo? {
+    func videoFile(_ record: CaptureRecord) -> RecordedVideo? {
         guard let video = record.video else { return nil }
         guard FileManager.default.fileExists(atPath: video.file.path) else {
             hud.show("Recording not found. Look for it in the save folder.", symbol: "exclamationmark.triangle.fill")
@@ -275,6 +280,9 @@ final class AppCoordinator {
             play(card.record)
         case .makeGif:
             makeGif(from: card.record)
+        case .edit:
+            overlay.close(card)
+            openEditor(card.record)
         case .reveal:
             reveal(card.record)
         case .save:
@@ -296,8 +304,11 @@ final class AppCoordinator {
 
     @discardableResult
     func openEditor(_ record: CaptureRecord) -> EditorWindowController? {
-        // The editor edits pictures. A recording plays until the video editor arrives.
-        if record.isRecording { play(record); return nil }
+        // The editor edits pictures. A recording for editing opens in the video editor and a plain video plays.
+        if record.isRecording {
+            if record.opensVideoEditor, let video = videoFile(record) { openVideoEditor(video.location) } else { play(record) }
+            return nil
+        }
         if let open = editors[record.id] {
             if env.isOnscreen { open.show() }
             return open
@@ -386,6 +397,7 @@ final class AppCoordinator {
     /// Each editor stores unsaved edits as it closes.
     func closeAllEditors() {
         for editor in Array(editors.values) { editor.window?.close() }
+        for editor in Array(videoEditors.values) { editor.window?.close() }
     }
 
     func deleteRecord(_ record: CaptureRecord) {

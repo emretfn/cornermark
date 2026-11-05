@@ -271,11 +271,13 @@ private func componentContrast() {
             }
         }
         for selected in [false, true] {
-            for state in nonDisabled {
-                let look = IconButton.look(tone: .plain, selected: selected, state)
-                for (name, fill) in look.fill.map({ [("fill", $0)] }) ?? surfaces {
-                    let r = ratio(look.text, on: fill, appearance, over: white)
-                    check(String(format: "[%@] IconButton .plain%@ %@ on %@ >= 4.5 : %.2f", label, selected ? " selected" : "", "\(state)", name, r), r >= 4.5)
+            for selection in selected ? IconButton.Selection.allCases : [.accent] {
+                for state in nonDisabled {
+                    let look = IconButton.look(tone: .plain, selected: selected, selection: selection, state)
+                    for (name, fill) in look.fill.map({ [("fill", $0)] }) ?? surfaces {
+                        let r = ratio(look.text, on: fill, appearance, over: white)
+                        check(String(format: "[%@] IconButton .plain%@ %@ on %@ >= 4.5 : %.2f", label, selected ? " selected \(selection)" : "", "\(state)", name, r), r >= 4.5)
+                    }
                 }
             }
         }
