@@ -22,7 +22,8 @@ final class ZoomCurveTests: XCTestCase {
         var fastest = (t: 0.0, speed: 0.0)
         var t = zoom.start
         while t < zoom.start + d {
-            let speed = (scale(t + step) - scale(t)) / step
+            // The picture grows by a ratio each frame, so its speed is the change of the scale's logarithm.
+            let speed = (log(scale(t + step)) - log(scale(t))) / step
             XCTAssertGreaterThanOrEqual(speed, -1e-9, "the move in never reverses")
             if speed > fastest.speed { fastest = (t + step / 2, speed) }
             t += step
@@ -73,7 +74,7 @@ final class ZoomCurveTests: XCTestCase {
         XCTAssertEqual(lowest, 2, accuracy: 1e-9, "the camera never pulls back to the whole picture between them")
         XCTAssertEqual(ZoomCamera.rect([a, b], at: 2.2), ZoomCamera.target(a), "it waits on the first zoom across the gap")
         XCTAssertEqual(ZoomCamera.rect([a, b], at: 2.5 + ZoomCurve.duration), ZoomCamera.target(b))
-        XCTAssertEqual(scale(2.5 + ZoomCurve.duration / 2, [a, b]), 2.5, accuracy: 1e-12, "the handover is the same curve")
+        XCTAssertEqual(scale(2.5 + ZoomCurve.duration / 2, [a, b]), (2.0 * 3).squareRoot(), accuracy: 1e-12, "the handover is the same curve, halfway in ratio")
 
         let apart = Zoom(start: 2 + ZoomCurve.joinGap, end: 6, scale: 3)
         XCTAssertEqual(scale(2 + ZoomCurve.joinGap / 2, [a, apart]), 1, "zooms far apart each return to the whole picture")

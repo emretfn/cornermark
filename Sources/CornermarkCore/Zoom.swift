@@ -126,10 +126,11 @@ public enum ZoomCamera {
         return ZoomRect(x: origin(zoom.center.x), y: origin(zoom.center.y), width: side, height: side)
     }
 
-    /// The scale goes from `a`'s to `b`'s along `e`, and the picture grows about the one point that sits still in both, so the move
-    /// reads as a single zoom and never shows past the picture's edge. Equal scales pan in a straight line instead.
+    /// The scale goes from `a`'s to `b`'s along `e` by equal ratios, so a move in and a move out are mirror images and the picture
+    /// grows fastest halfway at any level. It grows about the one point that sits still in both, so the move reads as a single zoom
+    /// and never shows past the picture's edge. Equal scales pan in a straight line instead.
     static func blend(_ a: ZoomRect, _ b: ZoomRect, _ e: Double) -> ZoomRect {
-        let scale = a.scale + (b.scale - a.scale) * e
+        let scale = a.scale * pow(b.scale / a.scale, e)
         let side = 1 / scale
         guard abs(a.width - b.width) > 1e-12 else {
             return ZoomRect(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, width: side, height: side)
