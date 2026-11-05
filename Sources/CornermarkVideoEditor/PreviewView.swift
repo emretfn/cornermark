@@ -79,12 +79,13 @@ final class PreviewView: NSView {
         super.layout()
         let canvas = canvas ?? VideoCanvas(source: RecordingProject.Source(pointWidth: pointSize.width, pointHeight: pointSize.height), background: VideoBackground())
         let stageRect = fitted(canvas.size)
-        let k = canvas.size.width > 0 ? stageRect.width / canvas.size.width : 0
+        // Each axis scales on its own, as export's does, so the recording lands where the file puts it after the stage's rounding.
+        let kx = stageRect.width / canvas.size.width, ky = stageRect.height / canvas.size.height
         let f = canvas.frame
         withoutAnimation {
             stage.frame = stageRect
-            picture.frame = CGRect(x: f.minX * k, y: stageRect.height - f.maxY * k, width: f.width * k, height: f.height * k)
-            picture.cornerRadius = canvas.hasBackdrop ? canvas.cornerRadius * k : 0
+            picture.frame = CGRect(x: f.minX * kx, y: stageRect.height - f.maxY * ky, width: f.width * kx, height: f.height * ky)
+            picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
         }
         drawBackdrop(canvas)
         placeCursor()

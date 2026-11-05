@@ -99,11 +99,16 @@ public enum VideoBackdrop {
         guard canvas.shadow > 0 else { return ctx.makeImage() }
         let k = min(sx, sy), s = CGFloat(canvas.shadow)
         let frame = canvas.frame.applying(CGAffineTransform(scaleX: sx, y: sy))
+        let shape = CGPath(roundedRect: frame, cornerWidth: canvas.cornerRadius * k, cornerHeight: canvas.cornerRadius * k, transform: nil)
         ctx.saveGState()
+        // Only the shadow lands: under the recording the fill stays, so its anti-aliased edge blends with the fill as it does in the preview.
+        ctx.addRect(full)
+        ctx.addPath(shape)
+        ctx.clip(using: .evenOdd)
         // Shadow offsets ignore the flipped matrix, so a negative height falls down the picture.
         ctx.setShadow(offset: CGSize(width: 0, height: -20 * s * k), blur: 64 * s * k, color: CGColor(gray: 0, alpha: 0.5))
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
-        ctx.addPath(CGPath(roundedRect: frame, cornerWidth: canvas.cornerRadius * k, cornerHeight: canvas.cornerRadius * k, transform: nil))
+        ctx.addPath(shape)
         ctx.fillPath()
         ctx.restoreGState()
         return ctx.makeImage()

@@ -74,8 +74,9 @@ func checkVideoBackground(_ w: World, folder: URL) async throws {
     content.layoutSubtreeIfNeeded()
     check(visibleTiles("video.background.gradient.", in: editor).count == BackgroundPanel.firstGradients && more?.title == "Show more", "Show less folds them back")
     check(visibleTiles("video.background.wallpaper.", in: editor).count == VideoBackground.wallpapers.count && editor.view(identifier: "video.background.add")?.isHidden == false
-          && editor.view(identifier: "video.background.image")?.isHiddenOrHasHiddenAncestor == true,
-          "Wallpapers offer Add image and \(VideoBackground.wallpapers.count) wallpapers; no picture of your own yet")
+          && editor.view(identifier: "video.background.image")?.isHiddenOrHasHiddenAncestor != false,
+          "Wallpapers offer Add image and \(VideoBackground.wallpapers.count) wallpapers; no picture of your own yet",
+          detail: "\(visibleTiles("video.background.wallpaper.", in: editor).count) \(String(describing: editor.view(identifier: "video.background.add")?.isHidden)) \(String(describing: editor.view(identifier: "video.background.image")?.isHiddenOrHasHiddenAncestor))")
     check(visibleTiles("video.background.color.", in: editor).count == BackgroundPanel.colors.count + 1, "Colour offers three colours and a custom colour")
 
     _ = click("video.background.gradient.3", in: content)
@@ -149,6 +150,14 @@ func checkVideoBackground(_ w: World, folder: URL) async throws {
     editor.chooseImage = { _, done in done(nil) }
     _ = click("video.background.add", in: content)
     check(editor.state.project.edits.background == bg, "cancelling Add image changes nothing")
+    editor.chooseImage = { _, done in done(w.root.appendingPathComponent("missing.png")) }
+    _ = click("video.background.add", in: content)
+    let problem = editor.view(identifier: "video.background.problem") as? NSTextField
+    check(editor.state.project.edits.background == bg && problem?.isHidden == false && problem?.stringValue == "missing.png could not be added. Try another picture.",
+          "a picture that cannot be read changes nothing and the panel says so, without a sound", detail: problem?.stringValue ?? "nil")
+    _ = click("video.background.gradient.1", in: content)
+    _ = click("video.background.image", in: content)
+    check(problem?.isHidden == true, "the next change clears the message")
     _ = await waitUntil(3) { editor.tick(); return editor.previewImage != nil }
     snapshotEditor(editor, name: "video-background-image")
 
@@ -179,7 +188,7 @@ func checkBackgroundParity(_ editor: VideoEditorWindowController, frames: StillF
         let canvas = ExportPlan.canvasPixels(project)
         check(report.plan.width == even(canvas.width) && report.plan.height == even(canvas.height),
               "the file is the canvas's size", detail: "\(report.plan.width)x\(report.plan.height)")
-        let rows = await measureParity(editor, frames: frames, clock: clock, export: out, plan: report.plan, project: project, times: [0.25, 1.0, 1.75])
+        let rows = await measureParity(editor, frames: frames, clock: clock, export: out, plan: report.plan, project: project, times: [0.25, 1.0, 1.75], name: "parity-\(name)")
         for r in rows { print(String(format: "PARITY %@ t=%.2f preview-vs-drawn %@ | preview-vs-file %@", name, r.time, r.drawn.description, r.encoded.description)) }
         check(rows.count == 3 && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
               "the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))

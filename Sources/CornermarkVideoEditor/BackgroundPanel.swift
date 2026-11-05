@@ -43,6 +43,8 @@ final class BackgroundPanel: NSView {
     }
     private var sliders: [SliderRow] = []
     private let frameNote = NSTextField(wrappingLabelWithString: "Pick a background to frame the recording.")
+    /// Says why Add image did nothing. Any change clears it.
+    private let problem = NSTextField(wrappingLabelWithString: "")
     private let content = NSStackView()
 
     override init(frame frameRect: NSRect) {
@@ -53,6 +55,7 @@ final class BackgroundPanel: NSView {
     required init?(coder: NSCoder) { fatalError("BackgroundPanel is created in code") }
 
     func show(_ background: VideoBackground, picture: CGImage?) {
+        if background != self.background { problem.isHidden = true }
         let pictureChanged = picture !== self.picture
         self.background = background
         self.picture = picture
@@ -84,6 +87,13 @@ final class BackgroundPanel: NSView {
         more.title = on ? "Show less" : "Show more"
         more.setAccessibilityLabel(on ? "Show fewer gradients" : "Show more gradients")
         layoutGradients()
+    }
+
+    func showProblem(_ text: String) {
+        problem.stringValue = text
+        problem.isHidden = false
+        NSAccessibility.post(element: problem, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     // MARK: Build
@@ -149,13 +159,19 @@ final class BackgroundPanel: NSView {
         content.addArrangedSubview(gradientRows)
         content.addArrangedSubview(header("Wallpapers"))
         content.addArrangedSubview(wallpaperRows)
+        problem.font = DS.Text.caption.font
+        problem.textColor = DS.Color.dangerText
+        problem.preferredMaxLayoutWidth = Self.inner
+        problem.isHidden = true
+        problem.setAccessibilityIdentifier("video.background.problem")
+        content.addArrangedSubview(problem)
         content.addArrangedSubview(header("Colour"))
         let colors = row(colorRow)
         content.addArrangedSubview(colors)
         let line = Separator(axis: .horizontal)
         content.addArrangedSubview(line)
         line.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        for group in [noneTile, gradientRows, wallpaperRows, colors, line] as [NSView] { content.setCustomSpacing(DS.Space.s16, after: group) }
+        for group in [noneTile, gradientRows, wallpaperRows, problem, colors, line] as [NSView] { content.setCustomSpacing(DS.Space.s16, after: group) }
         content.addArrangedSubview(header("Frame"))
         content.addArrangedSubview(sliderRow("Padding", range: VideoBackground.paddingRange, unit: " pt", id: "video.background.padding", key: "padding",
                                              read: { $0.padding }, write: { $0.padding = $1 }))

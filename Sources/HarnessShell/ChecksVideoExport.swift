@@ -51,7 +51,9 @@ extension Pix {
 
 @MainActor
 func previewFrame(_ editor: VideoEditorWindowController, size: CGSize) -> CGImage? {
-    guard let preview = editor.view(identifier: "video.preview") as? PreviewView, let picture = preview.layer?.sublayers?.first else { return nil }
+    guard let preview = editor.view(identifier: "video.preview") as? PreviewView else { return nil }
+    preview.layoutSubtreeIfNeeded()
+    guard let picture = preview.layer?.sublayers?.first else { return nil }
     let ctx = Pix.context(Int(size.width), Int(size.height))
     ctx.scaleBy(x: size.width / picture.bounds.width, y: size.height / picture.bounds.height)
     picture.render(in: ctx)

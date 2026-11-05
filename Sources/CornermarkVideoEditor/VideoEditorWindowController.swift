@@ -330,7 +330,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func addBackgroundImage() {
         chooseImage(window) { [weak self] url in
             guard let self, let url else { return }
-            do { try useBackgroundImage(at: url) } catch { NSSound.beep() }
+            do { try useBackgroundImage(at: url) } catch { inspector.backgroundPanel.showProblem("\(url.lastPathComponent) could not be added. Try another picture.") }
         }
     }
 
