@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CornermarkDesign
 
 struct Shot {
     let name: String
@@ -14,6 +15,7 @@ if !CommandLine.arguments.contains("-AppleLocale") {
 
 setvbuf(stdout, nil, _IOLBF, 0)
 let app = NSApplication.shared
+SilentNoResponder.install()
 app.setActivationPolicy(.prohibited)
 app.appearance = NSAppearance(named: .aqua)
 
@@ -46,6 +48,10 @@ Task { @MainActor in
     }
     if NSApp.windows.contains(where: \.isVisible) || NSApp.isActive {
         print("FAIL a window was ordered on screen or the app became active")
+        failures += 1
+    }
+    if SilentNoResponder.count > 0 {
+        print("FAIL a key fell through to a system beep: \(SilentNoResponder.selectors.joined(separator: " "))")
         failures += 1
     }
     exit(failures == 0 ? 0 : 1)
