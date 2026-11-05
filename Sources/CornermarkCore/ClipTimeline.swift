@@ -12,7 +12,7 @@ public struct Clip: Codable, Equatable, Sendable {
 
 /// The finished video's timeline: the project's clips back to back. Output time runs over the clips in order, source time is the
 /// recording's own. Clips are ordered, apart and inside the source, so source time never runs backwards as output time runs forward,
-/// and every track recorded on the source's clock (the pointer, later clicks and keys) maps through `sourceTime(at:)`.
+/// and every track recorded on the source's clock maps through `sourceTime(at:)`.
 public struct ClipTimeline: Equatable, Sendable {
     public let clips: [Clip]
     public let sourceDuration: Double
@@ -39,7 +39,6 @@ public struct ClipTimeline: Equatable, Sendable {
         self.clips = clips; sourceDuration = other.sourceDuration; fps = other.fps
     }
 
-    /// One source frame.
     public var frame: Double { 1 / fps }
 
     /// The finished video's length.
@@ -113,7 +112,6 @@ public struct ClipTimeline: Equatable, Sendable {
         return ClipTimeline(next, like: self)
     }
 
-    /// The nearest source frame boundary.
     func snap(_ s: Double) -> Double { (s * fps).rounded() / fps }
 }
 

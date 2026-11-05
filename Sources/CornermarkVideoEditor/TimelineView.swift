@@ -52,7 +52,6 @@ final class TimelineView: NSView {
     var aspect: CGFloat = 16 / 9 { didSet { needsDisplay = true } }
     var onScrub: (Double, Scrub) -> Void = { _, _ in }
     var onSelect: (Int?) -> Void = { _ in }
-    /// The trimmed timeline as the edge moves, then once more as the drag ends.
     var onTrim: (Trim, ClipTimeline, Scrub) -> Void = { _, _, _ in }
     /// A key moved an edge of the picked clip, or of the clip under the playhead, by this many seconds.
     var onNudge: (ClipTimeline.Edge, Double) -> Void = { _, _ in }
@@ -140,7 +139,6 @@ final class TimelineView: NSView {
         CGRect(x: Metrics.gutter, y: y, width: max(bounds.width - Metrics.gutter - Metrics.trailing, 0), height: height)
     }
 
-    /// Each clip's box on the clip lane, a seam apart at every cut.
     var clipRects: [CGRect] {
         let s = scale, lane = clipLaneRect, last = timeline.clips.count - 1
         return zip(timeline.clips, timeline.starts).enumerated().map { i, pair in
@@ -150,7 +148,6 @@ final class TimelineView: NSView {
         }
     }
 
-    /// The x of every cut, where the clip lane draws its marks.
     var cutMarks: [CGFloat] { timeline.cuts.map { CGFloat(scale.x($0)).rounded() } }
 
     override func accessibilityValue() -> Any? {

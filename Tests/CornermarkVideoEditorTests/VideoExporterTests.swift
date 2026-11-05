@@ -57,7 +57,6 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual((try FileManager.default.contentsOfDirectory(atPath: folder.path)).sorted(), ["export.mp4", "screen.mp4"], "no partial file is left")
     }
 
-    /// The grey level of each frame of `url`, decoded in order.
     private func levels(_ url: URL) async throws -> [Int] {
         let asset = AVURLAsset(url: url)
         let tracks = try await asset.loadTracks(withMediaType: .video)

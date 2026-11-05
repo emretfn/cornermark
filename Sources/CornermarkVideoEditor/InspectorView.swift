@@ -10,7 +10,6 @@ final class InspectorView: NSView {
 
     var onSelect: (EditorSection) -> Void = { _ in }
     var onCursor: (CursorSettings) -> Void = { _ in }
-    /// The size slider was let go, so the next change is a new undo step.
     var onCursorSizeEnd: () -> Void = {}
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]

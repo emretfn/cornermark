@@ -24,7 +24,6 @@ public final class PlayerFrames: SourceFrames {
     public let player: AVPlayer
     private let output: AVPlayerItemVideoOutput
     private var parkedAt: Double?
-    /// The last moment asked for while playing, and the host time it was asked at.
     private var lastAsked: (source: Double, host: Double)?
     /// Host time of the last move back in step. The player needs a moment to decode before its own clock is worth comparing.
     private var syncedAt = -Double.infinity

@@ -117,7 +117,6 @@ public enum VideoExporter {
             try Task.checkCancellation()
             let t = plan.time(ofFrame: k)
             let state = frameState(project, outputTime: t)
-            // A cut leaves the frames between two clips unread: each clip gets a reader of its own that starts at the clip.
             let clip = timeline.clipIndex(at: t)
             if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
             let current = reader?.image(at: state.sourceTime)

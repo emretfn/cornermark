@@ -152,7 +152,6 @@ func checkVideoEditor() async throws {
     try await checkVideoEditorLiveCut(folder: folder)
 }
 
-/// Presses, drags and lets go on the timeline at timeline points, the way the pointer would.
 @MainActor
 func dragTimeline(_ timeline: TimelineView, from a: CGPoint, to b: CGPoint, steps: Int = 6, during: (Int) -> Void = { _ in }) {
     guard let window = timeline.window else { return }
@@ -346,7 +345,6 @@ private func checkVideoEditorClips(_ w: World, folder: URL, videoHash: String) a
     check(try RecordingProjectFile.read(from: folder).edits.clips == [Clip(start: 0, end: project.source.duration)], "the fixture is back to one clip for the checks after this")
 }
 
-/// The live decoder across a cut: the player must jump with the playhead at once, not drift into the removed part.
 @MainActor
 private func checkVideoEditorLiveCut(folder: URL) async throws {
     section("video editor: playing across a cut")

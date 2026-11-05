@@ -78,7 +78,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var onExport: (ExportEvent) -> Void = { _ in }
 
     private var saved: RecordingProject
-    /// Every edit, so Undo and Redo walk them back and forth. Playback and the view are not edits.
     private var history: UndoHistory<RecordingProject.Edits>
     private var frames: SourceFrames
     private let clock: () -> Double
@@ -280,7 +279,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         var edits = state.project.edits
         let sizeOnly = cursor.isVisible == edits.cursor.isVisible
         edits.cursor = cursor
-        // A drag of the size slider is one step to undo, not one per tick.
         commit(edits, coalescing: sizeOnly ? "cursor.scale" : nil)
     }
 
@@ -322,12 +320,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         show(history.present, playhead: state.transport.time(at: clock()))
     }
 
-    /// The clip an edit acts on: the picked one, or the one under the playhead.
     private func target(in clips: ClipTimeline) -> Int {
         state.selectedClip.flatMap { clips.clips.indices.contains($0) ? $0 : nil } ?? clips.clipIndex(at: state.transport.time(at: clock()))
     }
 
-    /// A drag on a clip's edge. The playhead rides on the edge, so the preview shows the frame the clip now starts or ends on.
+    /// The playhead rides on the dragged edge, so the preview shows the frame the clip now starts or ends on.
     private func trimmed(_ trim: TimelineView.Trim, to moved: ClipTimeline, _ phase: TimelineView.Scrub) {
         if phase == .began { state.transport.pause(now: clock()) }
         let clip = moved.clips[trim.index], start = moved.starts[trim.index]
@@ -363,8 +360,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         commit(edits, playhead: playhead)
     }
 
-    /// The one way an edit reaches the project: it becomes an undo step, then everything that shows the project follows.
-    /// `keeping` is the clip that stays picked, for an edit that moves an edge and leaves every clip where it was.
     private func commit(_ edits: RecordingProject.Edits, coalescing key: CoalescingKey? = nil, keeping: Int? = nil, playhead: Double? = nil) {
         history.record(edits, coalescing: key)
         show(history.present, keeping: keeping, playhead: playhead ?? state.transport.time(at: clock()))
@@ -411,7 +406,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         refresh()
     }
 
-    /// A key and its modifiers, the way the editor's key table names them.
     struct Chord: Hashable {
         var keyCode: UInt16
         var modifiers: NSEvent.ModifierFlags.RawValue = 0
@@ -420,7 +414,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         }
     }
 
-    /// Every key the editor takes, whatever has focus. The rest go to the focused control.
     static let keys: [Chord: (VideoEditorWindowController) -> Bool] = [
         Chord(keyCode: 49): { $0.togglePlayback(); return true },
         Chord(keyCode: 53): { $0.escape() },
@@ -437,7 +430,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         return action(self)
     }
 
-    /// Esc leaves Full Screen Preview, or else lets go of the picked clip.
     private func escape() -> Bool {
         if state.isPreviewOnly { setPreviewOnly(false); return true }
         guard state.selectedClip != nil else { return false }

@@ -284,8 +284,6 @@ func checkVideoExport() async throws {
     check(await waitUntil(30) { w.store.list().count == count + 1 }, "the link opens the editor and exports with the default choices")
 }
 
-/// A project with a removed middle: the file is as long as the clips, each side of the cut shows its own source frame, and the
-/// preview still matches the file there.
 @MainActor
 private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, root: URL) async throws {
     section("video export: a trimmed project")
@@ -309,7 +307,6 @@ private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: S
     let renderer = ExportFrameRenderer(plan: report.plan, source: project.source)
     let cases: [(output: Double, source: Double, skipped: Double)] = [(29.0 / 60, 29.0 / 60, 59.0 / 60), (0.5, 1.0, 0.5), (31.0 / 60, 61.0 / 60, 31.0 / 60)]
     for (output, source, skipped) in cases {
-        // Both candidates get the pointer the export draws at that moment, so only the source picture differs.
         let state = frameState(project, outputTime: output)
         guard let file = await decodedFrame(out, at: output), let right = await decodedFrame(editor.videoURL, at: source).flatMap({ renderer.image(state, source: $0) }),
               let wrong = await decodedFrame(editor.videoURL, at: skipped).flatMap({ renderer.image(state, source: $0) }),

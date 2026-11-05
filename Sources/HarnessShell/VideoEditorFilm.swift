@@ -238,7 +238,6 @@ final class EditorStage {
     var origin = editorOrigin
     var hasAudio = false
     var outline: CGRect?
-    /// What `recordProject` records from the fixture display.
     var area = "display=1&x=0&y=0&width=640&height=360"
     private(set) var frames: [URL: StillFrames] = [:]
     private var project: CaptureRecord?
