@@ -120,7 +120,7 @@ enum VideoTrimFilm {
         f.refresh()
         f.hold(2.4, "The file is as long as the clips: \(Timecode.text(clips.duration)), not 0:10.00.")
         let plan = ExportPlan(project: editor.state.project, settings: ExportSettings(), video: editor.videoURL)
-        let renderer = ExportFrameRenderer(plan: plan, source: editor.state.project.source)
+        let renderer = ExportFrameRenderer(plan: plan, project: editor.state.project, folder: editor.folder)
         /// Which source moment a frame of the file is: its difference from the export's drawing of the expected source frame,
         /// and from the frame the same moment would show without the cuts.
         func identify(_ output: Double) async -> String {

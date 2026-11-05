@@ -30,20 +30,33 @@ public enum ExportError: Error, Equatable {
     case writer(String)
 }
 
-/// Draws one frame of the finished video: the source picture, then the pointer `frameState` places, in the recording's points
-/// with y down, the way the preview's layers do.
-public struct ExportFrameRenderer: Sendable {
+/// Draws one frame of the finished video: the background, then the source picture and the pointer `frameState` places, clipped
+/// to the recording's rounded frame, in the recording's points with y down, the way the preview's layers do.
+public struct ExportFrameRenderer: @unchecked Sendable {
     public let width: Int
     public let height: Int
     /// The recorded area in points, the unit of pointer positions.
     public let pointSize: CGSize
+    public let canvas: VideoCanvas
+    /// The fill and shadow, made once: the recording is opaque, so nothing behind it changes from frame to frame.
+    let backdrop: CGImage?
 
-    public init(plan: ExportPlan, source: RecordingProject.Source) {
+    /// `folder` is the project folder, where a background picture the viewer added lives.
+    public init(plan: ExportPlan, project: RecordingProject, folder: URL?) {
         width = plan.width; height = plan.height
-        pointSize = CGSize(width: max(source.pointWidth, 1), height: max(source.pointHeight, 1))
+        pointSize = CGSize(width: max(project.source.pointWidth, 1), height: max(project.source.pointHeight, 1))
+        canvas = project.canvas
+        backdrop = VideoBackdrop.image(canvas, width: plan.width, height: plan.height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
     }
 
     public static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    /// The recording's rectangle in the bitmap, y up.
+    var frameRect: CGRect {
+        let sx = CGFloat(width) / canvas.size.width, sy = CGFloat(height) / canvas.size.height
+        let f = canvas.frame
+        return CGRect(x: f.minX * sx, y: CGFloat(height) - f.maxY * sy, width: f.width * sx, height: f.height * sy)
+    }
 
     /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin.
     public func draw(_ state: FrameState, source: CGImage?, in ctx: CGContext) {
@@ -51,12 +64,20 @@ public struct ExportFrameRenderer: Sendable {
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
         ctx.fill(full)
         ctx.interpolationQuality = .high
-        if let source { ctx.draw(source, in: full) }
-        guard let cursor = state.cursor else { return }
+        if let backdrop { ctx.draw(backdrop, in: full) }
+        let frame = frameRect
+        let radius = canvas.cornerRadius * min(frame.width / pointSize.width, frame.height / pointSize.height)
         ctx.saveGState()
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: CGFloat(width) / pointSize.width, y: -CGFloat(height) / pointSize.height)
-        PointerShape.draw(cursor, in: ctx)
+        if canvas.hasBackdrop {
+            ctx.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            ctx.clip()
+        }
+        if let source { ctx.draw(source, in: frame) }
+        if let cursor = state.cursor {
+            ctx.translateBy(x: frame.minX, y: frame.maxY)
+            ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
+            PointerShape.draw(cursor, in: ctx)
+        }
         ctx.restoreGState()
     }
 
@@ -108,7 +129,7 @@ public enum VideoExporter {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
         let timeline = project.timeline
-        let renderer = ExportFrameRenderer(plan: plan, source: project.source)
+        let renderer = ExportFrameRenderer(plan: plan, project: project, folder: video.deletingLastPathComponent())
         let sink = Sink(writer: writer)
         var reader: ClipReader?
         var reported = -1

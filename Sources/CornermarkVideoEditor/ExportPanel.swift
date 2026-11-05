@@ -49,14 +49,16 @@ final class ExportPanel: Surface {
         title.stringValue = exporting ? "Exporting video" : "Export"
         start.isHidden = exporting
 
-        let options = ExportResolution.choices(for: project.source)
-        if options != choices {
+        let options = ExportResolution.choices(for: project)
+        // A background changes the sizes without changing the choices.
+        let titles = options.map { option in
+            let plan = ExportPlan(project: project, settings: ExportSettings(resolution: option, quality: settings.quality))
+            return "\(plan.width) \u{00D7} \(plan.height)" + (option == .original ? " (Original)" : "")
+        }
+        if options != choices || titles != resolution.itemTitles {
             choices = options
             resolution.removeAllItems()
-            for option in options {
-                let plan = ExportPlan(project: project, settings: ExportSettings(resolution: option, quality: settings.quality))
-                resolution.addItem(withTitle: "\(plan.width) \u{00D7} \(plan.height)" + (option == .original ? " (Original)" : ""))
-            }
+            resolution.addItems(withTitles: titles)
         }
         resolution.selectItem(at: options.firstIndex(of: settings.resolution) ?? 0)
         quality.doubleValue = Double(settings.quality.rawValue)

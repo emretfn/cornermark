@@ -93,10 +93,11 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// What the finished video keeps of the recording, in order. A project read from a file always has at least one;
         /// one written before clips existed keeps the whole recording.
         public var clips: [Clip]
+        public var background: VideoBackground
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = []) {
-            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips
+                    clips: [Clip] = [], background: VideoBackground = VideoBackground()) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.background = background
         }
 
         public init(from decoder: Decoder) throws {
@@ -105,8 +106,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             clicks = (try? c.decodeIfPresent(ClickHighlight.self, forKey: .clicks)) ?? ClickHighlight()
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
+            background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background }
     }
 
     public var version: Int
