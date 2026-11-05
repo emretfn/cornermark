@@ -23,6 +23,8 @@ final class RecordingTestWindow: RecordingTestWindowHosting {
     private var timecode: CATextLayer?
     private var startedAt = CACurrentMediaTime()
     private(set) var windowID: CGWindowID?
+    /// Real views to show instead of the synthetic scene, when verification asks for them.
+    var stage: () -> NSView? = { nil }
 
     @discardableResult
     func show() -> CGWindowID? {
@@ -32,7 +34,9 @@ final class RecordingTestWindow: RecordingTestWindowHosting {
             return nil
         }
         let origin = CGPoint(x: screen.visibleFrame.minX + 24, y: screen.visibleFrame.minY + 24)
-        let panel = Panel(contentRect: CGRect(origin: origin, size: Self.size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let content = stage()
+        let size = content?.frame.size ?? Self.size
+        let panel = Panel(contentRect: CGRect(origin: origin, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Cornermark Test Scene"
         panel.level = .normal
         panel.isFloatingPanel = false
@@ -44,11 +48,15 @@ final class RecordingTestWindow: RecordingTestWindowHosting {
         panel.ignoresMouseEvents = true
         panel.animationBehavior = .none
         panel.collectionBehavior = [.ignoresCycle, .stationary]
-        let view = NSView(frame: CGRect(origin: .zero, size: Self.size))
-        view.wantsLayer = true
-        panel.contentView = view
-        buildScene(in: view.layer!, scale: screen.backingScaleFactor)
-        panel.setFrame(CGRect(origin: origin, size: Self.size), display: false)
+        if let content {
+            panel.contentView = content
+        } else {
+            let view = NSView(frame: CGRect(origin: .zero, size: Self.size))
+            view.wantsLayer = true
+            panel.contentView = view
+            buildScene(in: view.layer!, scale: screen.backingScaleFactor)
+        }
+        panel.setFrame(CGRect(origin: origin, size: size), display: false)
         panel.orderBack(nil)
         self.panel = panel
         windowID = CGWindowID(panel.windowNumber)

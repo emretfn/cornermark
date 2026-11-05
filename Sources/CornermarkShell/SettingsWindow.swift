@@ -42,6 +42,10 @@ class SettingsPane: NSViewController {
         (view as? FormPage)?.reflow()
     }
 
+    /// The pane is on show, or no longer is. Called again while it stays on show, so it must be safe to repeat.
+    func paneDidShow() {}
+    func paneDidHide() {}
+
     func change(_ mutate: @escaping (inout Settings) -> Void) {
         ctx.store.update(mutate)
         refresh()
@@ -533,7 +537,7 @@ final class SettingsWindowController: NSWindowController {
     private let scroll = NSScrollView()
 
     init(ctx: SettingsContext) {
-        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), CameraPane(ctx), PermissionsPane(ctx)]
+        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), AudioPane(ctx), CameraPane(ctx), PermissionsPane(ctx)]
         self.panes = panes
         selectedPane = panes[0]
         items = panes.map { SidebarItem(symbol: $0.symbol, title: $0.paneTitle) }
@@ -552,6 +556,10 @@ final class SettingsWindowController: NSWindowController {
         build(in: window)
         select(pane: panes[0])
         window.center()
+        // A pane that listens to the microphone stops when the window closes.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.selectedPane.paneDidHide() }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -603,13 +611,18 @@ final class SettingsWindowController: NSWindowController {
 
     /// Shows `pane` in place. The window keeps its size and nothing animates.
     func select(pane: SettingsPane) {
+        if selectedPane !== pane { selectedPane.paneDidHide() }
         selectedPane = pane
         for (item, candidate) in zip(items, panes) { item.isSelected = candidate === pane }
         pane.refresh()
         scroll.documentView = pane.view
         scroll.contentView.scroll(to: .zero)
         scroll.reflectScrolledClipView(scroll.contentView)
+        pane.paneDidShow()
     }
 
-    func refreshAll() { panes.forEach { $0.refresh() } }
+    func refreshAll() {
+        panes.forEach { $0.refresh() }
+        selectedPane.paneDidShow()
+    }
 }

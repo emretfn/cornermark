@@ -134,6 +134,56 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual(shown[12], 160, accuracy: 4, "source 0.9 s is the new frame")
     }
 
+    /// A mono AAC track of `seconds` with a short full-scale burst at each of `clicks` seconds and silence elsewhere.
+    private func makeSound(_ name: String, seconds: Double, clicks: [Double]) throws -> URL {
+        let url = folder.appendingPathComponent(name)
+        let rate = 48_000.0
+        let file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1])
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(seconds * rate))!
+        buffer.frameLength = buffer.frameCapacity
+        let samples = buffer.floatChannelData![0]
+        for i in 0..<Int(buffer.frameLength) { samples[i] = 0 }
+        for c in clicks { for i in 0..<240 { samples[Int(c * rate) + i] = Float(0.9 * cos(2 * .pi * 2000 * Double(i) / rate)) } }
+        try file.write(from: buffer)
+        return url
+    }
+
+    /// Where each burst starts in a file's sound, in seconds: the first loud sample more than a tenth of a second after the last.
+    private func bursts(_ url: URL) throws -> (onsets: [Double], seconds: Double) {
+        let file = try AVAudioFile(forReading: url)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+        try file.read(into: buffer)
+        let rate = file.processingFormat.sampleRate, samples = buffer.floatChannelData![0]
+        var onsets: [Double] = [], last = -Int.max / 2
+        for i in 0..<Int(buffer.frameLength) where abs(samples[i]) > 0.3 {
+            if i - last > Int(rate / 10) { onsets.append(Double(i) / rate) }
+            last = i
+        }
+        return (onsets, Double(buffer.frameLength) / rate)
+    }
+
+    func testTheExportCarriesTheProjectSoundCutByTheSameClips() async throws {
+        var (source, project) = try await makeSource(frames: 60)
+        _ = try makeSound("mic.m4a", seconds: 2, clicks: [0.25, 1.25, 1.75])
+        project.source.microphone = "mic.m4a"
+        let whole = folder.appendingPathComponent("whole.mp4")
+        let full = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: whole)
+        let wholeSound = try bursts(whole)
+        XCTAssertTrue(full.hasAudio)
+        XCTAssertEqual(wholeSound.seconds, 2, accuracy: 0.03, "the sound is as long as the video")
+        XCTAssertEqual(wholeSound.onsets.count, 3)
+        for (got, want) in zip(wholeSound.onsets, [0.25, 1.25, 1.75]) { XCTAssertEqual(got, want, accuracy: 0.001, "a burst stays on its moment") }
+
+        project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 1.5, end: 2)]
+        let cut = folder.appendingPathComponent("cut.mp4")
+        let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: cut)
+        let cutSound = try bursts(cut)
+        XCTAssertEqual(report.duration, 1, accuracy: 1.0 / 30)
+        XCTAssertEqual(cutSound.seconds, 1, accuracy: 0.03, "the sound keeps only what the clips keep")
+        XCTAssertEqual(cutSound.onsets.count, 2, "the burst inside the removed stretch is gone")
+        for (got, want) in zip(cutSound.onsets, [0.25, 0.75]) { XCTAssertEqual(got, want, accuracy: 0.001, "a burst after a cut moves with its clip") }
+    }
+
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")

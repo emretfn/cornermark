@@ -48,9 +48,12 @@ public struct RecordingOptions: Equatable {
     public var limit: SizeLimit
     /// What a display recording leaves out. A window recording films one window and nothing over it.
     public var exclusion: ContentExclusion
+    /// The live stream also delivers what the Mac plays, leaving out Cornermark's own sounds.
+    public var capturesSystemAudio: Bool
     public init(fps: Int = 60, showsCursor: Bool = false, quality: VideoQuality = .high, density: PixelDensity = .retina, limit: SizeLimit = .none,
-                exclusion: ContentExclusion = ContentExclusion()) {
+                exclusion: ContentExclusion = ContentExclusion(), capturesSystemAudio: Bool = false) {
         self.fps = fps; self.showsCursor = showsCursor; self.quality = quality; self.density = density; self.limit = limit; self.exclusion = exclusion
+        self.capturesSystemAudio = capturesSystemAudio
     }
     public static let standard = RecordingOptions()
 }
@@ -96,6 +99,8 @@ public struct RecordingReport: Equatable {
     public var pauses: [RecordingPause] = []
     /// The camera, when one was recorded.
     public var camera: CameraTrackReport?
+    /// The sound tracks written beside the video, each as long as it.
+    public var audio: [AudioTrackReport] = []
 
     public var dropRate: Double {
         let total = framesWritten + framesDropped
@@ -109,7 +114,10 @@ extension RecordingReport {
         var project = RecordingProject(
             source: .init(video: url.lastPathComponent, pixelWidth: format.width, pixelHeight: format.height,
                           pointWidth: area.width, pointHeight: area.height, fps: format.fps,
-                          duration: duration + 1.0 / Double(format.fps), camera: camera?.file?.lastPathComponent),
+                          duration: duration + 1.0 / Double(format.fps),
+                          microphone: audio.first { $0.kind == .microphone }?.url.lastPathComponent,
+                          systemAudio: audio.first { $0.kind == .system }?.url.lastPathComponent,
+                          camera: camera?.file?.lastPathComponent),
             events: .init(pointer: pointer, clicks: clicks, keys: keys))
         if let camera { project.edits.camera = camera.bubble }
         return project

@@ -50,6 +50,37 @@ enum OverlaySize: String, Codable, CaseIterable {
     }
 }
 
+/// What a recording hears. A GIF has no sound, so it never records any.
+struct AudioPreferences: Codable, Equatable {
+    var microphone = false
+    /// Nil records from the system's default input, and so does a device that is no longer connected.
+    var microphoneID: String?
+    /// Mixes the microphone's channels into one, so a voice on one input of an interface plays from both sides. On by default, because a
+    /// recording's microphone is nearly always one voice.
+    var mono = true
+    var systemAudio = false
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = AudioPreferences()
+        microphone = (try? c.decodeIfPresent(Bool.self, forKey: .microphone)) ?? d.microphone
+        microphoneID = (try? c.decodeIfPresent(String.self, forKey: .microphoneID)) ?? d.microphoneID
+        mono = (try? c.decodeIfPresent(Bool.self, forKey: .mono)) ?? d.mono
+        systemAudio = (try? c.decodeIfPresent(Bool.self, forKey: .systemAudio)) ?? d.systemAudio
+    }
+
+    var isEmpty: Bool { !microphone && !systemAudio }
+
+    static var none: AudioPreferences {
+        var p = AudioPreferences()
+        p.microphone = false
+        p.systemAudio = false
+        return p
+    }
+}
+
 /// How recordings are made and what happens when one finishes.
 struct RecordingPreferences: Codable, Equatable {
     static let fpsChoices = [30, 60]
@@ -71,6 +102,7 @@ struct RecordingPreferences: Codable, Equatable {
     var keystrokes = KeystrokeDisplay()
     /// Off until someone turns it on, because it needs the camera.
     var camera = CameraBubble(isVisible: false)
+    var audio = AudioPreferences()
 
     init() {}
 
@@ -92,6 +124,7 @@ struct RecordingPreferences: Codable, Equatable {
         keystrokes = get(.keystrokes, d.keystrokes)
         camera = get(.camera, d.camera)
         camera.fullScreen = []
+        audio = get(.audio, d.audio)
     }
 
     /// A frame rate that is not offered becomes the nearest one that is.
@@ -104,8 +137,11 @@ struct RecordingPreferences: Codable, Equatable {
 
     func options(for style: RecordingStyle) -> RecordingOptions {
         RecordingOptions(fps: fps, showsCursor: style != .editing && showCursor, quality: quality, density: density, limit: limit,
-                         exclusion: ContentExclusion(hidesNotifications: hideNotifications, hidesDesktopIcons: hideDesktopIcons))
+                         exclusion: ContentExclusion(hidesNotifications: hideNotifications, hidesDesktopIcons: hideDesktopIcons),
+                         capturesSystemAudio: audio(for: style).systemAudio)
     }
+
+    func audio(for style: RecordingStyle) -> AudioPreferences { style == .gif ? AudioPreferences.none : audio }
 
     /// Keys are watched only when shown, because typed text can be private. A project keeps every click so rings can be added later.
     func inputCapture(for style: RecordingStyle) -> InputCapture {

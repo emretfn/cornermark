@@ -16,6 +16,19 @@ public struct CameraRecording {
     }
 }
 
+/// A sound recorded beside the video into its own file.
+public struct AudioRecording {
+    public var source: AudioSource
+    public var output: URL
+    /// Mixes every channel into one.
+    public var mono: Bool
+    /// Each chunk's level and the moment it ended on the recording clock, on the source's queue.
+    public var onLevel: ((AudioLevel, Double) -> Void)?
+    public init(source: AudioSource, output: URL, mono: Bool = false, onLevel: ((AudioLevel, Double) -> Void)? = nil) {
+        self.source = source; self.output = output; self.mono = mono; self.onLevel = onLevel
+    }
+}
+
 /// One recording, from the first frame to the finished file. The pointer, clicks and keys, when watched, are kept as tracks beside the video.
 public final class Recorder {
     public let output: URL
@@ -28,6 +41,10 @@ public final class Recorder {
     private let marks: InputMarks?
     private let quality: VideoQuality
     private let camera: CameraRecording?
+    private let audio: [(kind: AudioTrackReport.Kind, recording: AudioRecording)]
+    private var audioWriters: [(AudioRecording, AudioTrackWriter)] = []
+    /// Why a sound source is not recorded, when it could not start.
+    public private(set) var audioFailures: [AudioTrackReport.Kind: AudioUnavailable] = [:]
     private var writer: RecordingWriter?
     /// Camera state, guarded by `pictureLock`, which also keeps the frames reaching the writers in time order.
     private let pictureLock = NSLock()
@@ -60,12 +77,13 @@ public final class Recorder {
     public var seconds: Double { writer?.seconds ?? 0 }
 
     public init(source: FrameSource, output: URL, pointer: PointerSource? = nil, input: InputSource? = nil, marks: InputMarks? = nil,
-                camera: CameraRecording? = nil, quality: VideoQuality = .high) {
+                microphone: AudioRecording? = nil, systemAudio: AudioRecording? = nil, camera: CameraRecording? = nil, quality: VideoQuality = .high) {
         self.source = source
         self.output = output
         self.pointer = pointer
         self.input = input
         self.marks = marks.flatMap { $0.isVisible ? $0 : nil }
+        self.audio = [microphone.map { (AudioTrackReport.Kind.microphone, $0) }, systemAudio.map { (AudioTrackReport.Kind.system, $0) }].compactMap { $0 }
         self.quality = quality
         self.camera = camera
     }
@@ -99,6 +117,7 @@ public final class Recorder {
         }
         if let marks { compositor = InputCompositor(marks: marks, format: format, area: source.pointArea.size) }
         startCamera(format)
+        startAudio(writer)
         do {
             try await source.start { [weak self] frame in
                 guard let self else { return }
@@ -116,6 +135,9 @@ public final class Recorder {
             stopCamera()
             cameraWriter?.cancel()
             cameraWriter = nil
+            stopAudio()
+            audioWriters.forEach { $0.1.cancel() }
+            audioWriters = []
             writer.cancel()
             self.writer = nil
             throw error
@@ -182,6 +204,26 @@ public final class Recorder {
         pictures.forEach(writer.append)
     }
 
+    /// Sound starts before the pictures, so the first frame already has sound under it.
+    private func startAudio(_ writer: RecordingWriter) {
+        for (kind, recording) in audio {
+            let track = AudioTrackWriter(kind: kind, url: recording.output, mono: recording.mono, realTime: source.deliversInRealTime,
+                                         mapping: { [writer] in writer.mapping })
+            let onLevel = recording.onLevel
+            do {
+                try recording.source.start { chunk in
+                    onLevel?(chunk.level, chunk.end)
+                    track.append(chunk)
+                }
+                audioWriters.append((recording, track))
+            } catch {
+                audioFailures[kind] = error as? AudioUnavailable ?? .failed(String(describing: error))
+            }
+        }
+    }
+
+    private func stopAudio() { audioWriters.forEach { $0.0.source.stop() } }
+
     public func pause() {
         pictureLock.withLock {
             writer?.pause()
@@ -202,6 +244,7 @@ public final class Recorder {
         pointer?.stop()
         input?.stop()
         stopCamera()
+        stopAudio()
         guard let writer else { throw RecordingError.noFrames }
         let cameraWriter = pictureLock.withLock { () -> RecordingWriter? in
             self.writer = nil
@@ -211,8 +254,19 @@ public final class Recorder {
         var report: RecordingReport
         do { report = try await writer.finish() } catch {
             cameraWriter?.cancel()
+            audioWriters.forEach { $0.1.cancel() }
             throw error
         }
+        let videoEnd = report.duration + 1 / Double(report.format.fps)
+        for (_, track) in audioWriters {
+            do {
+                if let made = try await track.finish(videoEnd: videoEnd) { report.audio.append(made) }
+            } catch {
+                audioFailures[track.kind] = .failed(String(describing: error))
+                track.cancel()
+            }
+        }
+        audioWriters = []
         report.area = source.pointArea
         let paused = report.pauses.reduce(0) { $0 + $1.to - $1.from }
         let samples = trackLock.withLock {
@@ -253,6 +307,9 @@ public final class Recorder {
         pointer?.stop()
         input?.stop()
         stopCamera()
+        stopAudio()
+        audioWriters.forEach { $0.1.cancel() }
+        audioWriters = []
         pictureLock.withLock {
             writer?.cancel()
             writer = nil

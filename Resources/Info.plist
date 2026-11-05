@@ -20,6 +20,8 @@
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>__APP_NAME__ needs to record your screen to take screenshots and screen recordings. Nothing leaves this Mac.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>__APP_NAME__ records your microphone only while a screen recording with the microphone turned on runs. Nothing leaves this Mac.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
