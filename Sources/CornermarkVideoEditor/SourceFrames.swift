@@ -24,6 +24,8 @@ public final class PlayerFrames: SourceFrames {
     public let player: AVPlayer
     private let output: AVPlayerItemVideoOutput
     private var parkedAt: Double?
+    /// The last moment asked for while playing, and the host time it was asked at.
+    private var lastAsked: (source: Double, host: Double)?
     /// Host time of the last move back in step. The player needs a moment to decode before its own clock is worth comparing.
     private var syncedAt = -Double.infinity
     public private(set) var hasAudio = false
@@ -35,6 +37,8 @@ public final class PlayerFrames: SourceFrames {
     /// A playing player may stray from the editor's clock by this much before it is moved back in step.
     static let drift = 0.1
     static let settling = 0.5
+    /// More than the few microseconds between the editor reading its clock and this reading the host's, less than any frame.
+    static let jump = 0.004
 
     public init(url: URL) {
         let item = AVPlayerItem(asset: AVURLAsset(url: url))
@@ -59,11 +63,15 @@ public final class PlayerFrames: SourceFrames {
             parkedAt = nil
             let host = CMClockGetTime(CMClockGetHostTimeClock())
             let settled = host.seconds - syncedAt > Self.settling
-            guard player.rate == 0 || (settled && abs(now - sourceTime) > Self.drift) else { return }
+            // Inside a clip the source moves exactly as the clock does. A cut makes it jump, however little, and the player follows at once.
+            let jumped = lastAsked.map { abs((sourceTime - $0.source) - (host.seconds - $0.host)) > Self.jump } ?? false
+            lastAsked = (sourceTime, host.seconds)
+            guard player.rate == 0 || jumped || (settled && abs(now - sourceTime) > Self.drift) else { return }
             // Both clocks count host time, so the player shows `sourceTime` at the same instant the editor's playhead is there.
             player.setRate(1, time: CMTime(seconds: sourceTime, preferredTimescale: 600), atHostTime: host)
             syncedAt = host.seconds
         } else {
+            lastAsked = nil
             if player.rate != 0 { player.pause() }
             guard parkedAt != sourceTime else { return }
             parkedAt = sourceTime
