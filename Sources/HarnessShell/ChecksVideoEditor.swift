@@ -42,7 +42,7 @@ final class StillFrames: SourceFrames {
 
 final class ScriptedClock { var now = 100.0 }
 
-func sha256(_ url: URL) -> String {
+func sha256OrUnreadable(_ url: URL) -> String {
     (try? Data(contentsOf: url)).map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() } ?? "unreadable"
 }
 
@@ -89,9 +89,9 @@ func checkVideoEditor() async throws {
     }
     check(!plain.opensVideoEditor && project.opensVideoEditor, "a recording for editing opens in the video editor, a plain video does not")
     let plainCard = c.overlay.card(forRecord: plain.id), projectCard = c.overlay.card(forRecord: project.id)
-    check(plainCard?.actions == [.copy, .play, .reveal, .close] && plainCard?.openAction == .play, "a plain video's card keeps Play", detail: "\(plainCard?.actions ?? [])")
+    check(plainCard?.actions == [.copy, .play, .makeGif, .reveal, .close] && plainCard?.openAction == .play, "a plain video's card keeps Play and adds Convert to GIF", detail: "\(plainCard?.actions ?? [])")
     check(projectCard?.actions == [.copy, .edit, .reveal, .close] && projectCard?.openAction == .edit, "a project's card offers Edit", detail: "\(projectCard?.actions ?? [])")
-    let videoHash = sha256(folder.appendingPathComponent(RecordingProjectFile.videoName))
+    let videoHash = sha256OrUnreadable(folder.appendingPathComponent(RecordingProjectFile.videoName))
 
     if let card = projectCard, let view = c.overlay.cardView(for: card), let button = view.buttons[.edit] {
         check(button.toolTip == "Edit" && button.accessibilityLabel() == "Edit", "the card's Edit button is labelled Edit")
@@ -336,7 +336,7 @@ private func checkVideoEditorSaving(_ w: World, folder: URL, videoHash: String) 
     w.coordinator.closeAllEditors()
     let stored = try RecordingProjectFile.read(from: folder)
     check(stored.edits.cursor.scale == 2.5 && stored.events == project.events && stored.source == project.source, "closing writes the edits to project.json and keeps the rest")
-    check(sha256(folder.appendingPathComponent(RecordingProjectFile.videoName)) == videoHash, "the source video is unchanged", detail: videoHash)
+    check(sha256OrUnreadable(folder.appendingPathComponent(RecordingProjectFile.videoName)) == videoHash, "the source video is unchanged", detail: videoHash)
     check(Set(try FileManager.default.contentsOfDirectory(atPath: folder.path)) == [RecordingProjectFile.videoName, RecordingProjectFile.projectName],
           "the folder still holds only screen.mp4 and project.json")
     guard let again = w.coordinator.openVideoEditor(folder) else { return check(false, "the editor reopens") }

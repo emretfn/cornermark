@@ -351,7 +351,7 @@ final class Film {
 
     // MARK: Pictures
 
-    private func frame(_ note: String) {
+    func frame(_ note: String) {
         var buffer: CVPixelBuffer?
         if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) }
         guard let buffer else { return failures.append("no pixel buffer") }

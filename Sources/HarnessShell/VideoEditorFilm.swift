@@ -109,7 +109,7 @@ enum VideoEditorFilm {
         f.title = "E3  The settings rail: Cursor, Keystrokes, Audio, Camera, Background and Motion Blur. Choosing one switches the panel."
         guard let editor = try await s.openProject() else { throw FilmError.missing("the editor") }
         let video = editor.videoURL
-        let before = sha256(video)
+        let before = sha256OrUnreadable(video)
         f.hold(1.5, "The rail starts on Cursor.")
         for section in EditorSection.allCases.dropFirst() + [.cursor] {
             let button = editor.view(identifier: "video.rail.\(section.rawValue)") as! NSButton
@@ -136,7 +136,7 @@ enum VideoEditorFilm {
         editor.window?.close()
         let stored = try RecordingProjectFile.read(from: editor.folder)
         f.layers = { [] }
-        let after = sha256(video)
+        let after = sha256OrUnreadable(video)
         f.status = { "project.json after closing: cursor.isVisible=\(stored.edits.cursor.isVisible) cursor.scale=\(stored.edits.cursor.scale)  screen.mp4 sha256 \(before.prefix(12)) before, \(after.prefix(12)) after" }
         f.refresh()
         f.hold(2.5, "Closing the editor writes the change to project.json. The video file is not touched.")

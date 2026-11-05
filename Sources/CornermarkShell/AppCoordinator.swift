@@ -29,6 +29,8 @@ final class AppCoordinator {
     var makeVideoEditor: (URL) throws -> VideoEditorWindowController = VideoEditorWindowController.open(folder:)
     private(set) var loginError: String?
     private var maintenanceTimer: Timer?
+    /// Recordings a GIF is being made from.
+    private(set) var makingGifs: Set<UUID> = []
 
     init(env: AppEnvironment) {
         self.env = env
@@ -125,7 +127,7 @@ final class AppCoordinator {
     /// Lists the recording in history and shows its card. The video stays where the recorder saved it.
     func recordingFinished(_ finished: FinishedRecording) async {
         let name = finished.video.location.lastPathComponent
-        let poster = await VideoPoster.image(of: finished.video.file) ?? VideoPoster.placeholder(finished.pixelSize)
+        let poster = await VideoPoster.image(of: finished.video) ?? VideoPoster.placeholder(finished.pixelSize)
         let record: CaptureRecord
         do {
             record = try env.store.addRecording(finished.video, poster: poster, kind: finished.kind, pixelSize: finished.pixelSize, now: env.clock())
@@ -156,6 +158,24 @@ final class AppCoordinator {
             if let video = videoFile(record), ImageOutput.copy(file: video.file, to: env.pasteboard) { hud.show("Copied") }
         } else if let image = image(), ImageOutput.copy(image, to: env.pasteboard) {
             hud.show("Copied")
+        }
+    }
+
+    /// Makes a GIF beside a finished video and lists it as its own recording, with its own card. A second request for the same video
+    /// while one runs is ignored.
+    func makeGif(from record: CaptureRecord) {
+        guard record.video?.format == .video, !makingGifs.contains(record.id), let video = videoFile(record) else { return }
+        makingGifs.insert(record.id)
+        Log.shell.notice("gif requested record=\(record.id.uuidString, privacy: .public) from=\(video.location.lastPathComponent, privacy: .public)")
+        hud.show("Converting to GIF", symbol: RecordedVideo.Format.gif.symbol)
+        Task {
+            defer { makingGifs.remove(record.id) }
+            do {
+                await recordingFinished(try await RecordingOutput.makeGif(from: video.file, to: RecordingOutput.gifBeside(video.file), kind: record.kind))
+            } catch {
+                Log.shell.error("gif not written record=\(record.id.uuidString, privacy: .public): \(String(describing: error), privacy: .public)")
+                hud.show("Could not convert to GIF. Check that the video plays, then try again.", symbol: "exclamationmark.triangle.fill")
+            }
         }
     }
 
@@ -258,6 +278,8 @@ final class AppCoordinator {
             copy(card.record, image: card.image)
         case .play:
             play(card.record)
+        case .makeGif:
+            makeGif(from: card.record)
         case .edit:
             overlay.close(card)
             openEditor(card.record)
@@ -364,6 +386,7 @@ final class AppCoordinator {
                 edit: { [unowned self] r in openEditor(r) },
                 copy: { [unowned self] r in copy(r, image: currentImage(for: r)) },
                 reveal: { [unowned self] r in reveal(r) },
+                makeGif: { [unowned self] r in makeGif(from: r) },
                 delete: { [unowned self] r in deleteRecord(r) })
             history = h
         }

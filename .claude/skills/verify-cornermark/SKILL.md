@@ -71,6 +71,7 @@ $V/link.sh open docs/screenshots/capture.png
 | `record display=1&x=..` | `recording started ... source=fixture` |
 | `edit-recording <project folder>` | `video editor opened project=<name> seconds= size= pointerSamples=`, then `present window=<name> visible=false appActive=false` |
 | `record/stop` | `recording finished ... frames= dropped=` |
+| `record/stop` after `style=gif` | `gif written file=... frames= size= seconds=` |
 
 `link.sh` refuses capture links. Recording links are the one case where a window is on screen: only the instance's own synthetic test window, ordered in behind the others without activating the app. `link.sh` and `watch.sh` hold them to that. See [the feature map](features/README.md) for each feature's recipe and for the harnesses that cover capture.
 

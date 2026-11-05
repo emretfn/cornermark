@@ -45,7 +45,7 @@ struct RecordingJournal {
 
 /// Turns the file of a recording that was cut off into a finished one. The writer closes a fragment every second, so the file holds
 /// every frame up to its last full second. Rewriting it without fragments gives a file any player reads, and a project gets its
-/// `project.json` back, with an empty pointer track because the track was only in memory.
+/// `project.json` back, with an empty pointer track because the track was only in memory. A GIF is then made from the rewritten video.
 enum RecordingRecovery {
     enum Failure: Error, CustomStringConvertible {
         case missing, unreadable, export(String)
@@ -60,7 +60,7 @@ enum RecordingRecovery {
 
     /// Safe to run again on a file it already finished: the rewrite of a plain file is the same file.
     static func finish(_ entry: RecordingJournal.Entry) async throws -> FinishedRecording {
-        let file = entry.video.file
+        let file = entry.video.film
         guard FileManager.default.fileExists(atPath: file.path) else { throw Failure.missing }
         let asset = AVURLAsset(url: file)
         guard let track = try? await asset.loadTracks(withMediaType: .video).first,
@@ -81,6 +81,10 @@ enum RecordingRecovery {
         _ = try FileManager.default.replaceItemAt(file, withItemAt: rewritten)
         let seconds = (try? await AVURLAsset(url: file).load(.duration).seconds) ?? duration.seconds
 
+        if entry.format == .gif {
+            guard let made = await RecordingOutput.finishGif(entry.location, kind: entry.kind) else { throw Failure.export("the GIF and its video are gone") }
+            return made.recording
+        }
         if entry.format == .project {
             let project = RecordingProject(
                 source: .init(video: file.lastPathComponent, pixelWidth: Int(size.width), pixelHeight: Int(size.height),
