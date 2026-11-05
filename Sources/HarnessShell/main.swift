@@ -27,8 +27,7 @@ DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, e
 Task { @MainActor in
     if let backgroundFilming {
         let ok = await VideoBackgroundFilm.run(out: URL(fileURLWithPath: backgroundFilming, isDirectory: true))
-        print(ok ? "FILM DONE" : "FILM FAILED")
-        exit(ok ? 0 : 1)
+        filmDone(ok)
     }
     if let trimFilming {
         let ok = await VideoTrimFilm.run(out: URL(fileURLWithPath: trimFilming, isDirectory: true))
