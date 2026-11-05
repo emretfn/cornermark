@@ -241,9 +241,9 @@ final class EditorStage {
     private(set) var frames: [URL: StillFrames] = [:]
     private var project: CaptureRecord?
 
-    init(_ film: Film) async throws {
+    init(_ film: Film, frames count: Int = 120) async throws {
         self.film = film
-        (w, _) = try recordingWorld(frames: 120)
+        (w, _) = try recordingWorld(frames: count)
         // Two seconds of pointer readings, so the pointer moves while the film plays.
         w.env.pointerSource = { ScriptedPointerSource(pacing: .fixed(origin: 0, count: 240)) }
         w.coordinator.makeVideoEditor = { [unowned self] folder in
@@ -274,7 +274,7 @@ final class EditorStage {
         editor.window?.setContentSize(Self.editorSize)
         editor.window?.contentView?.layoutSubtreeIfNeeded()
         await editor.ready()
-        film.layers = { [unowned self, unowned editor] in editorLayers(editor) }
+        film.layers = { [unowned self, unowned editor] in layers(editor) }
         film.status = { [unowned self, unowned editor] in
             let st = editor.state
             return "section=\(st.section.rawValue) playing=\(st.transport.isPlaying) t=\(Timecode.text(st.transport.time(at: clock.now))) previewOnly=\(st.isPreviewOnly) cursor.visible=\(st.project.edits.cursor.isVisible) cursor.scale=\(st.project.edits.cursor.scale) volume=\(st.isMuted ? 0 : st.volume)"
@@ -322,7 +322,7 @@ final class EditorStage {
         return tl.convert(r, to: nil)
     }
 
-    private func editorLayers(_ editor: VideoEditorWindowController) -> [(CGImage, CGRect)] {
+    func layers(_ editor: VideoEditorWindowController) -> [(CGImage, CGRect)] {
         guard let window = editor.window, let image = editorImage(editor, dark: film.dark) else { film.failures.append("could not render the editor"); return [] }
         var layers = [(image, CGRect(origin: origin, size: window.frame.size))]
         if editor.state.isPreviewOnly, let content = window.contentView?.frame.size {

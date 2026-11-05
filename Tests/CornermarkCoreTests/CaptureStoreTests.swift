@@ -142,6 +142,33 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: saved.path), "pruning leaves the video alone")
     }
 
+    func testAnOwnedVideoMovesInAndLeavesWithItsEntry() throws {
+        let (store, _) = try makeStore()
+        try FileManager.default.createDirectory(at: store.incomingDirectory, withIntermediateDirectories: true)
+        let file = store.incomingDirectory.appendingPathComponent("Cornermark Recording 1.mp4")
+        try Data([1, 2, 3]).write(to: file)
+        let record = try store.addOwnedVideo(moving: file, duration: 2, poster: image, kind: .area, pixelSize: CGSize(width: 1280, height: 720))
+        let video = try XCTUnwrap(record.video)
+        XCTAssertEqual(video.format, .video)
+        XCTAssertEqual(video.file.lastPathComponent, "Cornermark Recording 1.mp4")
+        XCTAssertEqual(video.file.deletingLastPathComponent().path, store.paths(for: record).directory.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "the file moved, it was not copied")
+        XCTAssertEqual(try Data(contentsOf: video.file), Data([1, 2, 3]))
+        XCTAssertTrue(record.ownsVideo)
+        try store.delete(record.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: video.file.path), "deleting the entry deletes the video it owns")
+    }
+
+    func testARecordingIsNotOwned() throws {
+        let (store, root) = try makeStore()
+        let elsewhere = root.deletingLastPathComponent().appendingPathComponent("a.mp4")
+        try Data([1]).write(to: elsewhere)
+        let record = try store.addRecording(RecordedVideo(location: elsewhere, format: .video, duration: 1), poster: image, kind: .area, pixelSize: .zero)
+        XCTAssertFalse(record.ownsVideo)
+        try store.delete(record.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: elsewhere.path))
+    }
+
     func testProjectRecordingPlaysItsScreenVideo() {
         let folder = URL(fileURLWithPath: "/tmp/Cornermark Recording", isDirectory: true)
         XCTAssertEqual(RecordedVideo(location: folder, format: .project, duration: 1).file.lastPathComponent, RecordingProjectFile.videoName)

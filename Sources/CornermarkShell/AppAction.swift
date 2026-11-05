@@ -78,6 +78,7 @@ enum AppAction: Equatable {
     case controlRecording(RecordingControl)
     case openRecordingTestWindow
     case openRecording(URL)
+    case exportRecording(URL)
     case quit
 
     var id: ActionID {
@@ -107,7 +108,7 @@ enum AppAction: Equatable {
         case .controlRecording(.resume): return .resumeRecording
         case .controlRecording(.restart): return .restartRecording
         case .openRecordingTestWindow: return .recordTestWindow
-        case .openRecording: return .editRecording
+        case .openRecording, .exportRecording: return .editRecording
         case .quit: return .quit
         }
     }
@@ -169,7 +170,7 @@ enum URLCommand {
         }
         if spec.id == .editRecording {
             guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
-            return validatedProjectFolder(path: path).map { .openRecording($0) }
+            return validatedProjectFolder(path: path).map { query["export"] == "1" ? .exportRecording($0) : .openRecording($0) }
         }
         if spec.id == .record {
             // A link records for editing unless it asks for a plain video, which keeps older links meaning what they did.

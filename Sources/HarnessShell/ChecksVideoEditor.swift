@@ -61,6 +61,13 @@ func editorImage(_ editor: VideoEditorWindowController, dark: Bool = false) -> C
     preview.layoutSubtreeIfNeeded()
     preview.updateLayer()
     layer.render(in: ctx)
+    if let panel = editor.view(identifier: "video.export.panel"), !panel.isHiddenOrHasHiddenAncestor,
+       let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) {
+        panel.appearance = window.appearance
+        panel.cacheDisplay(in: panel.bounds, to: rep)
+        let f = panel.convert(panel.bounds, to: nil)
+        if let image = rep.cgImage { ctx.draw(image, in: CGRect(x: f.minX - r.minX, y: f.minY - r.minY, width: f.width, height: f.height)) }
+    }
     return ctx.makeImage()
 }
 

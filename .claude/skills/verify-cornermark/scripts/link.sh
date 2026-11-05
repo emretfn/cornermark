@@ -1,5 +1,5 @@
 #!/bin/bash
-# link.sh <path> | link.sh open <image-path> | link.sh edit-recording <project-folder> | link.sh unknown-link
+# link.sh <path> | link.sh open <image-path> | link.sh edit-recording <project-folder> [export] | link.sh unknown-link
 # link.sh record/test-window | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | link.sh record/stop
 # Sends one link to the recorded instance only, watches focus while it lands, and prints what the app logged.
 set -euo pipefail
@@ -26,7 +26,7 @@ if [ "$path" = open ]; then
     encoded="$(printf %s "$ROOT/import/$(basename "$2")" | perl -pe 's/([^A-Za-z0-9\/._-])/sprintf("%%%02X", ord($1))/ge')"
     url="$url?path=$encoded"
 elif [ "$path" = edit-recording ]; then
-    [ $# -eq 2 ] || die "usage: link.sh edit-recording <project-folder>"
+    [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = export ]; } || die "usage: link.sh edit-recording <project-folder> [export]"
     [ -f "$2/project.json" ] || die "refused: $2 holds no project.json."
     src="$(cd "$2" && pwd)"
     # A folder outside the root is copied in first, so the app reads only inside the isolated root.
@@ -43,6 +43,8 @@ elif [ "$path" = edit-recording ]; then
     url="$url?path=$encoded"
     # An editor already open for the folder logs "video editor reopened".
     want="video editor"
+    # The export lands in the root's History, so the instance writes nothing outside it.
+    if [ "${3:-}" = export ]; then url="$url&export=1"; want="video export"; fi
 elif in_list "$path" "$RECORDING_LINKS"; then
     recording=1
     case "$path" in

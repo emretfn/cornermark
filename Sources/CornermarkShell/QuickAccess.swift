@@ -11,9 +11,10 @@ enum CardAction: CaseIterable {
     static let corners: Set<CardAction> = [.close, .pin]
 
     /// What a card offers, in row order. A recording is already saved, so it shows its file instead of saving one.
-    /// A recording for editing opens in the video editor; a plain video plays.
-    static func offered(forRecording: Bool, editable: Bool = false) -> [CardAction] {
-        forRecording ? [.copy, editable ? .edit : .play, .reveal, .close] : [.copy, .save, .annotate, .ocr, .pin, .close]
+    /// A recording for editing opens in the video editor; a plain video plays. An export lives in History until it is saved.
+    static func offered(forRecording: Bool, editable: Bool = false, export: Bool = false) -> [CardAction] {
+        if export { return [.copy, .save, .play, .close] }
+        return forRecording ? [.copy, editable ? .edit : .play, .reveal, .close] : [.copy, .save, .annotate, .ocr, .pin, .close]
     }
 }
 
@@ -26,11 +27,15 @@ final class QuickAccessCard {
     var state: CardState = .visible
     /// Seconds left before the card closes by itself; nil keeps it until dismissed.
     var remaining: TimeInterval?
-    var actions: [CardAction] { CardAction.offered(forRecording: record.isRecording, editable: record.opensVideoEditor) }
+    var actions: [CardAction] { CardAction.offered(forRecording: record.isRecording, editable: record.opensVideoEditor, export: record.ownsVideo) }
     var openAction: CardAction { record.opensVideoEditor ? .edit : record.isRecording ? .play : .annotate }
     var info: String {
         guard let video = record.video else { return ImageOutput.dimensionText(CGSize(width: image.width, height: image.height)) }
-        return "\(ImageOutput.durationText(video.duration))  \u{00B7}  \(ImageOutput.dimensionText(record.pixelSize))"
+        let size = record.ownsVideo ? fileSize.map(ImageOutput.byteText) : nil
+        return "\(ImageOutput.durationText(video.duration))  \u{00B7}  \(size ?? ImageOutput.dimensionText(record.pixelSize))"
+    }
+    private lazy var fileSize: Int64? = record.video.flatMap {
+        ((try? FileManager.default.attributesOfItem(atPath: $0.file.path))?[.size] as? NSNumber)?.int64Value
     }
 
     init(record: CaptureRecord, image: CGImage, thumbnail: CGImage, remaining: TimeInterval?) {
