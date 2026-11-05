@@ -17,7 +17,7 @@ enum OverlayFilm {
         let screen = Fixtures.display(id: 1, frame: display, scale: 2, windows: [terminal, notes], seed: 4)
         let source = FixtureScreenSource(displays: [screen], windows: [terminal, notes])
         var ok = true
-        for (name, scene) in [("R1", r1), ("R2", r2), ("R3", r3), ("R4", r4), ("R5", r5)] as [(String, (Reel) async -> Void)] {
+        for (name, scene) in [("R1", r1), ("R2", r2), ("R3", r3), ("R4", r4), ("R5", r5), ("R7", r7)] as [(String, (Reel) async -> Void)] {
             guard let reel = Reel(url: out.appendingPathComponent("\(name).mp4"), source: source, desktop: screen.image, row: name) else { return false }
             await scene(reel)
             let frames = await reel.finish()
@@ -45,11 +45,11 @@ enum OverlayFilm {
     }
 
     static func r2(_ r: Reel) async {
-        r.title = "R2  The panel has two start buttons, each showing its shortcut: Record Video (Return) and Record for Editing (Shift-Return)."
+        r.title = "R2  The panel has three start buttons, each showing its shortcut: Record Video (Return), Record for Editing (Shift-Return), Record GIF (Option-Return)."
         let area = CGRect(x: 300, y: 180, width: 680, height: 380)
         r.remember(area)
         await r.open(at: CGPoint(x: 640, y: 300))
-        r.hold(1.5, note: "Record Video is the one primary action. Record for Editing keeps the pointer and edits changeable. A GIF button arrives with GIF recording.")
+        r.hold(1.5, note: "Record Video is the one primary action. Record for Editing keeps the pointer and edits changeable. Record GIF makes an animated GIF.")
         r.glide(to: r.center(of: "start.video"), frames: 18, note: "Record Video shows Return")
         r.hold(0.8, note: "Record Video shows Return")
         r.glide(to: r.center(of: "start.editing"), frames: 14, note: "Record for Editing shows Shift-Return")
@@ -65,6 +65,29 @@ enum OverlayFilm {
         await r.open(at: CGPoint(x: 640, y: 300))
         await r.click("start.editing", note: "Clicked Record for Editing")
         await r.result(1.6)
+    }
+
+    static func r7(_ r: Reel) async {
+        r.title = "R7  Record GIF from the panel: its button, or Option-Return. The overlay hands the area over as a GIF recording."
+        let area = CGRect(x: 300, y: 180, width: 680, height: 380)
+        r.remember(area)
+        await r.open(at: CGPoint(x: 640, y: 300))
+        r.hold(1.2, note: "The overlay opens on the last area. Three start buttons: Record Video, Record for Editing, Record GIF.")
+        r.glide(to: r.center(of: "start.gif"), frames: 18, note: "Record GIF shows Option-Return")
+        r.hold(1.0, note: "Record GIF shows Option-Return")
+        await r.click("start.gif", note: "Clicked Record GIF")
+        await r.result(1.8)
+        r.remember(area)
+        await r.open(at: CGPoint(x: 640, y: 300))
+        r.hold(0.6, note: "Opened again on the same area")
+        r.key(36, "\r", [.option], note: "Pressed Option-Return")
+        await r.result(1.8)
+        await r.open(at: CGPoint(x: 640, y: 680))
+        await r.click("target.window", note: "Window target")
+        r.glide(to: CGPoint(x: 330, y: 230), frames: 22, note: "Hovering Notes")
+        r.clickDesktop(note: "Clicked Notes: it stays picked")
+        await r.click("start.gif", note: "Record GIF of just that window")
+        await r.result(1.8)
     }
 
     static func r3(_ r: Reel) async {
@@ -308,7 +331,8 @@ final class Reel {
             case .display(let id, nil):
                 what = "the whole of display \(id.map(String.init) ?? "?")"
             }
-            text = "Overlay closed. It asks to record \(what), as \(style == .video ? "a video (Record Video)" : "a project (Record for Editing)")."
+            let result: [RecordingStyle: String] = [.video: "a video (Record Video)", .editing: "a project (Record for Editing)", .gif: "an animated GIF (Record GIF)"]
+            text = "Overlay closed. It asks to record \(what), as \(result[style] ?? style.rawValue)."
         case .cancelled?: text = "Overlay closed. Nothing is recorded."
         default:
             text = "Overlay closed with no outcome."

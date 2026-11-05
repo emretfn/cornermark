@@ -35,6 +35,13 @@ func runRecordOverlayTests() async {
     check(recorded(m)?.1 == .editing, "Shift-Return records it for editing")
 
     m = recordMachine(remembered: CGRect(x: 100, y: 100, width: 200, height: 120))
+    m.send(.keyDown(.confirm, [.option]))
+    check(recorded(m)?.1 == .gif, "Option-Return records it as a GIF")
+    m = recordMachine(remembered: CGRect(x: 100, y: 100, width: 200, height: 120))
+    m.send(.toolbar(.record(.gif)))
+    check(recorded(m)?.1 == .gif, "the Record GIF button records it as a GIF")
+
+    m = recordMachine(remembered: CGRect(x: 100, y: 100, width: 200, height: 120))
     check(adjustingRect(m) == CGRect(x: 100, y: 100, width: 200, height: 120), "a remembered area opens already selected")
     m.send(.toolbar(.record(.editing)))
     check(recorded(m)?.1 == .editing, "the Record for Editing button records it for editing")
@@ -165,12 +172,19 @@ func runRecordOverlayTests() async {
     let rc = makeController(source, pointer: CGPoint(x: 300, y: 200))
     var out = await start(rc, .recording)
     guard let w1 = overlay(rc, frame: d1.frame) else { return check(false, "the recording overlay opens") }
-    let ids = ["target.area", "target.window", "target.fullscreen", "width", "height", "aspect", "start.video", "start.editing"].map { "cornermark.record." + $0 }
-    check(ids.allSatisfy { findView($0, in: rc.overlayWindows) != nil }, "the panel offers targets, size fields, the aspect lock and two start buttons")
+    let ids = ["target.area", "target.window", "target.fullscreen", "width", "height", "aspect", "start.video", "start.editing", "start.gif"].map { "cornermark.record." + $0 }
+    check(ids.allSatisfy { findView($0, in: rc.overlayWindows) != nil }, "the panel offers targets, size fields, the aspect lock and three start buttons")
     check(findView("cornermark.toolbar.capture", in: rc.overlayWindows) == nil, "and no Capture button")
     func button(_ id: String) -> NSButton? { findView("cornermark.record." + id, in: rc.overlayWindows) as? NSButton }
-    check(button("start.video")?.isEnabled == false && button("start.editing")?.isEnabled == false, "the start buttons wait for a target")
-    check(button("start.video")?.title == "Record Video" && button("start.editing")?.title == "Record for Editing", "they are Record Video and Record for Editing")
+    check(button("start.video")?.isEnabled == false && button("start.editing")?.isEnabled == false && button("start.gif")?.isEnabled == false,
+          "the start buttons wait for a target")
+    check(button("start.video")?.title == "Record Video" && button("start.editing")?.title == "Record for Editing" && button("start.gif")?.title == "Record GIF",
+          "they are Record Video, Record for Editing and Record GIF")
+    check(button("start.gif")?.toolTip == "Record GIF (Option-Return)", "Record GIF names its shortcut", detail: button("start.gif")?.toolTip ?? "nil")
+    if let a = button("start.video"), let b = button("start.editing"), let g = button("start.gif") {
+        check(a.frame.minY == b.frame.minY && b.frame.minY == g.frame.minY && a.frame.maxX < b.frame.minX && b.frame.maxX < g.frame.minX,
+              "the three share the bottom row, primary first", detail: "\([a, b, g].map(\.frame))")
+    }
     Synth.drag(w1, from: CGPoint(x: 60, y: 60), to: CGPoint(x: 540, y: 340))
     check(button("start.video")?.isEnabled == true, "a selection enables them")
     if let panel = findView("cornermark.record.start.video", in: rc.overlayWindows)?.superview {
@@ -203,8 +217,9 @@ func runRecordOverlayTests() async {
     out = await start(rc, .recording)
     guard let w1b = overlay(rc, frame: d1.frame) else { return check(false, "the overlay opens again") }
     button("target.window")?.performClick(nil)
-    Synth.move(w1b, to: CGPoint(x: 100, y: 100))
-    Synth.down(w1b, at: CGPoint(x: 100, y: 100)); Synth.up(w1b, at: CGPoint(x: 100, y: 100))
+    // Above the panel, which spans most of this 600 pt display.
+    Synth.move(w1b, to: CGPoint(x: 100, y: 220))
+    Synth.down(w1b, at: CGPoint(x: 100, y: 220)); Synth.up(w1b, at: CGPoint(x: 100, y: 220))
     check(rc.overlayState == .windowPicked(winA) && button("start.video")?.isEnabled == true, "a clicked window is picked and the start buttons wake")
     check((findView("cornermark.record.width", in: rc.overlayWindows) as? NSTextField).map { $0.stringValue == "260" && !$0.isEnabled } == true,
           "the size fields show the window's size and stay read-only")

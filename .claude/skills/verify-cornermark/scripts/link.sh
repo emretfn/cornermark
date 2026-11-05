@@ -49,13 +49,13 @@ elif in_list "$path" "$RECORDING_LINKS"; then
     recording=1
     case "$path" in
         record)
-            [ $# -eq 2 ] || die "usage: link.sh record window=<test window id> | link.sh record display=1[&x=..&y=..&width=..&height=..][&style=video|editing]"
-            if [[ "$2" =~ ^window=[0-9]+(&style=(video|editing))?$ ]]; then
+            [ $# -eq 2 ] || die "usage: link.sh record window=<test window id> | link.sh record display=1[&x=..&y=..&width=..&height=..][&style=video|editing|gif]"
+            if [[ "$2" =~ ^window=[0-9]+(&style=(video|editing|gif))?$ ]]; then
                 ! screen_locked || die "refused: the screen is locked, so a window recording would end after under a second. Record the synthetic display (display=1) or wait until the session is unlocked."
                 [ -n "$(test_window_id)" ] || die "refused: this instance has no test window. Send record/test-window first."
                 window="${2#window=}"; window="${window%%&*}"
                 [ "$window" = "$(test_window_id)" ] || die "refused: window $window is not this instance's test window ($(test_window_id))."
-            elif [[ "$2" =~ ^display=1(&(x|y|width|height)=[0-9]+)*(&style=(video|editing))?$ ]]; then
+            elif [[ "$2" =~ ^display=1(&(x|y|width|height)=[0-9]+)*(&style=(video|editing|gif))?$ ]]; then
                 # The isolated instance maps a display link to its synthetic display and never to a real one. The log must say so.
                 [ -z "$(test_window_id)" ] || die "refused: close the test window first (record/stop), so a display recording shows no window of the instance."
                 fixture=1

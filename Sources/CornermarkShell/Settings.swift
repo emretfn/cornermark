@@ -94,7 +94,7 @@ struct RecordingPreferences: Codable, Equatable {
     }
 
     func options(for style: RecordingStyle) -> RecordingOptions {
-        RecordingOptions(fps: fps, showsCursor: style == .video && showCursor, quality: quality, density: density, limit: limit,
+        RecordingOptions(fps: fps, showsCursor: style != .editing && showCursor, quality: quality, density: density, limit: limit,
                          exclusion: ContentExclusion(hidesNotifications: hideNotifications, hidesDesktopIcons: hideDesktopIcons))
     }
 }

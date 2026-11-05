@@ -5,16 +5,22 @@ import CornermarkCore
 enum CardState: Equatable { case visible, hovering, dragging, closing }
 
 enum CardAction: CaseIterable {
-    case copy, save, annotate, pin, ocr, play, edit, reveal, close
+    case copy, save, annotate, pin, ocr, play, edit, makeGif, reveal, close
 
     /// The two small buttons in the image's top corners. The rest sit in one centred row.
     static let corners: Set<CardAction> = [.close, .pin]
 
-    /// What a card offers, in row order. A recording is already saved, so it shows its file instead of saving one.
-    /// A recording for editing opens in the video editor; a plain video plays. An export lives in History until it is saved.
-    static func offered(forRecording: Bool, editable: Bool = false, export: Bool = false) -> [CardAction] {
+    /// What a card offers, in row order, for a picture (nil) or a recording's format. A recording is already saved, so it shows its
+    /// file instead of saving one. A project opens in the video editor; a plain video plays and turns into a GIF, since a project's
+    /// pointer is not in its video's picture; a GIF plays. An export lives in History until it is saved.
+    static func offered(for recording: RecordedVideo.Format?, export: Bool = false) -> [CardAction] {
         if export { return [.copy, .save, .play, .close] }
-        return forRecording ? [.copy, editable ? .edit : .play, .reveal, .close] : [.copy, .save, .annotate, .ocr, .pin, .close]
+        switch recording {
+        case nil: return [.copy, .save, .annotate, .ocr, .pin, .close]
+        case .video: return [.copy, .play, .makeGif, .reveal, .close]
+        case .project: return [.copy, .edit, .reveal, .close]
+        case .gif: return [.copy, .play, .reveal, .close]
+        }
     }
 }
 
@@ -27,12 +33,13 @@ final class QuickAccessCard {
     var state: CardState = .visible
     /// Seconds left before the card closes by itself; nil keeps it until dismissed.
     var remaining: TimeInterval?
-    var actions: [CardAction] { CardAction.offered(forRecording: record.isRecording, editable: record.opensVideoEditor, export: record.ownsVideo) }
+    var actions: [CardAction] { CardAction.offered(for: record.video?.format, export: record.ownsVideo) }
     var openAction: CardAction { record.opensVideoEditor ? .edit : record.isRecording ? .play : .annotate }
     var info: String {
         guard let video = record.video else { return ImageOutput.dimensionText(CGSize(width: image.width, height: image.height)) }
         let size = record.ownsVideo ? fileSize.map(ImageOutput.byteText) : nil
-        return "\(ImageOutput.durationText(video.duration))  \u{00B7}  \(size ?? ImageOutput.dimensionText(record.pixelSize))"
+        let length = "\(ImageOutput.durationText(video.duration))  \u{00B7}  \(size ?? ImageOutput.dimensionText(record.pixelSize))"
+        return video.format == .gif ? "GIF  \u{00B7}  \(length)" : length
     }
     private lazy var fileSize: Int64? = record.video.flatMap {
         ((try? FileManager.default.attributesOfItem(atPath: $0.file.path))?[.size] as? NSNumber)?.int64Value

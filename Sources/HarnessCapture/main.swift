@@ -26,6 +26,7 @@ Task { @MainActor in
     await runSpanTests()
     await runRecordOverlayTests()
     await runRecordingTests()
+    await runGifTests()
     await runRecordingSettingsTests()
     await runRecordingControlTests()
     await runProjectTimelineTests()

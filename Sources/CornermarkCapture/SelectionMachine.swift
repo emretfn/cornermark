@@ -78,12 +78,14 @@ public enum Intent: Hashable { case area, scrolling, timer, record }
 
 public enum ToolbarMode: Hashable, CaseIterable { case area, window, fullscreen, scrolling, timer, record }
 
-/// What a recording becomes. A GIF joins here as its own case.
+/// What a recording becomes.
 public enum RecordingStyle: String, Hashable, CaseIterable {
     /// One finished video with the pointer in the picture.
     case video
     /// A project whose pointer and edits stay changeable.
     case editing
+    /// One animated GIF with the pointer in the picture, made from the video once the recording ends.
+    case gif
 }
 
 public enum Flow: Hashable {
@@ -538,8 +540,8 @@ public struct SelectionMachine {
 
     private func effectiveAspect(_ m: Modifiers) -> AspectLock { m.contains(.shift) ? .ratio(1, 1) : config.aspect }
 
-    /// Return records a video, Shift-Return a project for editing. Option stays free for a GIF.
-    private func style(_ m: Modifiers) -> RecordingStyle { m.contains(.shift) ? .editing : .video }
+    /// Return records a video, Shift-Return a project for editing, Option-Return a GIF.
+    private func style(_ m: Modifiers) -> RecordingStyle { m.contains(.option) ? .gif : m.contains(.shift) ? .editing : .video }
 
     private func fullscreenDisplay(for rect: CGRect) -> DisplayGeometry? { config.displays.first { $0.frame == rect } }
 

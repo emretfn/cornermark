@@ -10,6 +10,7 @@ final class RecordingPanel: Surface {
     private static let inset = DS.Space.s32
     private static let fieldWidth: CGFloat = 52
     private static let aspectWidth: CGFloat = 72
+    private static let keyNames: [RecordingStyle: String] = [.video: "Return", .editing: "Shift-Return", .gif: "Option-Return"]
 
     private let targets: [(mode: ToolbarMode, button: IconButton)]
     private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -26,6 +27,7 @@ final class RecordingPanel: Surface {
         starts = [
             (.video, Button(title: "Record Video", variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}")),
             (.editing, Button(title: "Record for Editing", variant: .secondary, size: .large, shortcut: "\u{21E7}\u{21A9}")),
+            (.gif, Button(title: "Record GIF", variant: .secondary, size: .large, shortcut: "\u{2325}\u{21A9}")),
         ]
         super.init(style: .hud, shadowInset: Self.inset)
         setAccessibilityElement(true)
@@ -94,22 +96,23 @@ final class RecordingPanel: Surface {
 
         let inner = x - left
 
-        // The bottom row shares the width between the start buttons, the one primary action first.
+        // The bottom row shares the width between the start buttons, the one primary action first. Each keeps its title's width, so the
+        // panel stays narrow enough to sit inside a modest selection.
         let gap = DS.Space.s4
-        let natural = starts.map(\.button.frame.width).reduce(0, +) + gap
+        let natural = starts.map(\.button.frame.width).reduce(0, +) + gap * CGFloat(starts.count - 1)
         let width = max(inner, natural)
         var bx = left
         for (i, item) in starts.enumerated() {
-            let share = item.button.frame.width + (width - natural) / CGFloat(starts.count)
-            item.button.frame = CGRect(x: bx, y: Self.inset + pad, width: share.rounded(), height: row)
+            let share = (item.button.frame.width + (width - natural) / CGFloat(starts.count)).rounded()
+            item.button.frame = CGRect(x: bx, y: Self.inset + pad, width: share, height: row)
             item.button.target = self
             item.button.action = #selector(startClicked(_:))
             item.button.setAccessibilityIdentifier("cornermark.record.start.\(item.style.rawValue)")
-            let key = item.style == .video ? "Return" : "Shift-Return"
+            let key = Self.keyNames[item.style] ?? "Return"
             item.button.toolTip = "\(item.button.title) (\(key))"
             item.button.setAccessibilityLabel("\(item.button.title), \(key)")
             addSubview(item.button)
-            bx += share.rounded() + (i < starts.count - 1 ? gap : 0)
+            bx += share + (i < starts.count - 1 ? gap : 0)
         }
 
         setFrameSize(NSSize(width: max(x, bx) + pad + Self.inset, height: top + row + pad + Self.inset))
