@@ -51,7 +51,9 @@ extension Pix {
 
 @MainActor
 func previewFrame(_ editor: VideoEditorWindowController, size: CGSize) -> CGImage? {
-    guard let preview = editor.view(identifier: "video.preview") as? PreviewView, let picture = preview.layer?.sublayers?.first else { return nil }
+    guard let preview = editor.view(identifier: "video.preview") as? PreviewView else { return nil }
+    preview.layoutSubtreeIfNeeded()
+    guard let picture = preview.layer?.sublayers?.first else { return nil }
     let ctx = Pix.context(Int(size.width), Int(size.height))
     ctx.scaleBy(x: size.width / picture.bounds.width, y: size.height / picture.bounds.height)
     picture.render(in: ctx)
@@ -76,7 +78,7 @@ struct ParityRow {
 func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, export: URL, plan: ExportPlan, project: RecordingProject,
                    times: [Double], name: String = "parity") async -> [ParityRow] {
     var rows: [ParityRow] = []
-    let renderer = ExportFrameRenderer(plan: plan, source: project.source)
+    let renderer = ExportFrameRenderer(plan: plan, project: project, folder: editor.folder)
     let size = CGSize(width: plan.width, height: plan.height)
     for t in times {
         editor.seek(to: t)
@@ -211,7 +213,7 @@ func checkVideoExport() async throws {
 
     section("video export: size estimate")
     var ratios: [Double] = []
-    for resolution in ExportResolution.choices(for: project.source) {
+    for resolution in ExportResolution.choices(for: project) {
         for q in ExportQuality.allCases {
             let settings = ExportSettings(resolution: resolution, quality: q)
             let out = w.root.appendingPathComponent("estimate-\(ratios.count).mp4")
@@ -251,6 +253,9 @@ func checkVideoExport() async throws {
         try await checkTrimmedExport(editor, frames: frames, clock: clock, root: w.root)
         try await checkCursorExport(c, folder: folder, clock: clock, root: w.root) { decoders[$0] }
     } else { check(false, "the harness decoder is known") }
+    if let frames = decoders[folder.standardizedFileURL.resolvingSymlinksInPath()] ?? decoders.values.first {
+        try await checkBackgroundParity(editor, frames: frames, clock: clock, root: w.root)
+    }
 
     section("video export: cancel")
     let listed = w.store.list().count
@@ -305,7 +310,7 @@ private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: S
     check(facts?.frames == 90 && abs(report.duration - 1.5) < 1.0 / 60, "the file is 90 frames, 1.5 s: what the clips keep",
           detail: "\(String(describing: facts)) \(report.duration) s")
     var ok = true
-    let renderer = ExportFrameRenderer(plan: report.plan, source: project.source)
+    let renderer = ExportFrameRenderer(plan: report.plan, project: project, folder: nil)
     let cases: [(output: Double, source: Double, skipped: Double)] = [(29.0 / 60, 29.0 / 60, 59.0 / 60), (0.5, 1.0, 0.5), (31.0 / 60, 61.0 / 60, 31.0 / 60)]
     for (output, source, skipped) in cases {
         let state = frameState(project, outputTime: output)
@@ -379,6 +384,26 @@ private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: Scripted
         check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "\(name): the file's frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     }
+    editor.setCursor(choices[0])
+    var framed = editor.state.project.edits.background
+    framed.fill = .gradient(index: 6)
+    framed.padding = 48; framed.shadow = 70; framed.cornerRadius = 20
+    editor.setBackground(framed)
+    let onBackground = editor.state.project
+    let framedOut = root.appendingPathComponent("cursor-background.mp4")
+    let framedReport = try await VideoExporter.export(project: onBackground, video: editor.videoURL, settings: ExportSettings(), to: framedOut)
+    let framedTimes = [0.3, 0.5, 0.8, 1.25]
+    let framedRows = await measureParity(editor, frames: frames, clock: clock, export: framedOut, plan: framedReport.plan, project: onBackground, times: framedTimes,
+                                         name: "parity-cursor-background")
+    for r in framedRows {
+        print(String(format: "PARITY cursor on background t=%.2f opacity=%.2f preview-vs-drawn %@ | preview-vs-file %@", r.time,
+                     frameState(onBackground, outputTime: r.time).cursor?.opacity ?? 0, r.drawn.description, r.encoded.description))
+    }
+    check(framedRows.count == framedTimes.count && framedRows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
+          "the pointer on a background: the export draws it inside the rounded frame where the preview does", detail: framedRows.map { $0.drawn.description }.joined(separator: "; "))
+    check(framedRows.count == framedTimes.count && framedRows.allSatisfy { $0.encoded.psnr > 35 },
+          "the pointer on a background: the file's frames match the preview within compression loss", detail: framedRows.map { $0.encoded.description }.joined(separator: "; "))
+    editor.setBackground(VideoBackground())
     var shown = editor.state.project
     shown.edits.cursor = choices[0]
     check((0.0...0.9).contains(frameState(shown, outputTime: 1.25).cursor?.opacity ?? -1) && frameState(shown, outputTime: 1.6).cursor == nil,

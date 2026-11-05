@@ -149,6 +149,7 @@ func checkVideoEditor() async throws {
     try await checkVideoEditorSaving(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorClips(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorCursor(w, folder: folder)
+    try await checkVideoBackground(w, folder: folder)
     try await checkVideoEditorPerformance(folder: folder)
     try await checkVideoEditorLiveCut(folder: folder)
 }
@@ -409,9 +410,10 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
     for (i, section) in EditorSection.allCases.enumerated() {
         railButtons[i].performClick(nil)
         let only = railButtons.enumerated().allSatisfy { $0.element.isSelected == ($0.offset == i) }
-        let shows = section == .cursor ? (show?.isHidden == false && note?.isHidden == true) : (show?.isHidden == true && note?.isHidden == false && note?.stringValue.isEmpty == false)
+        let shows = section == .cursor || section == .background ? (show?.isHidden == (section != .cursor) && note?.isHidden == true)
+            : (show?.isHidden == true && note?.isHidden == false && note?.stringValue.isEmpty == false)
         check(editor.state.section == section && title?.stringValue == section.title && only && shows,
-              "\(section.title): the panel shows its title and \(section == .cursor ? "its settings" : "\"\(note?.stringValue ?? "")\"")")
+              "\(section.title): the panel shows its title and \(section == .cursor || section == .background ? "its settings" : "\"\(note?.stringValue ?? "")\"")")
     }
     railButtons[0].performClick(nil)
 
