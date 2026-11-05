@@ -13,12 +13,15 @@ final class MainAppLoginItem: LoginItemControlling {
 
 extension AppEnvironment {
     static let screenCapturePaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+    static let inputMonitoringPaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
 
     static func live() throws -> AppEnvironment {
         #if DEBUG
         if let root = isolatedRoot {
             let defaults = UserDefaults(suiteName: isolatedName)!
             defaults.removePersistentDomain(forName: isolatedName)
+            // No link changes settings, so a verification run that needs some, such as shown clicks, starts from this file.
+            if let seeded = try? Data(contentsOf: root.appendingPathComponent("settings.json")) { defaults.set(seeded, forKey: SettingsStore.key) }
             return try isolated(root: root, defaults: defaults)
         }
         #endif
@@ -56,6 +59,8 @@ extension AppEnvironment {
         env.presentUpdateAlert = presentUpdateAlert
         env.frameSource = { target, options in StreamFrameSource(target: target, options: options) }
         env.pointerSource = { LivePointerSource() }
+        env.inputSource = { LiveInputSource(capture: $0) }
+        env.hasInputPermission = { LiveInputSource.isPermitted }
         env.recordingJournal = RecordingJournal(folder: support.appendingPathComponent("\(AppVariant.current.name)/Unfinished Recordings", isDirectory: true))
         return env
     }
@@ -89,6 +94,8 @@ extension AppEnvironment {
         env.recordingTestWindow = testWindow
         env.frameSource = { target, options in try isolatedFrameSource(target, options, testWindow: testWindow) }
         env.pointerSource = { ScriptedPointerSource() }
+        env.inputSource = { ScriptedInputSource(capture: $0) }
+        env.hasInputPermission = { true }
         env.recordingJournal = RecordingJournal(folder: root.appendingPathComponent("unfinished", isDirectory: true))
         env.willPresent = { window in
             Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")
