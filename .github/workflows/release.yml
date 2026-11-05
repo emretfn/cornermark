@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Only a pull request into main can become a release, so only it needs the DMG check.
+    branches: [main]
     paths:
       - .github/workflows/release.yml
       - scripts/**
