@@ -585,7 +585,8 @@ private func checkVideoEditorSaving(_ w: World, folder: URL, videoHash: String) 
 @MainActor
 private func checkVideoEditorCursor(_ w: World, folder: URL) async throws {
     section("video editor: cursor size, style, motion and hiding")
-    guard let editor = w.coordinator.openVideoEditor(folder), let window = editor.window, let content = window.contentView else {
+    let moving = try movingPointerCopy(of: folder, in: w.root)
+    guard let editor = w.coordinator.openVideoEditor(moving), let window = editor.window, let content = window.contentView else {
         return check(false, "the editor opens")
     }
     window.setContentSize(window.minSize)
@@ -620,11 +621,11 @@ private func checkVideoEditorCursor(_ w: World, folder: URL) async throws {
     motion?.selectedSegment = 1
     motion.map(fire)
     let smooth = editor.state.project
-    check(smooth.edits.cursor.motion == .smooth && at(1.1) == frameState(smooth, outputTime: 1.1), "Smooth redraws the preview through frameState")
+    check(smooth.edits.cursor.motion == .smooth && at(0.5) == frameState(smooth, outputTime: 0.5), "Smooth redraws the preview through frameState")
     var natural = smooth
     natural.edits.cursor.motion = .natural
-    let lag = hypot((frameState(smooth, outputTime: 1.1).cursor?.x ?? 0) - (frameState(natural, outputTime: 1.1).cursor?.x ?? 0),
-                    (frameState(smooth, outputTime: 1.1).cursor?.y ?? 0) - (frameState(natural, outputTime: 1.1).cursor?.y ?? 0))
+    let lag = hypot((frameState(smooth, outputTime: 0.5).cursor?.x ?? 0) - (frameState(natural, outputTime: 0.5).cursor?.x ?? 0),
+                    (frameState(smooth, outputTime: 0.5).cursor?.y ?? 0) - (frameState(natural, outputTime: 0.5).cursor?.y ?? 0))
     check(lag > 1, "on a moving stretch the smooth pointer trails the recorded one", detail: String(format: "%.1f pt", lag))
     idle?.performClick(nil)
     typing?.performClick(nil)
@@ -635,7 +636,7 @@ private func checkVideoEditorCursor(_ w: World, folder: URL) async throws {
     show?.performClick(nil)
 
     let steps = editor.state.project.edits
-    for v in [1.5, 2.0, 2.5] {
+    for v in [1.5, 2.0, 2.5] where v != steps.cursor.scale {
         size?.doubleValue = v
         size.map(fire)
     }
@@ -663,9 +664,24 @@ private func checkVideoEditorCursor(_ w: World, folder: URL) async throws {
     snapshotEditor(editor, name: "video-editor-cursor-dark", dark: true)
     window.appearance = nil
     w.coordinator.closeAllEditors()
-    let stored = try RecordingProjectFile.read(from: folder)
+    let stored = try RecordingProjectFile.read(from: moving)
     check(stored.edits.cursor == CursorSettings(scale: 2.5, style: .dot, motion: .smooth, hidesWhenIdle: true, hidesWhenTyping: true),
           "closing writes style, motion and both hiding options to project.json")
+}
+
+/// A copy of a fixture project whose pointer sweeps across the area in its first second and then rests, with the edits reset.
+func movingPointerCopy(of folder: URL, in root: URL) throws -> URL {
+    let copy = root.appendingPathComponent("moving-pointer-\(UUID().uuidString.prefix(6))", isDirectory: true)
+    try FileManager.default.copyItem(at: folder, to: copy)
+    var project = try RecordingProjectFile.read(from: copy)
+    let w = project.source.pointWidth, h = project.source.pointHeight
+    project.events.pointer = (0...120).map { i in
+        let t = Double(i) / 120, e = t * t * (3 - 2 * t)
+        return PointerSample(t: t, x: w * (0.15 + 0.7 * e), y: h * (0.25 + 0.5 * e) + (i % 2 == 0 ? 2 : -2))
+    }
+    project.edits = RecordingProject.Edits(clips: project.edits.clips)
+    try RecordingProjectFile.write(project, to: copy)
+    return copy
 }
 
 /// The live path: the player decodes in real time and a 60 Hz tick draws each frame into the preview.
