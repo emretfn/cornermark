@@ -91,6 +91,7 @@ Task { @MainActor in
         try await checkRecordingRecovery()
         try await checkGifRecording()
         try await checkRecordingInput()
+        try await checkRecordingAudio()
         try await checkVideoEditor()
         try await checkVideoExport()
         try await takeSnapshots()
@@ -104,6 +105,8 @@ Task { @MainActor in
     check(NSApp.activationPolicy() == .prohibited, "activation policy still .prohibited")
     check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))
     check(LiveInputSource.tapsCreated == 0, "no event tap was created in this run", detail: "\(LiveInputSource.tapsCreated)")
+    check(LiveMicrophoneSource.sessionsOpened == 0 && MicrophoneAccess.requests == 0, "no real audio device was opened and microphone access was never requested",
+          detail: "devices \(LiveMicrophoneSource.sessionsOpened), requests \(MicrophoneAccess.requests)")
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)
