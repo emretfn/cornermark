@@ -2,11 +2,13 @@
 import AppKit
 import ObjectiveC
 
-/// A key or menu action that no responder handles ends in `noResponder(for:)`, which plays the system alert sound. Harnesses and
+/// A key press that no responder handles ends in `noResponder(for: keyDown:)`, which plays the system alert sound. Harnesses and
 /// scripted instances run beside a person, so once installed it counts and logs the action instead. A harness fails on any count.
 public enum SilentNoResponder {
     public private(set) static var selectors: [String] = []
     public static var count: Int { selectors.count }
+    /// Where each caught action is reported. A scripted instance sends it to its log.
+    public static var report: (String) -> Void = { print("NORESPONDER \($0)") }
     private static var installed = false
     private static var silentIMP: IMP?
 
@@ -32,10 +34,12 @@ public enum SilentNoResponder {
         guard !installed else { return }
         installed = true
         let selector = #selector(NSResponder.noResponder(for:))
+        // AppKit beeps only for an unhandled keyDown:; for any other action the method does nothing, and so does this one.
         let silent: @convention(block) (AnyObject, Selector) -> Void = { _, action in
+            guard action == #selector(NSResponder.keyDown(with:)) else { return }
             let name = NSStringFromSelector(action)
             selectors.append(name)
-            print("NORESPONDER \(name)")
+            report(name)
         }
         let imp = imp_implementationWithBlock(silent)
         silentIMP = imp
