@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkCapture
 import CornermarkDesign
 
 @MainActor
@@ -230,6 +231,81 @@ final class CapturePane: SettingsPane {
     }
 }
 
+extension VideoQuality {
+    var title: String { rawValue.capitalized }
+}
+
+extension PixelDensity {
+    var title: String { self == .retina ? "Retina" : "Standard" }
+}
+
+extension SizeLimit {
+    var title: String {
+        switch self {
+        case .none: return "No limit"
+        case .uhd: return "4K (3840 \u{00D7} 2160)"
+        case .qhd: return "1440p (2560 \u{00D7} 1440)"
+        case .fullHD: return "1080p (1920 \u{00D7} 1080)"
+        case .hd: return "720p (1280 \u{00D7} 720)"
+        }
+    }
+}
+
+final class RecordingPane: SettingsPane {
+    override var paneTitle: String { "Recording" }
+    override var symbol: String { "record.circle" }
+    private let fps = Form.popup(RecordingPreferences.fpsChoices.map { "\($0) fps" }, id: "recording.fps")
+    private let quality = Form.popup(VideoQuality.allCases.map(\.title), id: "recording.quality")
+    private let density = Form.popup(PixelDensity.allCases.map(\.title), id: "recording.resolution")
+    private let limit = Form.popup(SizeLimit.allCases.map(\.title), id: "recording.limit")
+    private let cursor = Form.checkbox("Show cursor", id: "recording.cursor")
+    private let quickAccess = Form.checkbox("Show Quick Access overlay", id: "recording.quickAccess")
+
+    override func buildForm() -> FormPage {
+        fps.onAction { [unowned self] c in
+            let i = (c as! NSPopUpButton).indexOfSelectedItem
+            change { $0.recording.fps = RecordingPreferences.fpsChoices[i] }
+        }
+        quality.onAction { [unowned self] c in
+            let i = (c as! NSPopUpButton).indexOfSelectedItem
+            change { $0.recording.quality = VideoQuality.allCases[i] }
+        }
+        density.onAction { [unowned self] c in
+            let i = (c as! NSPopUpButton).indexOfSelectedItem
+            change { $0.recording.density = PixelDensity.allCases[i] }
+        }
+        limit.onAction { [unowned self] c in
+            let i = (c as! NSPopUpButton).indexOfSelectedItem
+            change { $0.recording.limit = SizeLimit.allCases[i] }
+        }
+        cursor.onAction { [unowned self] c in change { $0.recording.showCursor = (c as! NSButton).state == .on } }
+        quickAccess.onAction { [unowned self] c in change { $0.recording.showQuickAccess = (c as! NSButton).state == .on } }
+        return Form.page(title: paneTitle, groups: [
+            .init("Video", rows: [
+                Form.row(title: "Frame rate", control: fps),
+                Form.row(title: "Quality", caption: Form.caption("Lower quality makes smaller files."), control: quality),
+                Form.row(title: "Resolution", caption: Form.caption("Standard records one pixel per point, a quarter of the pixels on a Retina display."), control: density),
+                Form.row(title: "Largest size", caption: Form.caption("A larger recording is scaled down to fit."), control: limit),
+            ], footer: "Recordings are saved to the save folder set in General."),
+            .init("Cursor", rows: [
+                Form.row(title: "Show cursor", caption: Form.caption("Record Video draws the cursor into the video. Record for Editing keeps it separate, so you can still hide it later."),
+                         control: cursor),
+            ]),
+            .init("After recording", rows: [Form.row(title: "Show Quick Access overlay", control: quickAccess)]),
+        ])
+    }
+
+    override func update() {
+        let r = settings.recording
+        fps.selectItem(at: RecordingPreferences.fpsChoices.firstIndex(of: r.fps) ?? 0)
+        quality.selectItem(at: VideoQuality.allCases.firstIndex(of: r.quality) ?? 0)
+        density.selectItem(at: PixelDensity.allCases.firstIndex(of: r.density) ?? 0)
+        limit.selectItem(at: SizeLimit.allCases.firstIndex(of: r.limit) ?? 0)
+        cursor.state = r.showCursor ? .on : .off
+        quickAccess.state = r.showQuickAccess ? .on : .off
+    }
+}
+
 /// A dot in a status colour. Drawn at draw time through `Glyph`, so the colour follows light and dark.
 private final class StatusDot: NSView {
     var color: NSColor = DS.Color.textSecondary { didSet { needsDisplay = true } }
@@ -302,7 +378,7 @@ final class SettingsWindowController: NSWindowController {
     private let scroll = NSScrollView()
 
     init(ctx: SettingsContext) {
-        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), PermissionsPane(ctx)]
+        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), PermissionsPane(ctx)]
         self.panes = panes
         selectedPane = panes[0]
         items = panes.map { SidebarItem(symbol: $0.symbol, title: $0.paneTitle) }

@@ -114,7 +114,7 @@ struct MenuPanelModel: Equatable {
 
         let newest = Array(recent.sorted { $0.createdAt > $1.createdAt }.prefix(recentLimit))
         if !newest.isEmpty {
-            let items = newest.map { Recent(item: .recent($0.id), record: $0, accessibilityLabel: "\($0.kind.title) capture, \(dateText($0.createdAt))") }
+            let items = newest.map { Recent(item: .recent($0.id), record: $0, accessibilityLabel: "\($0.kind.title) \($0.isRecording ? "recording" : "capture"), \(dateText($0.createdAt))") }
             sections.append(.recent(header: "Recent", all: .action(.history), items))
         }
 

@@ -34,10 +34,14 @@ func inspectVideo(_ url: URL) async throws -> VideoFacts {
 }
 
 @MainActor
-func recordFixture(_ name: String, area: CGRect?, fps: Int, pacing: FixtureFrameSource.Pacing) async throws -> (RecordingReport, VideoFacts) {
+func recordFixture(_ name: String, area: CGRect?, fps: Int, pacing: FixtureFrameSource.Pacing, scale: Double = 1, options: RecordingOptions? = nil,
+                   cursor: PointerScript? = nil) async throws -> (RecordingReport, VideoFacts) {
     try? FileManager.default.createDirectory(atPath: recordingScratch, withIntermediateDirectories: true)
     let url = URL(fileURLWithPath: recordingScratch + name + ".mp4")
-    let recorder = Recorder(source: FixtureFrameSource(area: area, fps: fps, pacing: pacing), output: url)
+    var opts = options ?? RecordingOptions()
+    opts.fps = fps
+    let source = FixtureFrameSource(scale: scale, area: area, options: opts, cursor: cursor, pacing: pacing)
+    let recorder = Recorder(source: source, output: url, quality: opts.quality)
     try await recorder.start()
     let report = try await recorder.stop()
     return (report, try await inspectVideo(url))
@@ -120,7 +124,7 @@ func runRecordingTests() async {
     }
 
     do {
-        let recorder = Recorder(source: FixtureFrameSource(fps: 60, pacing: .realtime), output: URL(fileURLWithPath: recordingScratch + "realtime.mp4"))
+        let recorder = Recorder(source: FixtureFrameSource(options: RecordingOptions(fps: 60), pacing: .realtime), output: URL(fileURLWithPath: recordingScratch + "realtime.mp4"))
         try await recorder.start()
         try await Task.sleep(nanoseconds: 1_000_000_000)
         let report = try await recorder.stop()
@@ -141,7 +145,7 @@ func runRecordingTests() async {
     check(StreamGeometry.sourceRect(area: CGRect(x: -50, y: -50, width: 100, height: 100), displayFrame: main) == CGRect(x: 0, y: 850, width: 50, height: 50),
           "an area sticking out is clipped to the display")
     check(StreamGeometry.sourceRect(area: CGRect(x: 3000, y: 0, width: 10, height: 10), displayFrame: main) == nil, "an area off the display gives nothing")
-    check(StreamGeometry.format(of: CGRect(x: 0, y: 0, width: 100.5, height: 50), scale: 2, fps: 60) == FrameFormat(width: 200, height: 100, fps: 60), "a Retina area doubles in pixels with even sides")
+    check(StreamGeometry.format(of: CGRect(x: 0, y: 0, width: 100.5, height: 50), scale: 2, options: .standard) == FrameFormat(width: 200, height: 100, fps: 60), "a Retina area doubles in pixels with even sides")
 }
 
 @MainActor
@@ -160,7 +164,7 @@ func runProjectTimelineTests() async {
         let pointer = ScriptedPointerSource(script: script, rate: 120, pacing: .fixed(origin: firstFrame - lead, count: 120 * 6))
         try? FileManager.default.createDirectory(atPath: recordingScratch, withIntermediateDirectories: true)
         let url = URL(fileURLWithPath: recordingScratch + "timeline.mp4")
-        let recorder = Recorder(source: FixtureFrameSource(fps: fps, pacing: .scripted(frames: frames, origin: firstFrame)), output: url, pointer: pointer)
+        let recorder = Recorder(source: FixtureFrameSource(options: RecordingOptions(fps: fps), pacing: .scripted(frames: frames, origin: firstFrame)), output: url, pointer: pointer)
         try await recorder.start()
         let report = try await recorder.stop()
         let video = try await inspectVideo(url)
@@ -189,3 +193,50 @@ func runProjectTimelineTests() async {
         check(false, "the timeline check threw", detail: "\(error)")
     }
 }
+
+@MainActor
+func runRecordingSettingsTests() async {
+    section("recording settings reach the recorder")
+    let area = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    func size(_ rect: CGRect, scale: Double, _ options: RecordingOptions) -> String {
+        let f = StreamGeometry.format(of: rect, scale: scale, options: options)
+        return "\(f.width)x\(f.height)@\(f.fps)"
+    }
+    check(size(area, scale: 2, RecordingOptions()) == "3840x2160@60", "Retina keeps every pixel of a 2x display")
+    check(size(area, scale: 2, RecordingOptions(density: .standard)) == "1920x1080@60", "standard records one pixel per point")
+    check(size(area, scale: 2, RecordingOptions(limit: .fullHD)) == "1920x1080@60", "a 1080p limit scales a 4K frame down to fit")
+    check(size(CGRect(x: 0, y: 0, width: 1000, height: 2000), scale: 2, RecordingOptions(limit: .fullHD)) == "960x1920@60",
+          "a portrait area fits the same box turned, keeping its proportions", detail: size(CGRect(x: 0, y: 0, width: 1000, height: 2000), scale: 2, RecordingOptions(limit: .fullHD)))
+    check(size(CGRect(x: 0, y: 0, width: 300, height: 200), scale: 2, RecordingOptions(limit: .hd)) == "600x400@60", "a limit never scales a small area up")
+    check(size(area, scale: 1, RecordingOptions(fps: 30, limit: .uhd)) == "1920x1080@30", "the frame rate is carried as asked")
+    check(SizeLimit.allCases.compactMap(\.box).map(\.short) == [2160, 1440, 1080, 720], "the limits are 4K, 1440p, 1080p and 720p")
+
+    do {
+        let display = CGRect(x: 0, y: 0, width: 640, height: 360)
+        func record(_ name: String, _ options: RecordingOptions, cursor: PointerScript? = nil) async throws -> (RecordingReport, VideoFacts) {
+            try await recordFixture(name, area: display, fps: options.fps, pacing: .scripted(frames: 12), scale: 2, options: options, cursor: cursor)
+        }
+        let (full, fullFacts) = try await record("settings-full", RecordingOptions(fps: 60))
+        let (small, smallFacts) = try await record("settings-small", RecordingOptions(fps: 30, quality: .low, density: .standard))
+        check(fullFacts.width == 1280 && fullFacts.height == 720 && full.format.fps == 60, "defaults: a 2x display records at 1280x720, 60 fps", detail: "\(fullFacts.width)x\(fullFacts.height)")
+        check(smallFacts.width == 640 && smallFacts.height == 360 && small.format.fps == 30, "standard density and 30 fps reach the file", detail: "\(smallFacts.width)x\(smallFacts.height) \(small.format.fps)")
+        check(abs(smallFacts.duration - 12.0 / 30) < 0.02, "12 frames at 30 fps last 0.4 s", detail: "\(smallFacts.duration)")
+        let rates = VideoQuality.allCases.map { q in Int(10_000_000 * q.bitsPerPixel) }
+        check(full.bitRate > small.bitRate && rates == [2_000_000, 1_000_000, 500_000], "the encoder is asked for less with a lower quality", detail: "\(full.bitRate) \(small.bitRate)")
+
+        let pointer = PointerScript([.init(t: 0, x: 0.5, y: 0.5)])
+        let (_, shown) = try await record("settings-cursor-on", RecordingOptions(fps: 30, showsCursor: true), cursor: pointer)
+        let (_, hidden) = try await record("settings-cursor-off", RecordingOptions(fps: 30, showsCursor: false), cursor: pointer)
+        if let on = shown.firstFrame, let off = hidden.firstFrame {
+            let tipInside = { (image: CGImage) in color(image, 0.5 + 4 / 640, 0.5 + 12 / 360) }
+            let a = tipInside(on), b = tipInside(off)
+            check(a.allSatisfy { $0 < 40 }, "with the cursor shown, the pointer is drawn into the picture", detail: "\(a)")
+            check(a != b, "and without it the same spot shows the scene", detail: "\(a) vs \(b)")
+        } else {
+            check(false, "the cursor recordings have a first frame")
+        }
+    } catch {
+        check(false, "settings recordings", detail: "\(error)")
+    }
+}
+

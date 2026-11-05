@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkCapture
 import Foundation
 
 struct AfterCapture: OptionSet, Codable, Equatable {
@@ -48,6 +49,43 @@ enum OverlaySize: String, Codable, CaseIterable {
     }
 }
 
+/// How recordings are made and what happens when one finishes.
+struct RecordingPreferences: Codable, Equatable {
+    static let fpsChoices = [30, 60]
+    var fps = 60
+    var quality: VideoQuality = .high
+    var density: PixelDensity = .retina
+    var limit: SizeLimit = .none
+    /// Record Video draws the pointer into its picture. Record for Editing keeps it as a track either way, and this is whether it starts shown.
+    var showCursor = true
+    var showQuickAccess = true
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func get<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T { (try? c.decodeIfPresent(T.self, forKey: key)) ?? fallback }
+        let d = RecordingPreferences()
+        fps = get(.fps, d.fps)
+        quality = get(.quality, d.quality)
+        density = get(.density, d.density)
+        limit = get(.limit, d.limit)
+        showCursor = get(.showCursor, d.showCursor)
+        showQuickAccess = get(.showQuickAccess, d.showQuickAccess)
+    }
+
+    /// A frame rate that is not offered becomes the nearest one that is.
+    func normalized() -> RecordingPreferences {
+        var p = self
+        p.fps = Self.fpsChoices.min { abs($0 - fps) < abs($1 - fps) } ?? 60
+        return p
+    }
+
+    func options(for style: RecordingStyle) -> RecordingOptions {
+        RecordingOptions(fps: fps, showsCursor: style == .video && showCursor, quality: quality, density: density, limit: limit)
+    }
+}
+
 /// Everything the user can configure, persisted as one JSON value.
 struct Settings: Codable, Equatable {
     var afterCapture: AfterCapture = [.showOverlay, .copy]
@@ -68,6 +106,7 @@ struct Settings: Codable, Equatable {
     var checkForUpdatesAutomatically = true
     /// The version that last ran, so the first launch after an update can say so. Nil before the first run.
     var lastRunVersion: String?
+    var recording = RecordingPreferences()
 
     var overlayAutoClose: Double? {
         get { autoCloseSeconds > 0 ? autoCloseSeconds : nil }
@@ -98,6 +137,7 @@ struct Settings: Codable, Equatable {
         retentionDays = get(.retentionDays, d.retentionDays)
         checkForUpdatesAutomatically = get(.checkForUpdatesAutomatically, d.checkForUpdatesAutomatically)
         lastRunVersion = get(.lastRunVersion, d.lastRunVersion)
+        recording = get(.recording, d.recording)
         self = normalized()
     }
 
@@ -108,6 +148,7 @@ struct Settings: Codable, Equatable {
         s.timerSeconds = min(max(s.timerSeconds, 1), 60)
         s.retentionDays = min(max(s.retentionDays, 1), 3650)
         s.autoCloseSeconds = s.autoCloseSeconds > 0 ? min(max(s.autoCloseSeconds, 1), 600) : 0
+        s.recording = s.recording.normalized()
         return s
     }
 

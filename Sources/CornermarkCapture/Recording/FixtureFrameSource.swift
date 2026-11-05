@@ -1,7 +1,8 @@
 import AppKit
 import AVFoundation
 
-/// A canned display showing `SyntheticScene`, with no screen and no permission involved.
+/// A canned display showing `SyntheticScene`, with no screen and no permission involved. When the options ask for the pointer in the
+/// picture and a `cursor` script is given, the script's pointer is drawn into each frame, as the live stream draws the real one.
 public final class FixtureFrameSource: FrameSource {
     public enum Pacing {
         /// Delivers `frames` pictures from `start` itself, spaced exactly `1/fps` apart on the picture clock, the first one at `origin` seconds.
@@ -24,15 +25,22 @@ public final class FixtureFrameSource: FrameSource {
     private let displayFrame: CGRect
     private let scale: Double
     private let area: CGRect?
-    private let fps: Int
+    private let options: RecordingOptions
+    private let cursor: PointerScript?
     private let pacing: Pacing
     private let queue = DispatchQueue(label: "cornermark.fixture-frames")
     private var timer: DispatchSourceTimer?
     private var crop = CGRect.zero
+    /// The filmed area in display points with a top-left origin.
+    private var sourceRect = CGRect.zero
+    /// Pixels per point along each axis, after the options' density and size limit.
+    private var pixelScale = CGSize(width: 1, height: 1)
     public private(set) var pointArea = CGRect.zero
+    private var fps: Int { options.fps }
 
-    public init(displayFrame: CGRect = FixtureFrameSource.displayFrame, scale: Double = 1, area: CGRect? = nil, fps: Int = 60, pacing: Pacing) {
-        self.displayFrame = displayFrame; self.scale = scale; self.area = area; self.fps = fps; self.pacing = pacing
+    public init(displayFrame: CGRect = FixtureFrameSource.displayFrame, scale: Double = 1, area: CGRect? = nil, options: RecordingOptions = .standard,
+                cursor: PointerScript? = nil, pacing: Pacing) {
+        self.displayFrame = displayFrame; self.scale = scale; self.area = area; self.options = options; self.cursor = cursor; self.pacing = pacing
     }
 
     public func prepare() async throws -> FrameFormat {
@@ -40,8 +48,11 @@ public final class FixtureFrameSource: FrameSource {
             throw RecordingError.source("The area is outside the display")
         }
         pointArea = CGRect(x: rect.minX + displayFrame.minX, y: displayFrame.maxY - rect.maxY, width: rect.width, height: rect.height)
-        crop = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
-        return StreamGeometry.format(of: rect, scale: scale, fps: fps)
+        sourceRect = rect
+        let format = StreamGeometry.format(of: rect, scale: scale, options: options)
+        pixelScale = CGSize(width: Double(format.width) / rect.width, height: Double(format.height) / rect.height)
+        crop = CGRect(x: rect.minX * pixelScale.width, y: rect.minY * pixelScale.height, width: rect.width * pixelScale.width, height: rect.height * pixelScale.height)
+        return format
     }
 
     public func start(_ deliver: @escaping (VideoFrame) -> Void) async throws {
@@ -93,10 +104,13 @@ public final class FixtureFrameSource: FrameSource {
         ctx.translateBy(x: 0, y: CGFloat(format.height))
         ctx.scaleBy(x: 1, y: -1)
         ctx.translateBy(x: -crop.minX, y: -crop.minY)
-        ctx.scaleBy(x: scale, y: scale)
+        ctx.scaleBy(x: pixelScale.width, y: pixelScale.height)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
         SyntheticScene.draw(size: displayFrame.size, time: time)
+        if options.showsCursor, let p = cursor?.position(at: time) {
+            SyntheticScene.drawPointer(at: CGPoint(x: sourceRect.minX + p.x * sourceRect.width, y: sourceRect.minY + p.y * sourceRect.height))
+        }
         NSGraphicsContext.restoreGraphicsState()
         return buffer
     }

@@ -9,11 +9,13 @@ public enum CaptureStoreError: Error, Equatable {
 
 public struct CaptureFilter: Sendable {
     public var kinds: Set<CaptureKind>?
+    /// True keeps only recordings, false only pictures, nil both.
+    public var recordings: Bool?
     public var createdAfter: Date?
     public var createdBefore: Date?
     public var limit: Int?
-    public init(kinds: Set<CaptureKind>? = nil, createdAfter: Date? = nil, createdBefore: Date? = nil, limit: Int? = nil) {
-        self.kinds = kinds; self.createdAfter = createdAfter; self.createdBefore = createdBefore; self.limit = limit
+    public init(kinds: Set<CaptureKind>? = nil, recordings: Bool? = nil, createdAfter: Date? = nil, createdBefore: Date? = nil, limit: Int? = nil) {
+        self.kinds = kinds; self.recordings = recordings; self.createdAfter = createdAfter; self.createdBefore = createdBefore; self.limit = limit
     }
     public static let all = CaptureFilter()
 }
@@ -49,11 +51,21 @@ public final class CaptureStore: @unchecked Sendable {
 
     @discardableResult
     public func add(_ image: CGImage, kind: CaptureKind, pointScale: Double = 1, now: Date = Date()) throws -> CaptureRecord {
+        try add(image, kind: kind, pointScale: pointScale, video: nil, now: now)
+    }
+
+    /// Lists a finished recording. `poster` is the frame history shows for it, and the recording itself stays at `video.location`.
+    @discardableResult
+    public func addRecording(_ video: RecordedVideo, poster: CGImage, kind: CaptureKind, pixelSize: CGSize, now: Date = Date()) throws -> CaptureRecord {
+        try add(poster, kind: kind, pointScale: 1, video: video, pixelSize: pixelSize, now: now)
+    }
+
+    private func add(_ image: CGImage, kind: CaptureKind, pointScale: Double, video: RecordedVideo?, pixelSize: CGSize? = nil, now: Date) throws -> CaptureRecord {
         guard let png = AssetStore.pngData(from: image) else { throw CaptureStoreError.encodingFailed }
         let id = UUID()
         let record = CaptureRecord(id: id, createdAt: now, kind: kind,
-                                   pixelSize: CGSize(width: image.width, height: image.height),
-                                   directoryName: Self.directoryName(for: now, id: id), pointScale: pointScale)
+                                   pixelSize: pixelSize ?? CGSize(width: image.width, height: image.height),
+                                   directoryName: Self.directoryName(for: now, id: id), pointScale: pointScale, video: video)
         let dir = root.appendingPathComponent(record.directoryName, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         do {
@@ -73,6 +85,7 @@ public final class CaptureStore: @unchecked Sendable {
     public func list(filter: CaptureFilter = .all) -> [CaptureRecord] {
         var out = lock.withLock { records }.filter { r in
             (filter.kinds?.contains(r.kind) ?? true)
+                && (filter.recordings.map { r.isRecording == $0 } ?? true)
                 && (filter.createdAfter.map { r.createdAt >= $0 } ?? true)
                 && (filter.createdBefore.map { r.createdAt < $0 } ?? true)
         }
@@ -93,7 +106,7 @@ public final class CaptureStore: @unchecked Sendable {
         try? FileManager.default.removeItem(at: paths(for: removed).directory)
     }
 
-    /// Removes captures created before `now - age` and returns them.
+    /// Removes captures created before `now - age` and returns them. A recording loses its history entry, never its video.
     @discardableResult
     public func prune(olderThan age: TimeInterval = CaptureStore.defaultRetention, now: Date = Date()) throws -> [CaptureRecord] {
         let cutoff = now.addingTimeInterval(-age)

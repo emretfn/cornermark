@@ -8,12 +8,18 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 ShortcutRecorderView.playRefusedSound = {}
 
-DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
+let filming = ProcessInfo.processInfo.environment["CORNERMARK_RESULTS_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + (filming == nil ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let filming {
+        let ok = await ResultsFilm.run(out: URL(fileURLWithPath: filming, isDirectory: true))
+        print(ok ? "FILM DONE" : "FILM FAILED")
+        exit(ok ? 0 : 1)
+    }
     let standardKeysBefore = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("cornermark") })
     print("screens: \(NSScreen.screens.count), activation policy prohibited: \(NSApp.activationPolicy() == .prohibited)")
     check(NSApp.activationPolicy() == .prohibited, "activation policy is .prohibited")
@@ -41,6 +47,7 @@ Task { @MainActor in
         try await checkSmallWindows()
         try await checkIsolatedEnvironment()
         try await checkRecording()
+        try await checkRecordingResults()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

@@ -27,7 +27,7 @@ enum HistoryGrouping {
 }
 
 enum HistoryFilter: Int, CaseIterable {
-    case all, area, window, fullscreen, scrolling, timed, imported
+    case all, area, window, fullscreen, scrolling, timed, imported, recordings
 
     var title: String {
         switch self {
@@ -38,18 +38,21 @@ enum HistoryFilter: Int, CaseIterable {
         case .scrolling: return "Scrolling"
         case .timed: return "Timer"
         case .imported: return "Imported"
+        case .recordings: return "Recordings"
         }
     }
 
-    var kinds: Set<CaptureKind>? {
+    /// The kind filters list pictures. Recordings have their own filter, whatever they filmed.
+    var captureFilter: CaptureFilter {
         switch self {
-        case .all: return nil
-        case .area: return [.area]
-        case .window: return [.window]
-        case .fullscreen: return [.fullscreen]
-        case .scrolling: return [.scrolling]
-        case .timed: return [.timed]
-        case .imported: return [.imported]
+        case .all: return CaptureFilter()
+        case .area: return CaptureFilter(kinds: [.area], recordings: false)
+        case .window: return CaptureFilter(kinds: [.window], recordings: false)
+        case .fullscreen: return CaptureFilter(kinds: [.fullscreen], recordings: false)
+        case .scrolling: return CaptureFilter(kinds: [.scrolling], recordings: false)
+        case .timed: return CaptureFilter(kinds: [.timed], recordings: false)
+        case .imported: return CaptureFilter(kinds: [.imported], recordings: false)
+        case .recordings: return CaptureFilter(recordings: true)
         }
     }
 }

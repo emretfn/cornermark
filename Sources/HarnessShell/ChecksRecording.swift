@@ -98,6 +98,8 @@ func checkRecording() async throws {
     section("recording flow")
     let w = try World(after: [])
     defer { w.cleanup() }
+    // With no card, a finished recording says where it went in the HUD, which these checks read.
+    w.settings.update { $0.recording.showQuickAccess = false }
     func link(_ q: String) -> Bool { w.coordinator.handle(url: URL(string: "\(URLCommand.scheme)://\(q)")!) }
 
     check(link("record?display=1") && w.coordinator.recording.phase == .idle && w.coordinator.hud.lastMessage == "Recording not allowed",
@@ -114,7 +116,7 @@ func checkRecording() async throws {
     var made: [(RecordingTarget, RecordingOptions)] = []
     w.env.frameSource = { target, options in
         made.append((target, options))
-        return FixtureFrameSource(area: { if case .display(_, let a) = target { return a } else { return nil } }(), fps: options.fps, pacing: .scripted(frames: 30))
+        return FixtureFrameSource(area: { if case .display(_, let a) = target { return a } else { return nil } }(), options: options, pacing: .scripted(frames: 30))
     }
     let area = "display=1&x=100&y=50&width=401&height=301"
     check(link("record?\(area)"), "a display area link is accepted")
@@ -158,7 +160,7 @@ func checkRecording() async throws {
     made = []
     w.env.frameSource = { target, options in
         made.append((target, options))
-        return FixtureFrameSource(area: { if case .display(_, let a) = target { return a } else { return nil } }(), fps: options.fps, pacing: .scripted(frames: 30))
+        return FixtureFrameSource(area: { if case .display(_, let a) = target { return a } else { return nil } }(), options: options, pacing: .scripted(frames: 30))
     }
     var pointerAsked = 0
     w.env.pointerSource = { pointerAsked += 1; return nil }
@@ -215,7 +217,8 @@ func checkRecording() async throws {
     check(await waitUntil { c.recording.phase == .recording }, "and films the synthetic display")
     try? await Task.sleep(nanoseconds: 700_000_000)
     check(isoLink("record/stop"), "stop is accepted")
-    check(await waitUntil(10) { c.recording.phase == .idle && c.hud.lastMessage?.hasPrefix("Saved ") == true }, "and the file is saved")
+    check(await waitUntil(10) { c.recording.phase == .idle && env.store.list().count == 1 }, "and the file is saved and listed in the instance's history")
+    check(env.store.list().first?.video?.format == .project && c.overlay.stack.first?.record.isRecording == true, "as a project, with its Quick Access card")
     let saved = recordings(in: env.defaultSaveFolder)
     check(saved.count == 1 && saved[0].resolvingSymlinksInPath().path.hasPrefix(rootURL.resolvingSymlinksInPath().path + "/"), "inside the instance's own root", detail: "\(saved)")
     if let project = saved.first.map({ $0.deletingLastPathComponent() }), let stored = try? RecordingProjectFile.read(from: project) {

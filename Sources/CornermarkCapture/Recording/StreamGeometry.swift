@@ -10,8 +10,15 @@ public enum StreamGeometry {
         return CGRect(x: clipped.minX - displayFrame.minX, y: displayFrame.maxY - clipped.maxY, width: clipped.width, height: clipped.height)
     }
 
-    /// Pixels for a point rect, rounded to even sides.
-    public static func format(of rect: CGRect, scale: Double, fps: Int) -> FrameFormat {
-        FrameFormat(width: Int((rect.width * scale).rounded()), height: Int((rect.height * scale).rounded()), fps: fps)
+    /// Pixels for a point rect on a display with `scale` pixels per point, after the density and size limit in `options`, rounded to even sides.
+    public static func format(of rect: CGRect, scale: Double, options: RecordingOptions) -> FrameFormat {
+        let density = options.density == .standard ? 1 : scale
+        var w = rect.width * density, h = rect.height * density
+        if let box = options.limit.box, w > 0, h > 0 {
+            let (bw, bh) = w >= h ? (box.long, box.short) : (box.short, box.long)
+            let f = min(1, bw / w, bh / h)
+            w *= f; h *= f
+        }
+        return FrameFormat(width: Int(w.rounded()), height: Int(h.rounded()), fps: options.fps)
     }
 }

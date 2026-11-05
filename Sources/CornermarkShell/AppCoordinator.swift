@@ -36,7 +36,7 @@ final class AppCoordinator {
         updates = UpdateController(env: env, hud: hud)
         recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
 
-        recording.onSaved = { [unowned self] saved in hud.show("Saved \(saved.lastPathComponent)") }
+        recording.onSaved = { [unowned self] finished in Task { await recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
@@ -92,7 +92,53 @@ final class AppCoordinator {
 
     private func startRecording(_ target: RecordingTarget, _ style: RecordingStyle) {
         guard env.hasScreenPermission() else { return showPermissionWindow() }
-        recording.start(target, style: style)
+        recording.start(target, style: style, preferences: settings.value.recording)
+    }
+
+    /// Lists the recording in history and shows its card. The video stays where the recorder saved it.
+    func recordingFinished(_ finished: FinishedRecording) async {
+        let name = finished.video.location.lastPathComponent
+        let poster = await VideoPoster.image(of: finished.video.file) ?? VideoPoster.placeholder(finished.pixelSize)
+        let record: CaptureRecord
+        do {
+            record = try env.store.addRecording(finished.video, poster: poster, kind: finished.kind, pixelSize: finished.pixelSize, now: env.clock())
+        } catch {
+            Log.shell.error("history write failed for a recording: \(error.localizedDescription, privacy: .public)")
+            return hud.show("Saved \(name)")
+        }
+        history?.reload()
+        Log.shell.notice("recording listed record=\(record.id.uuidString, privacy: .public) format=\(finished.video.format.rawValue, privacy: .public) seconds=\(String(format: "%.3f", finished.video.duration), privacy: .public) card=\(self.settings.value.recording.showQuickAccess, privacy: .public)")
+        if settings.value.recording.showQuickAccess { overlay.add(record: record, image: poster) } else { hud.show("Saved \(name)") }
+    }
+
+    /// The recording's file, or nil after saying it is gone.
+    private func videoFile(_ record: CaptureRecord) -> RecordedVideo? {
+        guard let video = record.video else { return nil }
+        guard FileManager.default.fileExists(atPath: video.file.path) else {
+            hud.show("Recording not found. Look for it in the save folder.", symbol: "exclamationmark.triangle.fill")
+            return nil
+        }
+        return video
+    }
+
+    func play(_ record: CaptureRecord) { if let video = videoFile(record) { env.openURL(video.file) } }
+
+    /// A recording copies as its file. A picture copies as its pixels.
+    func copy(_ record: CaptureRecord, image: @autoclosure () -> CGImage?) {
+        if record.isRecording {
+            if let video = videoFile(record), ImageOutput.copy(file: video.file, to: env.pasteboard) { hud.show("Copied") }
+        } else if let image = image(), ImageOutput.copy(image, to: env.pasteboard) {
+            hud.show("Copied")
+        }
+    }
+
+    /// Finder shows a project folder itself, or the video file selected in its folder.
+    func reveal(_ record: CaptureRecord) {
+        if record.isRecording {
+            if let video = videoFile(record) { env.revealInFinder(video.location) }
+        } else {
+            env.revealInFinder(env.store.paths(for: record).image)
+        }
     }
 
     /// Only a scripted instance has one. Anywhere else the link is refused and nothing is drawn.
@@ -182,7 +228,11 @@ final class AppCoordinator {
     private func cardAction(_ action: CardAction, _ card: QuickAccessCard) {
         switch action {
         case .copy:
-            if ImageOutput.copy(card.image, to: env.pasteboard) { hud.show("Copied") }
+            copy(card.record, image: card.image)
+        case .play:
+            play(card.record)
+        case .reveal:
+            reveal(card.record)
         case .save:
             save(card.image)
         case .annotate:
@@ -202,6 +252,8 @@ final class AppCoordinator {
 
     @discardableResult
     func openEditor(_ record: CaptureRecord) -> EditorWindowController? {
+        // The editor edits pictures. A recording plays until the video editor arrives.
+        if record.isRecording { play(record); return nil }
         if let open = editors[record.id] {
             if env.isOnscreen { open.show() }
             return open
@@ -277,10 +329,8 @@ final class AppCoordinator {
                     if let image = currentImage(for: r) { overlay.card(forRecord: r.id).map(overlay.close); overlay.add(record: r, image: image) }
                 },
                 edit: { [unowned self] r in openEditor(r) },
-                copy: { [unowned self] r in
-                    if let image = currentImage(for: r), ImageOutput.copy(image, to: env.pasteboard) { hud.show("Copied") }
-                },
-                reveal: { [unowned self] r in env.revealInFinder(env.store.paths(for: r).image) },
+                copy: { [unowned self] r in copy(r, image: currentImage(for: r)) },
+                reveal: { [unowned self] r in reveal(r) },
                 delete: { [unowned self] r in deleteRecord(r) })
             history = h
         }

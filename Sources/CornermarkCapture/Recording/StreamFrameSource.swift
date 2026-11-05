@@ -7,30 +7,28 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     public var onFailure: ((Error) -> Void)?
     public let deliversInRealTime = true
     private let target: RecordingTarget
-    private let fps: Int
-    private let showsCursor: Bool
+    private let options: RecordingOptions
     private let queue = DispatchQueue(label: "cornermark.stream-frames", qos: .userInteractive)
     private var stream: SCStream?
     private var prepared: (filter: SCContentFilter, config: SCStreamConfiguration, format: FrameFormat)?
     private var deliver: ((VideoFrame) -> Void)?
     public private(set) var pointArea = CGRect.zero
 
-    public init(target: RecordingTarget, fps: Int, showsCursor: Bool = false) {
+    public init(target: RecordingTarget, options: RecordingOptions) {
         self.target = target
-        self.fps = fps
-        self.showsCursor = showsCursor
+        self.options = options
     }
 
     public func prepare() async throws -> FrameFormat {
         let content = try await Self.content()
         let config = SCStreamConfiguration()
-        config.showsCursor = showsCursor
+        config.showsCursor = options.showsCursor
         config.capturesAudio = false
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB
         // The stream spaces frames about a millisecond wider than asked. Measured on a 120 Hz display, asking for exactly 1/60 s
         // delivered 57 frames a second, and 8% headroom delivered 60.
-        config.minimumFrameInterval = CMTime(seconds: 0.92 / Double(fps), preferredTimescale: 60_000)
+        config.minimumFrameInterval = CMTime(seconds: 0.92 / Double(options.fps), preferredTimescale: 60_000)
         config.queueDepth = 6
         let filter: SCContentFilter
         let format: FrameFormat
@@ -39,7 +37,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         case .window(let id):
             guard let window = content.windows.first(where: { $0.windowID == id }) else { throw RecordingError.windowNotFound(id) }
             filter = SCContentFilter(desktopIndependentWindow: window)
-            format = StreamGeometry.format(of: filter.contentRect, scale: Double(filter.pointPixelScale), fps: fps)
+            format = StreamGeometry.format(of: filter.contentRect, scale: Double(filter.pointPixelScale), options: options)
             // A window's frame is in Quartz global points, with the origin at the top-left of the main display.
             pointArea = CGRect(x: window.frame.minX, y: CGDisplayBounds(CGMainDisplayID()).height - window.frame.maxY,
                                width: window.frame.width, height: window.frame.height)
@@ -49,7 +47,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
             filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { $0.owningApplication?.processID == ownPID })
             let frame = Self.appKitFrame(of: display.displayID)
             guard let rect = StreamGeometry.sourceRect(area: area ?? frame, displayFrame: frame) else { throw RecordingError.displayNotFound }
-            format = StreamGeometry.format(of: rect, scale: Double(filter.pointPixelScale), fps: fps)
+            format = StreamGeometry.format(of: rect, scale: Double(filter.pointPixelScale), options: options)
             pointArea = CGRect(x: rect.minX + frame.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
             if area != nil { config.sourceRect = rect }
         }

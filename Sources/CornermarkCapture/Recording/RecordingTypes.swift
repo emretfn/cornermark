@@ -9,16 +9,47 @@ public enum RecordingTarget: Equatable {
     case display(CGDirectDisplayID?, area: CGRect?)
 }
 
+/// How hard the encoder works to keep detail: the average bits it spends on each pixel of each frame.
+public enum VideoQuality: String, Codable, CaseIterable, Sendable {
+    case high, medium, low
+    public var bitsPerPixel: Double {
+        switch self {
+        case .high: return 0.2
+        case .medium: return 0.1
+        case .low: return 0.05
+        }
+    }
+}
+
+/// Pixels per point. Retina keeps every pixel the display has; standard records one pixel per point.
+public enum PixelDensity: String, Codable, CaseIterable, Sendable { case retina, standard }
+
+/// The largest frame a recording may have. A larger area is scaled down to fit, keeping its proportions.
+public enum SizeLimit: String, Codable, CaseIterable, Sendable {
+    case none, uhd, qhd, fullHD, hd
+    /// The box a frame must fit, long side by short side, so a portrait area fits the same box turned.
+    public var box: (long: Double, short: Double)? {
+        switch self {
+        case .none: return nil
+        case .uhd: return (3840, 2160)
+        case .qhd: return (2560, 1440)
+        case .fullHD: return (1920, 1080)
+        case .hd: return (1280, 720)
+        }
+    }
+}
+
 public struct RecordingOptions: Equatable {
     public var fps: Int
     /// A finished video carries the pointer in its picture. A project keeps it out, as its own track.
     public var showsCursor: Bool
-    public init(fps: Int = 60, showsCursor: Bool = false) { self.fps = fps; self.showsCursor = showsCursor }
-    public static let standard = RecordingOptions()
-
-    public static func `for`(_ style: RecordingStyle) -> RecordingOptions {
-        RecordingOptions(showsCursor: style == .video)
+    public var quality: VideoQuality
+    public var density: PixelDensity
+    public var limit: SizeLimit
+    public init(fps: Int = 60, showsCursor: Bool = false, quality: VideoQuality = .high, density: PixelDensity = .retina, limit: SizeLimit = .none) {
+        self.fps = fps; self.showsCursor = showsCursor; self.quality = quality; self.density = density; self.limit = limit
     }
+    public static let standard = RecordingOptions()
 }
 
 /// The pixel size a source will deliver. Both sides are even, because H.264 needs it.
@@ -47,6 +78,8 @@ public struct RecordingReport: Equatable {
     /// Seconds from the first to the last frame.
     public var duration: Double
     public var fileBytes: Int
+    /// What the encoder was asked to average, in bits a second.
+    public var bitRate: Int = 0
     /// The first frame's time on the source's own clock. Everything else the recorder noted, such as the pointer, is measured from it.
     public var firstFrameTime: Double = 0
     /// What the pictures show, in global AppKit points.

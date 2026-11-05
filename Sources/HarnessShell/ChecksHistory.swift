@@ -35,7 +35,7 @@ func checkHistory() async throws {
 
     for (filter, kinds) in [(HistoryFilter.area, 2), (.window, 1), (.fullscreen, 1), (.scrolling, 1), (.timed, 1), (.imported, 1), (.all, 7)] {
         h.setFilter(filter)
-        check(h.records.count == kinds && h.records.allSatisfy { filter.kinds?.contains($0.kind) ?? true }, "filter \(filter.title): \(kinds)", detail: "\(h.records.count)")
+        check(h.records.count == kinds && h.records.allSatisfy { filter.captureFilter.kinds?.contains($0.kind) ?? true }, "filter \(filter.title): \(kinds)", detail: "\(h.records.count)")
     }
     h.setFilter(.all)
 

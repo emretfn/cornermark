@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CornermarkCapture
 import CornermarkCore
 
@@ -53,6 +54,24 @@ enum RecordingOutput {
     }
 }
 
+/// A recording that reached its file, with what history needs to list it.
+struct FinishedRecording: Equatable {
+    var video: RecordedVideo
+    var pixelSize: CGSize
+    /// What was filmed, in the terms history already uses.
+    var kind: CaptureKind
+}
+
+extension RecordingTarget {
+    var captureKind: CaptureKind {
+        switch self {
+        case .window: return .window
+        case .display(_, area: nil): return .fullscreen
+        case .display: return .area
+        }
+    }
+}
+
 /// Starts and stops the one recording the app may have at a time.
 @MainActor
 final class RecordingController {
@@ -65,10 +84,11 @@ final class RecordingController {
     /// Set for a recording for editing, whose project is written beside its video when it finishes.
     private var projectFolder: URL?
     private var style = RecordingStyle.editing
+    private var kind = CaptureKind.area
+    private var cursorShown = true
     private var stopWhenStarted = false
     private var activity: NSObjectProtocol?
-    /// The project folder, or the video file of a plain recording.
-    var onSaved: (URL) -> Void = { _ in }
+    var onSaved: (FinishedRecording) -> Void = { _ in }
     var onFailed: (String) -> Void = { _ in }
 
     init(env: AppEnvironment, folder: @escaping () -> URL) {
@@ -76,9 +96,9 @@ final class RecordingController {
         self.folder = folder
     }
 
-    func start(_ target: RecordingTarget, style: RecordingStyle = .editing) {
+    func start(_ target: RecordingTarget, style: RecordingStyle = .editing, preferences: RecordingPreferences = RecordingPreferences()) {
         guard phase == .idle else { return Log.shell.error("recording refused: one is already running") }
-        let options = RecordingOptions.for(style)
+        let options = preferences.options(for: style)
         let source: FrameSource
         do { source = try env.frameSource(target, options) } catch {
             Log.shell.error("recording refused: \(String(describing: error), privacy: .public)")
@@ -102,9 +122,11 @@ final class RecordingController {
             output = RecordingOutput.uniqueVideo(in: folder(), for: env.clock())
         }
         self.style = style
+        kind = target.captureKind
+        cursorShown = preferences.showCursor
         let name = (projectFolder ?? output).lastPathComponent
         // A finished video has its pointer in the picture, so nothing watches it.
-        let recorder = Recorder(source: source, output: output, pointer: style == .editing ? env.pointerSource() : nil)
+        let recorder = Recorder(source: source, output: output, pointer: style == .editing ? env.pointerSource() : nil, quality: options.quality)
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
             Task { @MainActor in self?.sourceEnded(error) }
@@ -117,7 +139,7 @@ final class RecordingController {
             do {
                 try await recorder.start()
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
-                Log.shell.notice("recording started project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
+                Log.shell.notice("recording started project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
                 if stopWhenStarted { await finish() }
             } catch {
@@ -149,14 +171,21 @@ final class RecordingController {
         phase = .stopping
         do {
             let report = try await recorder.stop()
-            if let folder = projectFolder { try RecordingProjectFile.write(report.project, to: folder) }
+            if let folder = projectFolder {
+                var project = report.project
+                project.edits.cursor.isVisible = cursorShown
+                try RecordingProjectFile.write(project, to: folder)
+            }
             let rate = String(format: "%.3f", report.dropRate * 100)
             let seconds = String(format: "%.3f", report.duration)
             let saved = projectFolder ?? report.url
             let name = saved.lastPathComponent, style = self.style
-            Log.shell.notice("recording finished project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) file=\(report.url.lastPathComponent, privacy: .public) pointerSamples=\(report.pointer.count, privacy: .public) firstFrame=\(String(format: "%.6f", report.firstFrameTime), privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) bytes=\(report.fileBytes, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
+            let finished = FinishedRecording(
+                video: RecordedVideo(location: saved, format: projectFolder == nil ? .video : .project, duration: report.project.source.duration),
+                pixelSize: CGSize(width: report.format.width, height: report.format.height), kind: kind)
+            Log.shell.notice("recording finished project=\(name, privacy: .public) style=\(style.rawValue, privacy: .public) file=\(report.url.lastPathComponent, privacy: .public) pointerSamples=\(report.pointer.count, privacy: .public) firstFrame=\(String(format: "%.6f", report.firstFrameTime), privacy: .public) frames=\(report.framesWritten, privacy: .public) dropped=\(report.framesDropped, privacy: .public) dropPercent=\(rate, privacy: .public) seconds=\(seconds, privacy: .public) bytes=\(report.fileBytes, privacy: .public) bitRate=\(report.bitRate, privacy: .public) cursorShown=\(self.cursorShown, privacy: .public) size=\(report.format.width, privacy: .public)x\(report.format.height, privacy: .public)")
             reset()
-            onSaved(saved)
+            onSaved(finished)
         } catch {
             Log.shell.error("recording failed to finish: \(String(describing: error), privacy: .public)")
             reset()
@@ -174,5 +203,30 @@ final class RecordingController {
         env.recordingTestWindow?.close()
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
+    }
+}
+
+/// The picture a recording shows in Quick Access and History: its first frame.
+enum VideoPoster {
+    static let maxPixel = 1920
+
+    static func image(of file: URL) async -> CGImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: maxPixel, height: maxPixel)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try? await generator.image(at: .zero).image
+    }
+
+    /// Stands in when the video cannot be read, so the recording is still listed.
+    static func placeholder(_ size: CGSize) -> CGImage {
+        let long = max(size.width, size.height, 1)
+        let w = max(2, Int(size.width / long * 320)), h = max(2, Int(size.height / long * 320))
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(gray: 0.12, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()!
     }
 }

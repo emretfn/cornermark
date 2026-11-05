@@ -9,20 +9,24 @@ final class RecordingWriter {
     private let lock = NSLock()
     private let url: URL
     let format: FrameFormat
+    /// Average bits a second the encoder aims for.
+    let bitRate: Int
     private let realTime: Bool
     private var origin: CMTime?
     private var lastTime: CMTime = .zero
     private var written = 0
     private var finished = false
 
-    init(url: URL, format: FrameFormat, realTime: Bool) throws {
+    init(url: URL, format: FrameFormat, realTime: Bool, quality: VideoQuality = .high) throws {
         self.url = url
         self.realTime = realTime
         self.format = format
         try? FileManager.default.removeItem(at: url)
         do { writer = try AVAssetWriter(outputURL: url, fileType: .mp4) } catch { throw RecordingError.writer(error.localizedDescription) }
-        let bitsPerPixel = 0.2
-        let bitRate = max(2_000_000, Int(Double(format.width * format.height * format.fps) * bitsPerPixel))
+        // The floor keeps a small area legible, and shrinks with the quality so each step still costs less.
+        let floor = 10_000_000 * quality.bitsPerPixel
+        let bitRate = Int(max(floor, Double(format.width * format.height * format.fps) * quality.bitsPerPixel))
+        self.bitRate = bitRate
         input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: format.width,
@@ -85,7 +89,7 @@ final class RecordingWriter {
         guard writer.status == .completed else { throw RecordingError.writer(writer.error?.localizedDescription ?? "The file was not finished") }
         let slots = Int((last * Double(format.fps)).rounded()) + 1
         let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        return RecordingReport(url: url, format: format, framesWritten: count, framesDropped: max(0, slots - count), duration: last, fileBytes: bytes, firstFrameTime: first)
+        return RecordingReport(url: url, format: format, framesWritten: count, framesDropped: max(0, slots - count), duration: last, fileBytes: bytes, bitRate: bitRate, firstFrameTime: first)
     }
 
     func cancel() {

@@ -149,6 +149,8 @@ final class FormRow: NSView {
         self.control = control
         super.init(frame: .zero)
         for view in [titleField, caption, control] { if let view { addSubview(view) } }
+        // A popup announces only its value, so it borrows the row's title as its name.
+        if let popup = control as? NSPopUpButton, (popup.accessibilityLabel() ?? "").isEmpty, !title.isEmpty { popup.setAccessibilityLabel(title) }
     }
 
     required init?(coder: NSCoder) { fatalError() }

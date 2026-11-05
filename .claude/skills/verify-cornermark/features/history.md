@@ -9,6 +9,7 @@ Capture History lists past captures grouped by date, filters them by kind, and a
 - `history-filter` filters records by kind.
 - `history-actions` acts on the selected records.
 - `history-prune` deletes captures older than the retention window.
+- `history-recordings` lists recordings under their own filter. Deleting or pruning one removes its entry and keeps its video.
 
 ## How to get to it (user POV)
 
@@ -23,7 +24,7 @@ Preconditions:
 
 - **Open the window.** Run `$V/link.sh history`. The output has `present window=Capture History visible=false appActive=false` and `"onScreenWindowsMax":0`.
 - **List a record.** Run `$V/link.sh open docs/screenshots/capture.png`, then `grep -c '"id"' "$ROOT/History/index.json"` with `ROOT` from `build/verify/instance.env`. The count grows by one.
-- **Everything else.** Run the `HarnessShell` sections `History: grouping, filter, thumbnails, actions`, `History: title row, grid, bottom bar`, and `retention prune`. Every line is `PASS`. Snapshots are in `build/harness/shell/history-*.png`.
+- **Everything else.** Run the `HarnessShell` sections `History: grouping, filter, thumbnails, actions`, `History: title row, grid, bottom bar`, `retention prune`, and `recordings in History`. Every line is `PASS`. Snapshots are in `build/harness/shell/history-*.png`.
 
 ## Gotchas
 

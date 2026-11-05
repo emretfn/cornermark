@@ -435,6 +435,18 @@ func snapshot(_ view: NSView, name: String, dark: Bool = false, backdrop: NSColo
 @MainActor
 @discardableResult
 func snapshotWindow(_ window: NSWindow, name: String, dark: Bool = false) -> URL? {
+    let url = URL(fileURLWithPath: scratch + name + ".png")
+    guard let out = windowImage(window, dark: dark), let png = AssetStore.pngData(from: out), (try? png.write(to: url)) != nil else {
+        check(false, "snapshot \(name) could not be written")
+        return nil
+    }
+    print("SNAPSHOT \(url.path) \(out.width)x\(out.height)")
+    return url
+}
+
+/// The picture `snapshotWindow` writes, at 2 pixels per point.
+@MainActor
+func windowImage(_ window: NSWindow, dark: Bool = false) -> CGImage? {
     let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     window.appearance = appearance
     guard let content = window.contentView, let frameView = content.superview else { return nil }
@@ -486,14 +498,7 @@ func snapshotWindow(_ window: NSWindow, name: String, dark: Bool = false) -> URL
     }
     content.subviews.forEach(paint)
     place(image(of: frameView), CGRect(origin: .zero, size: size))
-
-    let url = URL(fileURLWithPath: scratch + name + ".png")
-    guard let out = ctx.makeImage(), let png = AssetStore.pngData(from: out), (try? png.write(to: url)) != nil else {
-        check(false, "snapshot \(name) could not be written")
-        return nil
-    }
-    print("SNAPSHOT \(url.path) \(out.width)x\(out.height)")
-    return url
+    return ctx.makeImage()
 }
 
 /// A view that is not in any ordered window: give it a hidden, never-shown window so it lays out and resolves appearance.

@@ -113,7 +113,30 @@ public enum CaptureKind: String, Codable, CaseIterable, Sendable {
     case area, window, fullscreen, scrolling, timed, imported
 }
 
+/// A finished recording. The video stays where the recorder saved it, so deleting the history entry never deletes the video.
+public struct RecordedVideo: Codable, Hashable, Sendable {
+    public enum Format: String, Codable, Sendable {
+        /// One MP4 file with the pointer in its picture.
+        case video
+        /// A Record for Editing folder: the video and its project file side by side.
+        case project
+    }
+
+    /// The MP4 file, or the project folder.
+    public var location: URL
+    public var format: Format
+    /// Seconds from the first frame to the end of the last one.
+    public var duration: Double
+
+    public init(location: URL, format: Format, duration: Double) { self.location = location; self.format = format; self.duration = duration }
+
+    /// The file a player opens.
+    public var file: URL { format == .project ? location.appendingPathComponent(RecordingProjectFile.videoName) : location }
+}
+
 /// One entry in capture history. `directory` holds image.png and, once edited, project.json plus assets.
+/// A recording's image.png is its first frame, and `video` says where the recording itself is. `kind` stays what was filmed,
+/// so a version of Cornermark that does not know recordings still reads the index and shows the frame as a picture.
 public struct CaptureRecord: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var createdAt: Date
@@ -121,8 +144,12 @@ public struct CaptureRecord: Codable, Hashable, Identifiable, Sendable {
     public var pixelSize: CGSize
     public var directoryName: String
     public var pointScale: Double = 1
-    public init(id: UUID = UUID(), createdAt: Date = Date(), kind: CaptureKind, pixelSize: CGSize, directoryName: String, pointScale: Double = 1) {
+    public var video: RecordedVideo?
+    public init(id: UUID = UUID(), createdAt: Date = Date(), kind: CaptureKind, pixelSize: CGSize, directoryName: String, pointScale: Double = 1,
+                video: RecordedVideo? = nil) {
         self.id = id; self.createdAt = createdAt; self.kind = kind; self.pixelSize = pixelSize; self.directoryName = directoryName
-        self.pointScale = pointScale
+        self.pointScale = pointScale; self.video = video
     }
+
+    public var isRecording: Bool { video != nil }
 }

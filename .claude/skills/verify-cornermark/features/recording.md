@@ -9,6 +9,8 @@ Cornermark records a window or a display and stops on request. Record for Editin
 - `record-style` picks the result with `style=video` or `style=editing`. A link without it records for editing.
 - `record-overlay` is Record Screen: the capture overlay chooses an area, a window or a display, and two start buttons pick the style. It is harness-only.
 - `record-stop` finishes the file with `record/stop`.
+- `record-result` lists the finished recording in History, with its first frame as the picture and the video left in the save folder, and shows its Quick Access card.
+- `record-settings` applies the Recording pane: frame rate, quality, resolution, largest size, and the cursor. It is harness-only, because a pane needs clicks.
 - `record-test-window` shows the instance's own synthetic window with `record/test-window`. A scripted instance has one, and no other instance does.
 - `record-refusal` keeps a scripted instance from filming anything but its test window.
 
@@ -32,8 +34,10 @@ Preconditions:
 - **Render the pointer.** `CORNERMARK_PROJECT_PREVIEW=<project folder> CORNERMARK_PROJECT_PREVIEW_OUT=<folder> swift run HarnessCapture` draws the stored project through `frameState` into `E1.mp4` and `C8.mp4` and prints the source hash before and after. Copy the project folder out of `<root>/saved` first. It is a verification renderer, not the export.
 - **Check the file.** Run `ffprobe -count_frames -select_streams v -show_entries stream=codec_name,width,height,nb_read_frames,duration <file>`. Extract frames with `ffmpeg -ss <t> -i <file> -frames:v 1 <png>` and look at them. Only the synthetic scene may appear: dark background, a sweeping bar, a clock, and four colored corners (red top left, green top right, blue bottom left, yellow bottom right).
 - **Focus.** `link.sh` and `watch.sh` hold a recording to this rule: the instance's only on-screen window is the test window, the instance is never frontmost, and the frontmost app never changes. A display recording shows no window of the instance at all.
+- **Check the result.** After `record/stop` the log has `recording listed record=<id> format=video|project seconds=<s> card=true`. `<root>/History/index.json` has a record whose `video` holds `format`, `duration`, and `location`, the file or folder in `<root>/saved`, and the record's folder holds only `image.png`, the first frame. A display recording with `style=video` draws the scripted pointer into the picture, because the default Show cursor setting is on.
+- **Film the results.** `CORNERMARK_RESULTS_FILM=<folder> swift run HarnessShell` films the real Recording pane, Quick Access cards, and History offscreen over the synthetic desktop into `R8.mp4`, `R16.mp4`, and `R27.mp4`. Each film shows frames of the files it recorded and what they measure.
 - **Keep the proof.** Run `$V/evidence.sh <name>` before `stop.sh`. It copies `<root>/saved` too.
-- **Everything else.** Run `swift run HarnessCapture` (sections `recording engine`, `stream geometry`) and `swift run HarnessShell` (sections `recording links`, `recording policy of an isolated instance`, `recording flow`, `recording in a scripted instance`).
+- **Everything else.** Run `swift run HarnessCapture` (sections `recording engine`, `stream geometry`, `recording settings reach the recorder`) and `swift run HarnessShell` (sections `recording settings model`, `Recording settings pane`, `finished recordings in Quick Access`, `recordings in History`, `recording links`, `recording policy of an isolated instance`, `recording flow`, `recording in a scripted instance`).
 
 ## Gotchas
 

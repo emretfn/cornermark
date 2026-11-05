@@ -14,7 +14,7 @@ func checkSettingsWindow() async throws {
     c.perform(.openSettings)
     let sw = c.settingsWindow!
     check(w.presented.contains { $0 === sw.window } && sw.window?.isVisible == false, "settings window presented offscreen only")
-    check(sw.panes.map(\.paneTitle) == ["General", "Shortcuts", "Quick Access", "Capture", "Permissions"], "five tabs: General, Shortcuts, Quick Access, Capture, Permissions")
+    check(sw.panes.map(\.paneTitle) == ["General", "Shortcuts", "Quick Access", "Capture", "Recording", "Permissions"], "six tabs: General, Shortcuts, Quick Access, Capture, Recording, Permissions")
     let views = sw.panes.map { $0.view }
     func pane(_ i: Int) -> NSView { views[i] }
 
@@ -86,7 +86,7 @@ func checkSettingsWindow() async throws {
     sw.refreshAll()
     let winStatus = findView("shortcutStatus.window", in: pane(1)) as! NSTextField
     check(winStatus.stringValue.hasPrefix("Not working: Taken by") && winStatus.textColor == DS.Color.dangerText, "OS registration failure is visible in Settings", detail: winStatus.stringValue)
-    check(collectText(pane(4)).contains { $0.contains("not working") }, "Permissions tab summarizes failed shortcuts")
+    check(collectText(pane(5)).contains { $0.contains("not working") }, "Permissions tab summarizes failed shortcuts")
 
     section("Settings: Quick Access, Capture, Permissions")
     let corner = findView("quick.corner", in: pane(2)) as! NSPopUpButton
@@ -113,21 +113,21 @@ func checkSettingsWindow() async throws {
 
     w.permission = false
     sw.refreshAll()
-    check((findView("permissions.status", in: pane(4)) as? NSTextField)?.stringValue.contains("Not allowed") == true, "permission status: not allowed")
-    check(click("permissions.open", in: pane(4)) && w.opened.last == AppEnvironment.screenCapturePaneURL, "permission pane opens System Settings")
+    check((findView("permissions.status", in: pane(5)) as? NSTextField)?.stringValue.contains("Not allowed") == true, "permission status: not allowed")
+    check(click("permissions.open", in: pane(5)) && w.opened.last == AppEnvironment.screenCapturePaneURL, "permission pane opens System Settings")
     w.permission = true
     sw.refreshAll()
-    check((findView("permissions.status", in: pane(4)) as? NSTextField)?.stringValue.contains("Allowed") == true, "permission status: allowed")
+    check((findView("permissions.status", in: pane(5)) as? NSTextField)?.stringValue.contains("Allowed") == true, "permission status: allowed")
 
-    check((findView("permissions.open", in: pane(4)) as? Button)?.variant == .secondary, "granted: Open System Settings is a secondary button")
+    check((findView("permissions.open", in: pane(5)) as? Button)?.variant == .secondary, "granted: Open System Settings is a secondary button")
     w.permission = false
     sw.refreshAll()
-    check((findView("permissions.open", in: pane(4)) as? Button)?.variant == .primary, "not granted: Open System Settings is the primary button")
-    check((findView("permissions.status", in: pane(4)) as? NSTextField)?.textColor == DS.Color.warningText, "not granted: status text is warningText")
+    check((findView("permissions.open", in: pane(5)) as? Button)?.variant == .primary, "not granted: Open System Settings is the primary button")
+    check((findView("permissions.status", in: pane(5)) as? NSTextField)?.textColor == DS.Color.warningText, "not granted: status text is warningText")
     w.permission = true
     sw.refreshAll()
-    check((findView("permissions.status", in: pane(4)) as? NSTextField)?.textColor == DS.Color.successText, "granted: status text is successText")
-    check((findView("permissions.shortcuts", in: pane(4)) as? NSTextField)?.textColor == DS.Color.dangerText, "failing shortcuts are summarised in dangerText")
+    check((findView("permissions.status", in: pane(5)) as? NSTextField)?.textColor == DS.Color.successText, "granted: status text is successText")
+    check((findView("permissions.shortcuts", in: pane(5)) as? NSTextField)?.textColor == DS.Color.dangerText, "failing shortcuts are summarised in dangerText")
 
     try checkSettingsLayout(w, sw)
 
@@ -256,9 +256,9 @@ private func checkSettingsLayout(_ w: World, _ sw: SettingsWindowController) thr
           "settings: full-size content, transparent title bar, hidden title, not resizable")
     check(content.bounds.size == NSSize(width: 760, height: 560), "settings content is 760 x 560", detail: "\(content.bounds.size)")
 
-    let ids = ["general", "shortcuts", "quick-access", "capture", "permissions"]
+    let ids = ["general", "shortcuts", "quick-access", "capture", "recording", "permissions"]
     let items = ids.compactMap { findView("settings.sidebar.\($0)", in: content) as? SidebarItem }
-    check(items.count == 5 && items.map(\.title) == sw.panes.map(\.paneTitle), "the sidebar has one SidebarItem per pane, in pane order")
+    check(items.count == 6 && items.map(\.title) == sw.panes.map(\.paneTitle), "the sidebar has one SidebarItem per pane, in pane order")
     content.layoutSubtreeIfNeeded()
     let rects = items.map { $0.convert($0.bounds, to: content) }
     check(rects.allSatisfy { $0.minX == DS.Space.s12 && $0.width == 200 - 2 * DS.Space.s12 && $0.height == DS.Size.control },

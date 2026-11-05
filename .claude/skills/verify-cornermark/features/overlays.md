@@ -8,6 +8,7 @@ Quick Access cards appear in a screen corner after a capture and close by themse
 - `overlay-hide` hides and shows all cards.
 - `overlay-lifecycle` covers the countdown, hover pause, and stack layout.
 - `overlay-actions` covers copy, save, annotate, pin, text, and close.
+- `overlay-recording` is a finished recording's card: Copy, Play, Reveal in Finder, and Close. The instance logs `recording listed ... card=true` when it adds one.
 
 ## How to get to it (user POV)
 
@@ -24,7 +25,7 @@ Preconditions:
 
 - **Restore with nothing closed.** Run `$V/link.sh restore-overlay`. The output has `hud No closed overlay to restore`.
 - **Hide delivery.** Run `$V/link.sh hide-overlays`. The output has `handled URL cornermark-dev://hide-overlays`. This proves delivery only.
-- **Card behavior.** Run the `HarnessShell` sections `Quick Access lifecycle (injected clock)`, `hide all, drag pause, stack order`, `card panels never take focus`, `swipe to dismiss`, `Quick Access card actions`, and `Pin windows`. Every line is `PASS`. Snapshots are in `build/harness/shell/card-*.png`.
+- **Card behavior.** Run the `HarnessShell` sections `Quick Access lifecycle (injected clock)`, `hide all, drag pause, stack order`, `card panels never take focus`, `swipe to dismiss`, `Quick Access card actions`, `finished recordings in Quick Access`, and `Pin windows`. Every line is `PASS`. Snapshots are in `build/harness/shell/card-*.png`.
 
 ## Gotchas
 

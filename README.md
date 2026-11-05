@@ -133,8 +133,9 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 - **After capture.** Cornermark can show a Quick Access card, copy to the clipboard, save to a folder (`Cornermark YYYY-MM-DD at HH.MM.SS.png`), or open the editor. Every capture also goes to History.
 - **Quick Access.** Swipe a card toward the screen edge with two fingers to dismiss it, or double-click it to open the editor. The auto-dismiss timer is adjustable and pauses while the pointer is over the card. You can restore the last closed card and hide all cards temporarily.
 - **Pins.** To unlock a locked pin, use the "Pinned screenshots" list in the menu bar panel. Escape or the close button removes a pin.
-- **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day.
-- **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state.
+- **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day. Recordings are listed too, under their own filter, with their length on the picture. Deleting a recording from History keeps its video in the save folder.
+- **Finished recordings.** A recording shows a Quick Access card with its first frame, length, and size. Copy puts the video file on the clipboard, Play opens it, and Reveal in Finder shows it. Dragging the card drags the video.
+- **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state. The Recording pane sets the frame rate (30 or 60), quality, Retina or standard resolution, a largest size (4K, 1440p, 1080p, or 720p), whether the cursor shows, and whether a finished recording gets a Quick Access card.
 - **Updates.** Cornermark checks GitHub at launch and once a day, and installs a release only after you confirm. See [Update](#update).
 - **Open from Finder.** "Open With" opens PNG, JPEG, and HEIC files in the editor.
 - **URL scheme.** `cornermark://capture-area`, `capture-window`, `capture-fullscreen`, `all-in-one`, `previous-area`, `scrolling`, `ocr`, `timer?seconds=5`, `history`, `settings`, `check-for-updates`, `whats-new`, `restore-overlay`, `hide-overlays`, `open?path=/full/path/image.png`. The `open` path must be an existing image file. Cornermark logs and ignores unknown paths.
@@ -143,7 +144,7 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 ## What it leaves out
 
 - No cloud, accounts, or share links.
-- No GIF export and no video editor. Recording writes a project folder and nothing more, for now: there is no way yet to open it, change its pointer, or export it.
+- No GIF export and no video editor. A Record for Editing project plays as its video, but there is no way yet to edit its pointer or export it.
 - No App Store version or notarization.
 
 ## Develop

@@ -57,6 +57,21 @@ public enum SyntheticScene {
         drawCentered(note, font: .systemFont(ofSize: h * 0.04, weight: .regular), color: NSColor(white: 0.6, alpha: 1), y: h * 0.90, width: w)
     }
 
+    /// An arrow pointer with its tip at `tip`, in a context with a top-left origin.
+    public static func drawPointer(at tip: CGPoint) {
+        let shape: [CGPoint] = [(0, 0), (0, 17), (4, 13), (7, 20), (10, 19), (7, 12), (12, 12)].map { CGPoint(x: tip.x + $0.0 * 1.4, y: tip.y + $0.1 * 1.4) }
+        let path = NSBezierPath()
+        path.move(to: shape[0])
+        shape.dropFirst().forEach(path.line(to:))
+        path.close()
+        path.lineWidth = 1.5
+        path.lineJoinStyle = .round
+        NSColor.black.setFill()
+        path.fill()
+        NSColor.white.setStroke()
+        path.stroke()
+    }
+
     private static func drawCentered(_ text: String, font: NSFont, color: NSColor, y: CGFloat, width: CGFloat) {
         let style = NSMutableParagraphStyle()
         style.alignment = .center

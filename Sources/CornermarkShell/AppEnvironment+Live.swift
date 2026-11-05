@@ -54,7 +54,7 @@ extension AppEnvironment {
             quit: { NSApp.terminate(nil) })
         env.confirmUpdate = confirmUpdate
         env.presentUpdateAlert = presentUpdateAlert
-        env.frameSource = { target, options in StreamFrameSource(target: target, fps: options.fps, showsCursor: options.showsCursor) }
+        env.frameSource = { target, options in StreamFrameSource(target: target, options: options) }
         env.pointerSource = { LivePointerSource() }
         return env
     }
@@ -101,10 +101,11 @@ extension AppEnvironment {
         case .window(let id):
             guard let own = testWindow.windowID else { throw RecordingRefusal.noTestWindow }
             guard id == own else { throw RecordingRefusal.notTestWindow(id) }
-            return StreamFrameSource(target: target, fps: options.fps, showsCursor: options.showsCursor)
+            return StreamFrameSource(target: target, options: options)
         case .display(let id, let area):
             if let id, id != FixtureFrameSource.displayID { throw RecordingRefusal.unknownDisplay(id) }
-            return FixtureFrameSource(area: area, fps: options.fps, pacing: .realtime)
+            // The scripted pointer is the one a project's track records, so a video shows the same path in its picture.
+            return FixtureFrameSource(area: area, options: options, cursor: .tour, pacing: .realtime)
         }
     }
 

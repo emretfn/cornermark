@@ -7,15 +7,17 @@ public final class Recorder {
     public let output: URL
     private let source: FrameSource
     private let pointer: PointerSource?
+    private let quality: VideoQuality
     private var writer: RecordingWriter?
     private var track = PointerTrackBuilder()
     private let trackLock = NSLock()
     public private(set) var format: FrameFormat?
 
-    public init(source: FrameSource, output: URL, pointer: PointerSource? = nil) {
+    public init(source: FrameSource, output: URL, pointer: PointerSource? = nil, quality: VideoQuality = .high) {
         self.source = source
         self.output = output
         self.pointer = pointer
+        self.quality = quality
     }
 
     public var onFailure: ((Error) -> Void)? {
@@ -25,7 +27,7 @@ public final class Recorder {
 
     public func start() async throws {
         let format = try await source.prepare()
-        let writer = try RecordingWriter(url: output, format: format, realTime: source.deliversInRealTime)
+        let writer = try RecordingWriter(url: output, format: format, realTime: source.deliversInRealTime, quality: quality)
         self.format = format
         self.writer = writer
         pointer?.start(in: source.pointArea) { [weak self] reading in
