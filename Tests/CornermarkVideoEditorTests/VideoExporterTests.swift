@@ -57,6 +57,127 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual((try FileManager.default.contentsOfDirectory(atPath: folder.path)).sorted(), ["export.mp4", "screen.mp4"], "no partial file is left")
     }
 
+    private func levels(_ url: URL) async throws -> [Int] {
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        XCTAssertTrue(reader.startReading())
+        var out: [Int] = []
+        while let sample = output.copyNextSampleBuffer(), let buffer = CMSampleBufferGetImageBuffer(sample) {
+            CVPixelBufferLockBaseAddress(buffer, .readOnly)
+            let p = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+            let row = CVPixelBufferGetBytesPerRow(buffer)
+            out.append(Int(p[CVPixelBufferGetHeight(buffer) / 2 * row + 40 * 4 + 1]))
+            CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+        }
+        return out
+    }
+
+    func testATrimmedExportIsAsLongAsItsClipsAndCutsOnTheirFrames() async throws {
+        var (source, project) = try await makeSource()
+        project.events = .init()
+        project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 0.7, end: 0.9)]
+        let out = folder.appendingPathComponent("trimmed.mp4")
+        let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: out)
+        XCTAssertEqual(report.framesWritten, 21)
+        XCTAssertEqual(report.duration, 0.7, accuracy: 0.5 / 30, "the file is as long as what the clips keep")
+        let shown = try await levels(out)
+        let expected = (Array(0..<15) + Array(21..<27)).map { $0 * 8 }
+        XCTAssertEqual(shown.count, expected.count)
+        for (k, (got, want)) in zip(shown, expected).enumerated() {
+            XCTAssertEqual(got, want, accuracy: 4, "output frame \(k) shows source frame \(want / 8)")
+        }
+        XCTAssertEqual(shown[14], 14 * 8, accuracy: 4, "the last frame before the cut is source frame 14")
+        XCTAssertEqual(shown[15], 21 * 8, accuracy: 4, "the first frame after the cut is source frame 21, not 15")
+    }
+
+    /// A screen recording gets a frame only when the screen changes, so a clip can start long after the frame it shows.
+    func testAClipStartingInAStillStretchShowsTheFrameBeforeIt() async throws {
+        let url = folder.appendingPathComponent("screen.mp4")
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 320, kCVPixelBufferHeightKey as String: 180,
+        ])
+        writer.add(input)
+        XCTAssertTrue(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+        for (t, level) in [(0.0, 0), (0.1, 80), (0.9, 160)] {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
+            CVPixelBufferLockBaseAddress(buffer!, [])
+            memset(CVPixelBufferGetBaseAddress(buffer!), Int32(level), CVPixelBufferGetDataSize(buffer!))
+            CVPixelBufferUnlockBaseAddress(buffer!, [])
+            adaptor.append(buffer!, withPresentationTime: CMTime(seconds: t, preferredTimescale: 600))
+        }
+        input.markAsFinished()
+        writer.endSession(atSourceTime: CMTime(seconds: 1, preferredTimescale: 600))
+        await writer.finishWriting()
+        var project = RecordingProject(source: .init(pixelWidth: 320, pixelHeight: 180, pointWidth: 160, pointHeight: 90, fps: 30, duration: 1))
+        project.edits.clips = [Clip(start: 0.5, end: 1)]
+        let out = folder.appendingPathComponent("still.mp4")
+        _ = try await VideoExporter.export(project: project, video: url, settings: ExportSettings(), to: out)
+        let shown = try await levels(out)
+        XCTAssertEqual(shown.count, 15)
+        XCTAssertEqual(shown.first ?? -1, 80, accuracy: 4, "at 0.5 s the screen still shows the frame from 0.1 s, not the one from 0.9 s")
+        XCTAssertEqual(shown[11], 80, accuracy: 4, "source 0.867 s is still the 0.1 s frame")
+        XCTAssertEqual(shown[12], 160, accuracy: 4, "source 0.9 s is the new frame")
+    }
+
+    /// A mono AAC track of `seconds` with a short full-scale burst at each of `clicks` seconds and silence elsewhere.
+    private func makeSound(_ name: String, seconds: Double, clicks: [Double]) throws -> URL {
+        let url = folder.appendingPathComponent(name)
+        let rate = 48_000.0
+        let file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1])
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(seconds * rate))!
+        buffer.frameLength = buffer.frameCapacity
+        let samples = buffer.floatChannelData![0]
+        for i in 0..<Int(buffer.frameLength) { samples[i] = 0 }
+        for c in clicks { for i in 0..<240 { samples[Int(c * rate) + i] = Float(0.9 * cos(2 * .pi * 2000 * Double(i) / rate)) } }
+        try file.write(from: buffer)
+        return url
+    }
+
+    /// Where each burst starts in a file's sound, in seconds: the first loud sample more than a tenth of a second after the last.
+    private func bursts(_ url: URL) throws -> (onsets: [Double], seconds: Double) {
+        let file = try AVAudioFile(forReading: url)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+        try file.read(into: buffer)
+        let rate = file.processingFormat.sampleRate, samples = buffer.floatChannelData![0]
+        var onsets: [Double] = [], last = -Int.max / 2
+        for i in 0..<Int(buffer.frameLength) where abs(samples[i]) > 0.3 {
+            if i - last > Int(rate / 10) { onsets.append(Double(i) / rate) }
+            last = i
+        }
+        return (onsets, Double(buffer.frameLength) / rate)
+    }
+
+    func testTheExportCarriesTheProjectSoundCutByTheSameClips() async throws {
+        var (source, project) = try await makeSource(frames: 60)
+        _ = try makeSound("mic.m4a", seconds: 2, clicks: [0.25, 1.25, 1.75])
+        project.source.microphone = "mic.m4a"
+        let whole = folder.appendingPathComponent("whole.mp4")
+        let full = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: whole)
+        let wholeSound = try bursts(whole)
+        XCTAssertTrue(full.hasAudio)
+        XCTAssertEqual(wholeSound.seconds, 2, accuracy: 0.03, "the sound is as long as the video")
+        XCTAssertEqual(wholeSound.onsets.count, 3)
+        for (got, want) in zip(wholeSound.onsets, [0.25, 1.25, 1.75]) { XCTAssertEqual(got, want, accuracy: 0.001, "a burst stays on its moment") }
+
+        project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 1.5, end: 2)]
+        let cut = folder.appendingPathComponent("cut.mp4")
+        let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: cut)
+        let cutSound = try bursts(cut)
+        XCTAssertEqual(report.duration, 1, accuracy: 1.0 / 30)
+        XCTAssertEqual(cutSound.seconds, 1, accuracy: 0.03, "the sound keeps only what the clips keep")
+        XCTAssertEqual(cutSound.onsets.count, 2, "the burst inside the removed stretch is gone")
+        for (got, want) in zip(cutSound.onsets, [0.25, 0.75]) { XCTAssertEqual(got, want, accuracy: 0.001, "a burst after a cut moves with its clip") }
+    }
+
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")

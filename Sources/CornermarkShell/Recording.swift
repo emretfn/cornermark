@@ -27,6 +27,8 @@ enum RecordingRefusal: Error, Equatable, CustomStringConvertible {
 protocol RecordingTestWindowHosting: AnyObject {
     var windowID: CGWindowID? { get }
     @discardableResult func show() -> CGWindowID?
+    /// Makes one of the instance's own windows the test window, in place of the synthetic scene. `close` closes it.
+    @discardableResult func adopt(_ window: NSWindow) -> CGWindowID?
     func close()
 }
 

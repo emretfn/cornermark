@@ -1,7 +1,8 @@
 import AVFoundation
+import CornermarkCore
 
-/// Several sound files read as one: every track is summed into 48 kHz stereo, from the start of the timeline. A finished video carries
-/// one track, because a player plays one track at a time.
+/// Several sound files read as one: every track is summed into 48 kHz stereo. A finished video carries one track, because a player
+/// plays one track at a time. The tracks share the video's timeline, so the same clips cut both.
 final class AudioMixReader {
     static let aacSettings: [String: Any] = [
         AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 160_000,
@@ -14,15 +15,28 @@ final class AudioMixReader {
     private let reader: AVAssetReader
     private let output: AVAssetReaderAudioMixOutput
 
-    /// Nil when none of the files has sound. `duration` cuts the mix at the video's end.
-    init?(files: [URL], duration: Double) async throws {
+    /// Nil when none of the files has sound. `clips` are the stretches of the source kept, back to back, nil for all of it, and
+    /// `duration` cuts the mix at the output's end.
+    init?(files: [URL], clips: [Clip]? = nil, duration: Double) async throws {
         let composition = AVMutableComposition()
         var tracks: [AVAssetTrack] = []
         for file in files where FileManager.default.fileExists(atPath: file.path) {
             let asset = AVURLAsset(url: file)
             guard let source = try await asset.loadTracks(withMediaType: .audio).first,
                   let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
-            try track.insertTimeRange(try await source.load(.timeRange), of: source, at: .zero)
+            let whole = try await source.load(.timeRange)
+            guard let clips else {
+                try track.insertTimeRange(whole, of: source, at: .zero)
+                tracks.append(track)
+                continue
+            }
+            var at = CMTime.zero
+            for clip in clips {
+                let range = CMTimeRange(start: CMTime(seconds: clip.start, preferredTimescale: 48_000), end: CMTime(seconds: clip.end, preferredTimescale: 48_000))
+                let kept = range.intersection(whole)
+                if !kept.isEmpty { try track.insertTimeRange(kept, of: source, at: CMTimeAdd(at, CMTimeSubtract(kept.start, range.start))) }
+                at = CMTimeAdd(at, range.duration)
+            }
             tracks.append(track)
         }
         guard !tracks.isEmpty else { return nil }

@@ -72,7 +72,7 @@ public struct ExportPlan: Equatable, Sendable {
         width = Self.even(w * scale)
         height = Self.even(h * scale)
         fps = max(source.fps, 1)
-        frameCount = max(1, Int((max(source.duration, 0) * Double(fps)).rounded()))
+        frameCount = max(1, Int((project.outputDuration * Double(fps)).rounded()))
         bitRate = max(Self.minimumBitRate, Int(Double(width * height * fps) * settings.quality.bitsPerPixel))
         let ceiling = Int64((Double(bitRate) * Double(frameCount) / Double(fps) / 8).rounded())
         if let sourceBytes, sourceBytes > 0, source.duration > 0 {
@@ -84,7 +84,7 @@ public struct ExportPlan: Equatable, Sendable {
         }
     }
 
-    /// The finished video's length: whole frames at `fps`, within half a frame of the project's duration.
+    /// The finished video's length: whole frames at `fps`, within half a frame of what the clips keep.
     public var duration: Double { Double(frameCount) / Double(fps) }
 
     public func time(ofFrame index: Int) -> Double { Double(index) / Double(fps) }
