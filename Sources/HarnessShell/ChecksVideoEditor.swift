@@ -279,6 +279,27 @@ private func checkVideoEditorClips(_ w: World, folder: URL, videoHash: String) a
     Synth.key(window, 11, "b")
     check(clips() == [[0, 0.25], [1.25, 2]], "B without Command is not taken")
 
+    editor.seek(to: 0.1)
+    let f = 1.0 / Double(project.source.fps)
+    timeline.keyDown(with: Synth.keyEvent(window, 124, modifiers: .option))
+    check(abs(clips()[0][0] - f) < 1e-9 && now() == 0 && editor.previewState?.sourceTime == f,
+          "Option-Right on the focused timeline trims a frame off the clip's start, and the preview shows its new first frame",
+          detail: "\(clips())")
+    timeline.keyDown(with: Synth.keyEvent(window, 123, modifiers: [.option, .shift]))
+    check(clips()[0][0] == 0, "Option-Shift-Left brings the start back, stopping at the recording's start")
+    for _ in 0..<3 { timeline.keyDown(with: Synth.keyEvent(window, 124, modifiers: [.option, .command])) }
+    check(abs(clips()[0][1] - (0.25 + 3 * f)) < 1e-9 && abs(now() - (0.25 + 2 * f)) < 1e-9,
+          "Option-Command-Right moves the clip's end out a frame per press, and the playhead shows its last frame", detail: "\(clips())")
+    editor.undo()
+    check(abs(clips()[0][1] - 0.25) < 1e-9 && clips()[0][0] == 0, "three presses on one edge are one undo step", detail: "\(clips())")
+    editor.selectClip(1)
+    check((timeline.accessibilityValue() as? String)?.hasSuffix("clip 2 of 2, clip 2 picked") == true && timeline.accessibilityHelp()?.contains("Option") == true,
+          "the timeline says which clip is picked and how to trim from the keyboard", detail: "\(timeline.accessibilityValue() ?? "nil")")
+    timeline.keyDown(with: Synth.keyEvent(window, 123, modifiers: [.option, .command, .shift]))
+    check(abs(clips()[1][1] - (1.25 + f)) < 1e-9 && clips()[0] == [0, 0.25] && editor.state.selectedClip == 1,
+          "with a clip picked, the keys trim that clip, stop a frame after its start, and keep it picked", detail: "\(clips())")
+    editor.undo()
+
     editor.window?.close()
     let stored = try RecordingProjectFile.read(from: folder)
     check(stored.edits.clips == [Clip(start: 0, end: 0.25), Clip(start: 1.25, end: 2)], "closing writes the clips to project.json",
@@ -365,9 +386,10 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
 
     window.setContentSize(window.minSize)
     content.layoutSubtreeIfNeeded()
-    let parts = ["video.start", "video.end", "video.time", "video.mute", "video.fullscreen"].map { frameInWindow(editor.view(identifier: $0)) }
+    let parts = ["video.start", "video.end", "video.split", "video.deleteClip", "video.time", "video.mute", "video.fullscreen"]
+        .map { frameInWindow(editor.view(identifier: $0)) }
     let row = frameInWindow(bar)
-    let apart = parts[1].maxX <= parts[2].minX && parts[2].maxX <= parts[3].minX && parts.allSatisfy { row.contains($0) }
+    let apart = zip(parts.dropFirst(), parts.dropFirst(2)).allSatisfy { $0.maxX <= $1.minX } && parts.allSatisfy { row.contains($0) }
     check(apart && frameInWindow(preview).height > 200, "at the smallest window size the playback row neither overlaps nor clips", detail: "\(parts)")
     _ = await waitUntil(3) { editor.tick(); return editor.previewImage != nil }
     snapshotEditor(editor, name: "video-editor-min")

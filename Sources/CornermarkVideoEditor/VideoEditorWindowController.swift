@@ -217,6 +217,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         timeline.onScrub = { [unowned self] t, phase in scrub(to: t, phase) }
         timeline.onSelect = { [unowned self] in selectClip($0) }
         timeline.onTrim = { [unowned self] trim, moved, phase in trimmed(trim, to: moved, phase) }
+        timeline.onNudge = { [unowned self] edge, seconds in nudge(edge, by: seconds) }
     }
 
     private func prepare() async {
@@ -316,8 +317,22 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let edge = trim.edge == .start ? start : start + clip.duration - moved.frame
         var edits = state.project.edits
         edits.clips = moved.clips
-        commit(edits, coalescing: "trim", playhead: edge)
+        commit(edits, coalescing: "trim", keepsSelection: true, playhead: edge)
         if phase == .ended { history.endCoalescing() }
+    }
+
+    /// Moves an edge of the picked clip, or of the clip under the playhead, from the keyboard. Presses in a row on one edge are one undo step.
+    public func nudge(_ edge: ClipTimeline.Edge, by seconds: Double) {
+        let clips = state.project.timeline
+        let index = state.selectedClip ?? clips.clipIndex(at: state.transport.time(at: clock()))
+        let clip = clips.clips[index]
+        let moved = clips.trimming(index, edge, to: (edge == .start ? clip.start : clip.end) + seconds)
+        let start = moved.starts[index]
+        var edits = state.project.edits
+        edits.clips = moved.clips
+        state.transport.pause(now: clock())
+        commit(edits, coalescing: CoalescingKey("nudge-\(index)-\(edge)"), keepsSelection: true,
+               playhead: edge == .start ? start : start + moved.clips[index].duration - moved.frame)
     }
 
     private func commit(clips next: ClipTimeline, playhead: Double) {
@@ -327,19 +342,19 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     /// The one way an edit reaches the project: it becomes an undo step, then everything that shows the project follows.
-    private func commit(_ edits: RecordingProject.Edits, coalescing key: CoalescingKey? = nil, playhead: Double? = nil) {
+    private func commit(_ edits: RecordingProject.Edits, coalescing key: CoalescingKey? = nil, keepsSelection: Bool = false, playhead: Double? = nil) {
         history.record(edits, coalescing: key)
-        show(history.present, playhead: playhead ?? state.transport.time(at: clock()))
+        show(history.present, keepsSelection: keepsSelection, playhead: playhead ?? state.transport.time(at: clock()))
     }
 
-    private func show(_ edits: RecordingProject.Edits, playhead: Double) {
+    private func show(_ edits: RecordingProject.Edits, keepsSelection: Bool = false, playhead: Double) {
         let clipsChanged = edits.clips != state.project.edits.clips
         state.project.edits = edits
         if clipsChanged {
             let clips = state.project.timeline
             state.transport.setDuration(clips.duration, playheadAt: playhead, now: clock())
             // Indices move when clips come and go; a trim keeps its clip picked.
-            if timeline.trim == nil { state.selectedClip = nil }
+            if timeline.trim == nil && !keepsSelection { state.selectedClip = nil }
             timeline.selection = state.selectedClip
             timeline.timeline = clips
             awaitFrame()

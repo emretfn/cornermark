@@ -49,12 +49,10 @@ final class TransportBar: NSView {
         time.setAccessibilityIdentifier("video.time")
         time.alignment = .center
 
-        let edits = Separator(axis: .vertical)
-        let left = NSStackView(views: [startButton, playButton, pauseButton, endButton, edits, splitButton, deleteButton])
+        let left = NSStackView(views: [startButton, playButton, pauseButton, endButton, splitButton, deleteButton])
         left.spacing = DS.Space.s4
-        left.setCustomSpacing(DS.Space.s8, after: endButton)
-        left.setCustomSpacing(DS.Space.s8, after: edits)
-        edits.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall - DS.Space.s4).isActive = true
+        // Playback and the clip edits are two groups; space alone sets them apart.
+        left.setCustomSpacing(DS.Space.s16, after: endButton)
         let right = NSStackView(views: [muteButton, unmuteButton, volume, fullButton, exitFullButton])
         right.spacing = DS.Space.s4
         right.setCustomSpacing(DS.Space.s12, after: volume)

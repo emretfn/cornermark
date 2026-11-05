@@ -54,6 +54,8 @@ final class TimelineView: NSView {
     var onSelect: (Int?) -> Void = { _ in }
     /// The trimmed timeline as the edge moves, then once more as the drag ends.
     var onTrim: (Trim, ClipTimeline, Scrub) -> Void = { _, _, _ in }
+    /// A key moved an edge of the picked clip, or of the clip under the playhead, by this many seconds.
+    var onNudge: (ClipTimeline.Edge, Double) -> Void = { _, _ in }
     /// One arrow key press moves the playhead this far; Shift moves it a second.
     var frameStep: Double = 1.0 / 60
     private let playhead = PlayheadView()
@@ -67,7 +69,11 @@ final class TimelineView: NSView {
         setAccessibilityRole(.slider)
         setAccessibilityLabel("Timeline")
         setAccessibilityIdentifier("video.timeline")
+        setAccessibilityHelp(Self.keyHelp)
     }
+
+    static let keyHelp = "Left and Right move the playhead a frame. Option with Left or Right moves the clip's start, Option-Command its end. Shift makes each step a second."
+
 
     required init?(coder: NSCoder) { fatalError("TimelineView is created in code") }
 
@@ -80,8 +86,14 @@ final class TimelineView: NSView {
     // MARK: Keyboard
 
     /// Left and right step a frame, a second with Shift; Home and End jump to the ends. The pointer's click and drag do the same.
+    /// With Option the arrows trim instead: the clip's start, or with Command its end, so every drag on an edge has a key too.
     override func keyDown(with event: NSEvent) {
-        let second = event.modifierFlags.contains(.shift)
+        let flags = event.modifierFlags
+        let second = flags.contains(.shift)
+        let size = second ? 1 : frameStep
+        if flags.contains(.option), event.keyCode == 123 || event.keyCode == 124 {
+            return onNudge(flags.contains(.command) ? .end : .start, event.keyCode == 123 ? -size : size)
+        }
         switch event.keyCode {
         case 123: step(second ? -1 : -frameStep)
         case 124: step(second ? 1 : frameStep)
@@ -143,7 +155,9 @@ final class TimelineView: NSView {
 
     override func accessibilityValue() -> Any? {
         let n = timeline.clips.count
-        return n > 1 ? "\(Timecode.text(time)), clip \(timeline.clipIndex(at: time) + 1) of \(n)" : Timecode.text(time)
+        guard n > 1 else { return Timecode.text(time) }
+        let picked = selection.map { ", clip \($0 + 1) picked" } ?? ""
+        return "\(Timecode.text(time)), clip \(timeline.clipIndex(at: time) + 1) of \(n)\(picked)"
     }
 
     override func layout() {
@@ -271,7 +285,7 @@ final class TimelineView: NSView {
         let grip = CGSize(width: 4, height: (rect.height * 0.45).rounded())
         for x in [rect.minX + 1, rect.maxX - 1] {
             let bar = NSBezierPath(roundedRect: CGRect(x: x - grip.width / 2, y: rect.midY - grip.height / 2, width: grip.width, height: grip.height),
-                                   xRadius: 2, yRadius: 2)
+                                   xRadius: grip.width / 2, yRadius: grip.width / 2)
             bar.lineWidth = 2
             DS.Color.selectionHalo.setStroke()
             bar.stroke()
