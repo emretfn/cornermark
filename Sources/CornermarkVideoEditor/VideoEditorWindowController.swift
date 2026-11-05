@@ -275,9 +275,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         refresh()
     }
 
+    /// A run of size changes, such as one slider drag, is one undo step.
     public func setCursor(_ cursor: CursorSettings) {
         var edits = state.project.edits
-        let sizeOnly = cursor.isVisible == edits.cursor.isVisible
+        var sameButSize = cursor
+        sameButSize.scale = edits.cursor.scale
+        let sizeOnly = sameButSize == edits.cursor
         edits.cursor = cursor
         commit(edits, coalescing: sizeOnly ? "cursor.scale" : nil)
     }
