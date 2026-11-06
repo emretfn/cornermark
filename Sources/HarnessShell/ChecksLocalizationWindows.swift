@@ -306,6 +306,17 @@ private func checkLocalizedWhatsNew() async throws {
           && scroll.contentView.bounds.origin.y == 120, "what's new returns to English and left to right at the same place")
 }
 
+/// The bar's parts sit inside it, none over another, and the bar is as wide as its parts need, in whatever language it is in.
+@MainActor
+private func barLayoutIsConsistent(_ bar: RecordingBarView) -> Bool {
+    bar.layoutSubtreeIfNeeded()
+    let parts = [bar.stop, bar.microphone, bar.pause, bar.resume, bar.restart, bar.confirmRestart, bar.delete, bar.confirmDelete, bar.grip].filter { !$0.isHidden }
+    guard abs(bar.frame.width - bar.fittingWidth) < 0.5, parts.allSatisfy({ bar.bounds.insetBy(dx: -0.5, dy: -0.5).contains($0.frame) }) else { return false }
+    if !bar.microphone.isHidden, abs(bar.microphone.frame.width - MicrophoneSlotView.width) > 0.5 { return false }
+    for (i, a) in parts.enumerated() { for b in parts[(i + 1)...] where a.frame.intersection(b.frame).width > 0.5 { return false } }
+    return true
+}
+
 // MARK: Recording bar and countdown
 
 @MainActor
@@ -330,6 +341,10 @@ private func checkLocalizedRecording() async throws {
     check(view.userInterfaceLayoutDirection == .rightToLeft, "recording bar mirrors for a right-to-left language")
     let order = [view.stop, view.pause, view.restart, view.delete, view.grip].map { $0.frame.minX }
     check(order == order.sorted(by: >) && view.grip.frame.minX >= view.bounds.minX, "its buttons run from the right edge, with the grip at the far left", detail: "\(order)")
+    check(barLayoutIsConsistent(view), "the bar's parts fit without overlapping in the new language")
+    view.showsMicrophone = true
+    check(barLayoutIsConsistent(view) && view.microphone.frame.width == MicrophoneSlotView.width, "and so do they with the microphone's slot, which is as wide as its words")
+    view.showsMicrophone = false
     view.pause.performClick(nil)
     check(m.phase == .paused && view.resume.isHidden == false, "and it still works: Pause pauses")
     view.resume.performClick(nil)
@@ -337,6 +352,9 @@ private func checkLocalizedRecording() async throws {
     english()
     check(!shownStrings(view).contains(where: isWrapped) && view.stop.toolTip == "Stop recording"
           && bar.title == "Recording Controls" && view.userInterfaceLayoutDirection == .leftToRight, "recording bar returns to English and left to right")
+    view.showsMicrophone = true
+    check(barLayoutIsConsistent(view), "the bar and its microphone slot fit again in English")
+    view.showsMicrophone = false
     _ = m.link("record/stop")
     check(await waitUntil { m.phase == .idle }, "the recording stops as usual")
 
