@@ -93,6 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuPanel?.toggle(anchor: anchor)
     }
 
+    @objc private func openVideo() { coordinator?.chooseAndOpenVideo() }
+
     /// Accessory apps still need an Edit menu for Cmd+C/V in text fields and Cmd+W in windows.
     private func installMainMenu() {
         let main = NSMenu()
@@ -101,6 +103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "Quit Cornermark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
+        let fileItem = NSMenuItem()
+        main.addItem(fileItem)
+        let file = NSMenu(title: "File")
+        file.addItem(withTitle: "Open Video\u{2026}", action: #selector(openVideo), keyEquivalent: "o").target = self
+        file.addItem(.separator())
+        file.addItem(withTitle: "Save", action: Selector(("saveDocument:")), keyEquivalent: "s")
+        file.addItem(withTitle: "Save As\u{2026}", action: Selector(("saveDocumentAs:")), keyEquivalent: "S")
+        fileItem.submenu = file
         let editItem = NSMenuItem()
         main.addItem(editItem)
         let edit = NSMenu(title: "Edit")

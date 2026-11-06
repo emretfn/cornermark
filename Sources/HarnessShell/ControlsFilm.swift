@@ -62,7 +62,7 @@ enum ControlsFilm {
         s.run(2, "Restart threw the first take away and began again at 0:00.")
         try s.press(\.stop, "Stop")
         guard await waitUntil(10, { s.m.phase == .idle && s.w.store.list().count == 2 }),
-              let full = s.w.store.list().compactMap(\.video).first(where: { $0.location.lastPathComponent.hasSuffix(" 2") }) else { throw FilmError.missing("the restarted take") }
+              let full = s.w.store.list().compactMap(\.video).first(where: { RecordingProjectFile.displayName(of: $0.location).hasSuffix(" 2") }) else { throw FilmError.missing("the restarted take") }
         f.refresh()
         await f.show(full.file, label: "full display after restart", at: 1.0, extra: "  duration \(String(format: "%.2f", full.duration)) s")
         f.hold(3.5, "Only the 2 s after the restart are in the file. The bar sat over this picture and is absent: sharingType=none.")
@@ -123,7 +123,7 @@ enum ControlsFilm {
         s.run(2.5, "No darkening now. The bar is still there.")
         try s.press(\.stop, "Stop")
         guard await waitUntil(10, { s.m.phase == .idle && s.w.store.list().count == 2 }) else { throw FilmError.missing("the undimmed take") }
-        if let plain = s.w.store.list().compactMap(\.video).first(where: { $0.location.lastPathComponent.hasSuffix(" 2") }) { await f.show(plain.file, label: "dimming off", at: 1.0) }
+        if let plain = s.w.store.list().compactMap(\.video).first(where: { RecordingProjectFile.displayName(of: $0.location).hasSuffix(" 2") }) { await f.show(plain.file, label: "dimming off", at: 1.0) }
         f.hold(3, "Both files show the same clean area. Dimming changes the screen only.")
     }
 
@@ -145,7 +145,7 @@ enum ControlsFilm {
         s.run(2, "Recording the whole display again.")
         try s.press(\.stop, "Stop")
         guard await waitUntil(10, { s.m.phase == .idle && s.w.store.list().count == 2 }),
-              let second = s.w.store.list().compactMap(\.video).first(where: { $0.location.lastPathComponent.hasSuffix(" 2") }) else { throw FilmError.missing("the second take") }
+              let second = s.w.store.list().compactMap(\.video).first(where: { RecordingProjectFile.displayName(of: $0.location).hasSuffix(" 2") }) else { throw FilmError.missing("the second take") }
         await f.show(second.file, label: "icons hidden", at: 1.0, extra: "  plan: \(s.plan())")
         f.hold(3.5, "R18: the icons are on screen but not in the video. Finder is excluded except its normal windows, so its window stays.")
         try await s.openPane()
@@ -155,7 +155,7 @@ enum ControlsFilm {
         s.run(2, "Recording.")
         try s.press(\.stop, "Stop")
         guard await waitUntil(10, { s.m.phase == .idle && s.w.store.list().count == 3 }),
-              let third = s.w.store.list().compactMap(\.video).first(where: { $0.location.lastPathComponent.hasSuffix(" 3") }) else { throw FilmError.missing("the third take") }
+              let third = s.w.store.list().compactMap(\.video).first(where: { RecordingProjectFile.displayName(of: $0.location).hasSuffix(" 3") }) else { throw FilmError.missing("the third take") }
         await f.show(third.file, label: "notifications shown", at: 1.0, extra: "  plan: \(s.plan())")
         f.hold(3.5, "With the setting off the banner is filmed. No system setting, Focus state or Finder preference was changed.")
     }
@@ -182,7 +182,7 @@ enum ControlsFilm {
         f.title = "R26  Recovery after a crash, in an isolated Cornermark Dev: killed by its PID mid-recording, relaunched on the same root."
         let cut = dir.appendingPathComponent("r26-cut-off-copy/screen.mp4")
         let saved = try FileManager.default.contentsOfDirectory(at: dir.appendingPathComponent("r26-isolated/saved"), includingPropertiesForKeys: nil)
-        guard let project = saved.first(where: { $0.lastPathComponent.hasSuffix("23.02.33") }) else { throw FilmError.missing("the recovered project") }
+        guard let project = saved.first(where: { RecordingProjectFile.displayName(of: $0).hasSuffix("23.02.33") }) else { throw FilmError.missing("the recovered project") }
         let log = (try? String(contentsOf: dir.appendingPathComponent("r26-first-instance-app.log"), encoding: .utf8)) ?? ""
         let relaunch = (try? String(contentsOf: dir.appendingPathComponent("r26-isolated/app.log"), encoding: .utf8)) ?? ""
         let lines = (log + relaunch).split(separator: "\n").filter { $0.contains("recording started") || $0.contains("recover") || $0.contains("launch pid") || $0.contains("listed") || $0.contains("Recovered") }
