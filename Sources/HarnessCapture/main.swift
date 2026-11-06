@@ -28,6 +28,7 @@ Task { @MainActor in
     await runIntegrationTests()
     await runSpanTests()
     await runRecordOverlayTests()
+    await runPanelSharpnessTests()
     await runRecordingTests()
     await runGifTests()
     await runRecordingSettingsTests()
