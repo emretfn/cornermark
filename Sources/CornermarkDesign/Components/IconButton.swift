@@ -6,6 +6,8 @@ public final class IconButton: Pressable {
         case plain
         /// Circular and always dark, for buttons laid over a screenshot.
         case overlay
+        /// Circular on a neutral control fill, for the one button a row is built around, such as Play under the preview.
+        case round
     }
 
     public var symbol: String {
@@ -71,7 +73,7 @@ public final class IconButton: Pressable {
     public override var intrinsicContentSize: NSSize { NSSize(width: size.height, height: size.height) }
 
     override func shape(in rect: CGRect) -> NSBezierPath {
-        tone == .overlay ? NSBezierPath(ovalIn: rect) : .continuous(rect, radius: size == .small ? DS.Radius.sm : DS.Radius.md)
+        tone == .plain ? .continuous(rect, radius: size == .small ? DS.Radius.sm : DS.Radius.md) : NSBezierPath(ovalIn: rect)
     }
 
     override func paint(_ state: InteractionState) {
@@ -131,6 +133,10 @@ public final class IconButton: Pressable {
         case (.overlay, .hover): return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
         case (.overlay, .pressed): return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
         case (.overlay, .disabled): return ButtonAppearance(fill: c.bgHud, text: c.textDisabled)
+        case (.round, .normal): return ButtonAppearance(fill: c.bgControl, text: c.textPrimary)
+        case (.round, .hover): return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
+        case (.round, .pressed): return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+        case (.round, .disabled): return ButtonAppearance(fill: c.bgControl, text: c.textDisabled)
         }
     }
 }

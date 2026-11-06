@@ -429,11 +429,15 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
 
     window.setContentSize(window.minSize)
     content.layoutSubtreeIfNeeded()
-    let parts = ["video.start", "video.end", "video.split", "video.deleteClip", "video.time", "video.mute", "video.fullscreen"]
+    // Left to right: the time, the playback group centred under the preview, then the edits and the view tools.
+    let parts = ["video.time", "video.start", "video.play", "video.end", "video.split", "video.deleteClip", "video.mute", "video.fullscreen"]
         .map { frameInWindow(editor.view(identifier: $0)) }
     let row = frameInWindow(bar)
     let apart = zip(parts.dropFirst(), parts.dropFirst(2)).allSatisfy { $0.maxX <= $1.minX } && parts.allSatisfy { row.contains($0) }
     check(apart && frameInWindow(preview).height > 200, "at the smallest window size the playback row neither overlaps nor clips", detail: "\(parts)")
+    let play = frameInWindow(editor.view(identifier: "video.play"))
+    check(abs(play.midX - row.midX) <= 1 && play.width == DS.Size.controlLarge && play.minX == play.minX.rounded(),
+          "Play is the 36 pt round button centred under the preview, on a whole point", detail: "\(play) in \(row)")
     _ = await waitUntil(3) { editor.tick(); return editor.previewImage != nil }
     snapshotEditor(editor, name: "video-editor-min")
     window.setContentSize(NSSize(width: 1200, height: 760))
