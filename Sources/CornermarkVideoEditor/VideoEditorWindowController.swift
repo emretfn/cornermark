@@ -9,6 +9,8 @@ public struct VideoEditorState: Equatable {
     public var project: RecordingProject
     public var transport: Transport
     public var section = EditorSection.cursor
+    /// The zoom picked on the timeline. Its settings take the panel over until it is let go.
+    public var selectedZoom: UUID?
     /// The preview fills the window and the editing columns step aside.
     public var isPreviewOnly = false
     public var volume: Float = 1
@@ -252,6 +254,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         timeline.onSelect = { [unowned self] in selectClip($0) }
         timeline.onTrim = { [unowned self] trim, moved, phase in trimmed(trim, to: moved, phase) }
         timeline.onNudge = { [unowned self] edge, seconds in nudge(edge, by: seconds) }
+        let lane = timeline.zoomLane
+        lane.onAdd = { [unowned self] from, to in addZoom(from: from, to: to) }
+        lane.onSelect = { [unowned self] in selectZoom($0) }
+        lane.onGesture = { [unowned self] gesture, phase in dragZoom(gesture, phase) }
+        lane.menuForZoom = { [unowned self] in zoomMenu(for: $0) }
+        lane.onKey = { [unowned self] in zoomKey($0) }
+        inspector.zoomPanel.onChange = { [unowned self] in zoomPanelChanged($0) }
     }
 
     private func prepare() async {
@@ -294,6 +303,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     public func select(_ section: EditorSection) {
         state.section = section
+        state.selectedZoom = nil
         refresh()
     }
 
@@ -326,6 +336,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     public func selectClip(_ index: Int?) {
         state.selectedClip = index.flatMap { state.project.timeline.clips.indices.contains($0) ? $0 : nil }
+        if state.selectedClip != nil { state.selectedZoom = nil }
         timeline.selection = state.selectedClip
         refresh()
     }
@@ -355,6 +366,165 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         background.fill = .image
         setBackground(background)
     }
+
+    // MARK: Zooms
+
+    private var zoomLane: ZoomLane { ZoomLane(state.project.edits.zooms, duration: state.transport.duration) }
+    private var playhead: Double { state.transport.time(at: clock()) }
+
+    /// Adds a zoom from `from` to `to`, or of the default length at `from` when `to` is nil, aimed where the pointer was halfway
+    /// through it, and picks it.
+    @discardableResult
+    public func addZoom(from: Double, to: Double? = nil) -> Zoom? {
+        guard let added = zoomLane.adding(from: from, to: to) else { return nil }
+        let zoom = added.zoom
+        let center = pointerCenter(at: (zoom.start + zoom.end) / 2)
+        let lane = added.lane.updating(zoom.id) { $0.center = center }
+        state.selectedZoom = zoom.id
+        state.selectedClip = nil
+        timeline.selection = nil
+        commitZooms(lane)
+        return lane.zoom(zoom.id)
+    }
+
+    public func addZoomAtPlayhead() { addZoom(from: playhead) }
+
+    /// Nil lets go of the picked zoom, and the panel returns to the section.
+    public func selectZoom(_ id: UUID?) {
+        state.selectedZoom = id.flatMap { zoomLane.zoom($0) != nil ? $0 : nil }
+        if state.selectedZoom != nil {
+            state.selectedClip = nil
+            timeline.selection = nil
+        }
+        refresh()
+    }
+
+    public func setZoomScale(_ scale: Double, of id: UUID, dragging: Bool = false) {
+        let s = min(max(scale, Zoom.scaleRange.lowerBound), Zoom.scaleRange.upperBound)
+        commitZooms(zoomLane.updating(id) { $0.scale = s }, coalescing: dragging ? CoalescingKey("zoom.scale-\(id)") : nil)
+    }
+
+    public func setZoomMode(_ mode: ZoomMode, of id: UUID) { commitZooms(zoomLane.updating(id) { $0.mode = mode }) }
+
+    public func applyZoomLevelToAll(from id: UUID) {
+        guard let zoom = zoomLane.zoom(id) else { return }
+        commitZooms(zoomLane.settingScale(zoom.scale))
+    }
+
+    /// Cuts the zoom at the playhead in two and picks the second part.
+    public func splitZoom(_ id: UUID) {
+        guard let split = zoomLane.splitting(id, at: playhead) else { return }
+        state.selectedZoom = split.second.id
+        commitZooms(split.lane)
+    }
+
+    public func duplicateZoom(_ id: UUID) {
+        guard let copy = zoomLane.duplicating(id) else { return }
+        state.selectedZoom = copy.copy.id
+        commitZooms(copy.lane)
+    }
+
+    public func removeZoom(_ id: UUID) { commitZooms(zoomLane.removing(id)) }
+
+    /// Command-B splits the picked zoom at the playhead, else the clip under it.
+    public func splitSelection() {
+        if let id = state.selectedZoom { splitZoom(id) } else { splitAtPlayhead() }
+    }
+
+    private func zoomKey(_ key: ZoomLaneView.KeyCommand) {
+        let lane = zoomLane
+        guard !lane.zooms.isEmpty else { return }
+        let picked = state.selectedZoom.flatMap { lane.index(of: $0) }
+        switch key {
+        case .pick(let step):
+            let next = picked.map { min(max($0 + step, 0), lane.zooms.count - 1) }
+                ?? (step > 0 ? lane.zooms.firstIndex { $0.end > playhead } ?? lane.zooms.count - 1 : lane.zooms.lastIndex { $0.start < playhead } ?? 0)
+            selectZoom(lane.zooms[next].id)
+        case .move(let by):
+            guard let i = picked else { return }
+            let zoom = lane.zooms[i]
+            commitZooms(lane.moving(zoom.id, to: zoom.start + by), coalescing: CoalescingKey("zoom.key.move-\(zoom.id)"))
+        case .resizeEnd(let by):
+            guard let i = picked else { return }
+            let zoom = lane.zooms[i]
+            commitZooms(lane.resizing(zoom.id, .end, to: zoom.end + by), coalescing: CoalescingKey("zoom.key.end-\(zoom.id)"))
+        }
+    }
+
+    /// Delete removes the picked zoom, else the picked clip or the one under the playhead.
+    public func deleteSelection() {
+        if let id = state.selectedZoom { removeZoom(id) } else { deleteClip() }
+    }
+
+    public func removeAllZooms() { commitZooms(ZoomLane([], duration: state.transport.duration)) }
+
+    private func dragZoom(_ gesture: ZoomLaneView.Gesture, _ phase: TimelineView.Scrub) {
+        switch gesture {
+        case .move(let id, let start): commitZooms(zoomLane.moving(id, to: start), coalescing: "zoom.drag")
+        case .resize(let id, let edge, let t): commitZooms(zoomLane.resizing(id, edge, to: t), coalescing: "zoom.drag")
+        }
+        if phase == .ended { history.endCoalescing() }
+    }
+
+    private func zoomPanelChanged(_ change: ZoomPanel.Change) {
+        guard let id = state.selectedZoom else { return }
+        switch change {
+        case .scale(let s, let dragging): setZoomScale(s, of: id, dragging: dragging)
+        case .mode(let mode): setZoomMode(mode, of: id)
+        case .applyToAll: applyZoomLevelToAll(from: id)
+        case .remove: removeZoom(id)
+        }
+    }
+
+    /// The pointer's place at `t` as fractions of the picture, or the middle when the recording has no pointer.
+    private func pointerCenter(at t: Double) -> ZoomPoint {
+        let source = state.project.source
+        guard source.pointWidth > 0, source.pointHeight > 0,
+              let p = PointerTrack.position(state.project.events.pointer, at: frameState(state.project, outputTime: t).sourceTime) else { return .middle }
+        return ZoomPoint(x: min(max(p.x / source.pointWidth, 0), 1), y: min(max(p.y / source.pointHeight, 0), 1))
+    }
+
+    /// The zoom's right-click menu. Its items act on that zoom, whichever is picked when one is chosen.
+    func zoomMenu(for id: UUID) -> NSMenu? {
+        guard let zoom = zoomLane.zoom(id) else { return nil }
+        let menu = NSMenu(title: "Zoom")
+        menu.autoenablesItems = false
+        func item(_ title: String, enabled: Bool = true, state on: Bool = false, _ action: @escaping () -> Void) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.onPick(action)
+            item.isEnabled = enabled
+            item.state = on ? .on : .off
+            return item
+        }
+        let level = NSMenuItem(title: "Level", action: nil, keyEquivalent: "")
+        level.submenu = NSMenu(title: "Level")
+        for s in Zoom.levels {
+            level.submenu?.addItem(item(Zoom.percent(s), state: abs(s - zoom.scale) < 0.005) { [unowned self] in setZoomScale(s, of: id) })
+        }
+        menu.addItem(level)
+        menu.addItem(item("Apply Level to All", enabled: zoomLane.zooms.count > 1) { [unowned self] in applyZoomLevelToAll(from: id) })
+        let mode = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
+        mode.submenu = NSMenu(title: "Mode")
+        for m in ZoomMode.allCases {
+            mode.submenu?.addItem(item(m.title, state: m == zoom.mode) { [unowned self] in setZoomMode(m, of: id) })
+        }
+        menu.addItem(mode)
+        menu.addItem(.separator())
+        menu.addItem(item("Split at Playhead", enabled: zoomLane.splitting(id, at: playhead) != nil) { [unowned self] in splitZoom(id) })
+        menu.addItem(item("Duplicate", enabled: zoomLane.duplicating(id) != nil) { [unowned self] in duplicateZoom(id) })
+        menu.addItem(.separator())
+        menu.addItem(item("Remove Zoom") { [unowned self] in removeZoom(id) })
+        menu.addItem(item("Remove All Zooms") { [unowned self] in removeAllZooms() })
+        return menu
+    }
+
+    private func commitZooms(_ lane: ZoomLane, coalescing key: CoalescingKey? = nil) {
+        var edits = state.project.edits
+        edits.zooms = lane.zooms
+        commit(edits, coalescing: key)
+    }
+
+    // MARK: Undo
 
     public var canUndo: Bool { history.canUndo }
     public var canRedo: Bool { history.canRedo }
@@ -419,6 +589,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private func show(_ edits: RecordingProject.Edits, keeping: Int? = nil, playhead: Double) {
         let clipsChanged = edits.clips != state.project.edits.clips
         state.project.edits = edits
+        if let id = state.selectedZoom, !edits.zooms.contains(where: { $0.id == id }) { state.selectedZoom = nil }
         if clipsChanged {
             let clips = state.project.timeline
             state.transport.setDuration(clips.duration, playheadAt: playhead, now: clock())
@@ -468,9 +639,15 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     static let keys: [Chord: (VideoEditorWindowController) -> Bool] = [
         Chord(keyCode: 49): { $0.togglePlayback(); return true },
         Chord(keyCode: 53): { $0.escape() },
-        .command(11): { $0.splitAtPlayhead(); return true },
-        Chord(keyCode: 51): { $0.deleteClip(); return true },
-        Chord(keyCode: 117): { $0.deleteClip(); return true },
+        .command(11): { $0.splitSelection(); return true },
+        .command(2): {
+            guard let id = $0.state.selectedZoom else { return false }
+            $0.duplicateZoom(id)
+            return true
+        },
+        Chord(keyCode: 51): { $0.deleteSelection(); return true },
+        Chord(keyCode: 117): { $0.deleteSelection(); return true },
+        Chord(keyCode: 6): { $0.addZoomAtPlayhead(); return true },
         .command(6): { $0.undo(); return true },
         .command(6, shift: true): { $0.redo(); return true },
     ]
@@ -483,6 +660,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     private func escape() -> Bool {
         if state.isPreviewOnly { setPreviewOnly(false); return true }
+        if state.selectedZoom != nil { selectZoom(nil); return true }
         guard state.selectedClip != nil else { return false }
         selectClip(nil)
         return true
@@ -680,7 +858,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             backgroundPicture = (background.image, background.picture(in: folder))
             preview.backgroundPicture = backgroundPicture.image
         }
-        inspector.show(state.section, cursor: state.project.edits.cursor, background: background, picture: backgroundPicture.image)
+        let zooms = state.project.edits.zooms
+        inspector.show(state.section, cursor: state.project.edits.cursor, background: background, picture: backgroundPicture.image,
+                       zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count)
+        timeline.zoomLane.zooms = zooms
+        timeline.zoomLane.selection = state.selectedZoom
         header.show(state.export)
         exportPanel.show(state.export, settings: state.exportSettings, project: state.project, sourceBytes: sourceBytes)
         updateTransportBar(state.transport.time(at: clock()))
@@ -736,4 +918,19 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             refresh()
         }
     }
+}
+
+extension NSMenuItem {
+    func onPick(_ handler: @escaping () -> Void) {
+        let target = MenuTarget(handler)
+        representedObject = target
+        self.target = target
+        action = #selector(MenuTarget.fire)
+    }
+}
+
+private final class MenuTarget: NSObject {
+    let handler: () -> Void
+    init(_ handler: @escaping () -> Void) { self.handler = handler }
+    @objc func fire() { handler() }
 }

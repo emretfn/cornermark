@@ -210,6 +210,41 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual(grey(150, 80), 0, "the rest is the black backdrop of a frame without a picture")
     }
 
+    func testAZoomMovesThePointerAndLeavesTheCameraBubbleInTheFrame() throws {
+        let zoom = Zoom(start: 0, end: 1, scale: 2, center: ZoomPoint(x: 0.25, y: 0.25))
+        var project = RecordingProject(source: .init(pixelWidth: 400, pixelHeight: 200, pointWidth: 100, pointHeight: 50, fps: 30, duration: 1),
+                                       events: .init(pointer: [PointerSample(t: 0, x: 20, y: 10)]), edits: .init(zooms: [zoom]))
+        project.source.camera = RecordingProjectFile.cameraName
+        let renderer = ExportFrameRenderer(plan: ExportPlan(project: project, settings: ExportSettings()), project: project, folder: nil)
+        let red = try XCTUnwrap(solidImage(red: 255))
+        func pixels(_ project: RecordingProject, at t: Double) throws -> (CGImage, Data) {
+            let image = try XCTUnwrap(renderer.image(frameState(project, outputTime: t), source: nil, camera: red))
+            return (image, try XCTUnwrap(image.dataProvider?.data as Data?))
+        }
+        var plain = project
+        plain.edits.zooms = []
+        let (zoomedImage, zoomed) = try pixels(project, at: 0.5)
+        let (_, whole) = try pixels(plain, at: 0.5)
+        func level(_ image: CGImage, _ data: Data, _ x: Int, _ y: Int, channel: Int) -> UInt8 { data[y * image.bytesPerRow + x * 4 + channel] }
+        let area = CGSize(width: 100, height: 50)
+        let bubble = CameraLayout.bubbleRect(project.edits.camera, area: area)
+        let bx = Int(bubble.midX * 4), by = Int(bubble.midY * 4)
+        XCTAssertEqual(level(zoomedImage, zoomed, bx, by, channel: 2), 255, "the bubble's red is where it is without the zoom")
+        XCTAssertEqual(level(zoomedImage, zoomed, bx, by, channel: 2), level(zoomedImage, whole, bx, by, channel: 2))
+        // The crop is the top-left half, so the pointer's tip, at (20, 10) points, is at (40, 20) points of the frame, 4 pixels per point.
+        XCTAssertGreaterThan(level(zoomedImage, zoomed, 40 * 4 + 6, 20 * 4 + 20, channel: 1), 200, "the pointer moved with the picture, twice as far from the corner")
+        XCTAssertLessThan(level(zoomedImage, zoomed, 20 * 4 + 6, 10 * 4 + 20, channel: 1), 60, "and is not where it was")
+        XCTAssertGreaterThan(level(zoomedImage, whole, 20 * 4 + 6, 10 * 4 + 20, channel: 1), 200, "without the zoom it is there")
+    }
+
+    private func solidImage(red: UInt8) -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(red: CGFloat(red) / 255, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        return ctx.makeImage()
+    }
+
     func testTheExportDrawsTheCameraFromItsOwnFileWhereTheProjectPlacesIt() async throws {
         var (source, project) = try await makeSource()
         _ = try await makeSource(name: RecordingProjectFile.cameraName) { _ in [0x20, 0x20, 0xE0, 0xFF] }

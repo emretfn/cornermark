@@ -3,8 +3,8 @@ import CornermarkCore
 import CornermarkDesign
 import QuartzCore
 
-/// The finished video at the playhead: the background, the source frame `frameState` names, and the pointer it places, in the look
-/// export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
+/// The finished video at the playhead: the background, the source frame `frameState` names cropped to its zoom, and the pointer it places,
+/// in the look export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
 /// The video is content, so only the area around it follows the appearance.
 final class PreviewView: NSView {
     /// The recorded area in points, the unit of pointer positions.
@@ -15,7 +15,7 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCursor(); placeCamera() } } }
+    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera() } } }
     /// Where the recording sits on the finished video.
     var canvas: VideoCanvas? { didSet { if oldValue != canvas { needsLayout = true } } }
     /// The picture the background shows when its fill is an added image.
@@ -101,6 +101,7 @@ final class PreviewView: NSView {
             picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
         }
         drawBackdrop(canvas)
+        placeCrop()
         placeCursor()
         placeCamera()
     }
@@ -130,7 +131,15 @@ final class PreviewView: NSView {
         withoutAnimation { stage.contents = image }
     }
 
-    /// Pointer samples count from the recorded area's top-left corner with y down; the picture layer counts from its bottom-left.
+    /// The crop picks the part of the recording the frame shows; `contentsRect` counts from the picture's bottom-left, the crop from its
+    /// top-left. The frame's rounded clip and the picture layer's bounds stay put, so the zoom happens inside the frame.
+    private func placeCrop() {
+        let crop = state?.crop ?? .full
+        withoutAnimation { picture.contentsRect = CGRect(x: crop.x, y: 1 - crop.y - crop.height, width: crop.width, height: crop.height) }
+    }
+
+    /// Pointer samples count from the recorded area's top-left corner with y down and sit in recording coordinates, so the crop moves
+    /// them. The picture layer counts from its bottom-left. The camera bubble does not follow the crop: it is a separate overlay.
     private func placeCursor() {
         withoutAnimation {
             guard let cursor = state?.cursor, pointSize.width > 0, pointSize.height > 0 else {
@@ -138,11 +147,13 @@ final class PreviewView: NSView {
                 return
             }
             let size = picture.bounds.size
-            let kx = size.width / pointSize.width, ky = size.height / pointSize.height
+            let crop = state?.crop ?? .full
+            let kx = size.width / (pointSize.width * crop.width), ky = size.height / (pointSize.height * crop.height)
             if cursor.style != pointerStyle { dress(cursor.style) }
             pointer.isHidden = false
             pointer.opacity = Float(cursor.opacity)
-            pointer.position = CGPoint(x: cursor.x * kx, y: size.height - cursor.y * ky)
+            pointer.position = CGPoint(x: (cursor.x - crop.x * pointSize.width) * kx,
+                                     y: size.height - (cursor.y - crop.y * pointSize.height) * ky)
             pointer.setAffineTransform(CGAffineTransform(scaleX: cursor.scale * kx, y: -cursor.scale * ky))
         }
     }

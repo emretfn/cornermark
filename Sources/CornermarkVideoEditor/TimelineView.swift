@@ -37,6 +37,7 @@ final class TimelineView: NSView {
     var timeline = ClipTimeline(clips: [], source: .init()) {
         didSet {
             needsDisplay = true
+            zoomLane.needsDisplay = true
             placePlayhead()
             window?.invalidateCursorRects(for: self)
         }
@@ -61,10 +62,13 @@ final class TimelineView: NSView {
     private(set) var trim: Trim?
     /// Off while a script drives the timeline, so the system's cursor never changes for input that did not come from it.
     var showsResizeCursor = true
+    let zoomLane = ZoomLaneView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        zoomLane.timelineScale = { [unowned self] in scale }
+        addSubview(zoomLane)
         addSubview(playhead)
         setAccessibilityElement(true)
         setAccessibilityRole(.slider)
@@ -161,6 +165,7 @@ final class TimelineView: NSView {
 
     override func layout() {
         super.layout()
+        zoomLane.frame = zoomLaneRect
         placePlayhead()
     }
 

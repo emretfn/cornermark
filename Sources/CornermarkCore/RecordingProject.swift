@@ -122,12 +122,15 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// What the finished video keeps of the recording, in order. A project read from a file always has at least one;
         /// one written before clips existed keeps the whole recording.
         public var clips: [Clip]
+        /// Ordered and apart, on the finished video's timeline.
+        public var zooms: [Zoom]
         public var background: VideoBackground
         public var camera: CameraBubble
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble()) {
-            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.background = background; self.camera = camera
+                    clips: [Clip] = [], zooms: [Zoom] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble()) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.zooms = zooms.sorted { $0.start < $1.start }
+            self.background = background; self.camera = camera
         }
 
         public init(from decoder: Decoder) throws {
@@ -137,9 +140,10 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
+            zooms = (((try? c.decodeIfPresent([Lossy<Zoom>].self, forKey: .zooms)) ?? nil)?.compactMap(\.value) ?? []).sorted { $0.start < $1.start }
             background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background, camera }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, zooms, background, camera }
     }
 
     public var version: Int
@@ -208,11 +212,14 @@ public struct FrameState: Equatable, Sendable {
     public var sourceTime: Double
     /// Nil when the viewer hid the pointer or the recording has none.
     public var cursor: CursorFrame?
+    /// The part of the recorded area the picture shows. The pointer is placed in the recording's points, so it moves with the picture.
+    /// The camera bubble is a separate overlay and ignores it.
+    public var crop: ZoomRect = .full
     /// Where the camera goes. Its picture is the camera file at `sourceTime`. Nil when the recording has no camera or the viewer hid it.
     public var camera: CameraFrame?
 
-    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil) {
-        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera
+    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil, crop: ZoomRect = .full) {
+        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera; self.crop = crop
     }
 }
 
@@ -221,7 +228,9 @@ public func frameState(_ project: RecordingProject, outputTime: Double) -> Frame
     let sourceTime = project.timeline.sourceTime(at: outputTime)
     let area = CGSize(width: project.source.pointWidth, height: project.source.pointHeight)
     let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
-    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera)
+    // Zooms sit on the finished video's timeline, so the crop follows output time after clips have mapped it to the source.
+    let crop = ZoomCamera.rect(project.edits.zooms, at: outputTime)
+    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera, crop: crop)
 }
 
 public enum PointerTrack {
