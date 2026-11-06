@@ -188,6 +188,7 @@ func generated(_ catalogs: [(Language, [String: Any])]) -> [String: String] {
         index += "        \"\(language.rawValue)\": \(identifier(language)),\n"
     }
     index += "    ]\n}\n"
+    if catalogs.isEmpty { index = header + "\nenum Catalogs {\n    static let json: [String: String] = [:]\n}\n" }
     files["Catalogs.swift"] = index
     return files
 }
@@ -227,7 +228,6 @@ if write {
 
 let plurals = found.entries.values.filter { if case .plural = $0 { return true } else { return false } }.count
 print("\(found.entries.count) strings (\(plurals) plural) in the code, \(catalogs.count) of \(Language.allCases.count - 1) translations present")
-for p in problems.prefix(200) { print("FAIL \(p)") }
-if problems.count > 200 { print("... and \(problems.count - 200) more") }
+for p in problems { print("FAIL \(p)") }
 print(problems.isEmpty ? "RESULT ok" : "RESULT \(problems.count) problems")
 exit(problems.isEmpty ? 0 : 1)
