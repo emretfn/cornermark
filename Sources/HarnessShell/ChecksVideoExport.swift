@@ -196,7 +196,7 @@ func checkVideoExport() async throws {
     let percent = (editor.view(identifier: "video.export.percent") as? NSTextField)?.stringValue
     check(percent == "100%" || percent?.hasSuffix("%") == true, "the percent readout follows the progress", detail: percent ?? "nil")
     guard let made = w.store.list().first(where: { !before.contains($0.id) }), let video = made.video else { return check(false, "the export is listed in History") }
-    check(made.ownsVideo && video.format == .video && video.file.lastPathComponent == "\(folder.lastPathComponent).mp4",
+    check(made.ownsVideo && video.format == .video && video.file.lastPathComponent == "\(RecordingProjectFile.displayName(of: folder)).mp4",
           "the export is a History entry holding its own file, named after the recording", detail: video.file.path)
     let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: w.store.incomingDirectory.path)) ?? []
     check(leftovers.isEmpty, "nothing is left where the export was written", detail: "\(leftovers)")

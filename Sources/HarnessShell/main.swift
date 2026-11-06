@@ -94,6 +94,7 @@ Task { @MainActor in
         try await checkRecordingAudio()
         try await checkVideoEditor()
         try await checkVideoExport()
+        try await checkVideoProjects()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkVideoEditor
 import UniformTypeIdentifiers
 
 enum ActionID: String, CaseIterable {
@@ -168,6 +169,8 @@ enum URLCommand {
 
         if spec.id == .openFile {
             guard let path = query["path"], !path.isEmpty else { return .failure(.missingPath) }
+            if case .success(let folder) = validatedProjectFolder(path: path) { return .success(.openRecording(folder)) }
+            if case .success(let video) = validatedVideoURL(path: path) { return .success(.openFile(video)) }
             return validatedImageURL(path: path).map { .openFile($0) }
         }
         if spec.id == .editRecording {
@@ -223,6 +226,14 @@ enum URLCommand {
             return .failure(.invalidProject(rawPath))
         }
         return .success(folder)
+    }
+
+    /// An absolute path to an MP4 or QuickTime file, which opens as a new project.
+    static func validatedVideoURL(path rawPath: String) -> Result<URL, URLCommandError> {
+        guard rawPath.hasPrefix("/") else { return .failure(.invalidFile(rawPath)) }
+        let url = URL(fileURLWithPath: rawPath).standardizedFileURL.resolvingSymlinksInPath()
+        guard VideoImport.canImport(url), (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { return .failure(.invalidFile(rawPath)) }
+        return .success(url)
     }
 
     static func validatedImageURL(path rawPath: String) -> Result<URL, URLCommandError> {

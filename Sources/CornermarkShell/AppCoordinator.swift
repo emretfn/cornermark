@@ -27,6 +27,13 @@ final class AppCoordinator {
     var videoEditors: [URL: VideoEditorWindowController] = [:]
     /// Builds the video editor for a project folder. A harness swaps it to decode frames on its own clock.
     var makeVideoEditor: (URL) throws -> VideoEditorWindowController = VideoEditorWindowController.open(folder:)
+    /// Asks for a video file to open in the video editor. A harness answers it itself.
+    var chooseVideo: (@escaping (URL?) -> Void) -> Void = { done in
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = VideoImport.types
+        panel.allowsMultipleSelection = false
+        done(panel.runModal() == .OK ? panel.url : nil)
+    }
     private(set) var loginError: String?
     private var maintenanceTimer: Timer?
     /// Recordings a GIF is being made from.
@@ -141,7 +148,7 @@ final class AppCoordinator {
 
     /// Lists the recording in history and shows its card. The video stays where the recorder saved it.
     func recordingFinished(_ finished: FinishedRecording) async {
-        let name = finished.video.location.lastPathComponent
+        let name = finished.video.format == .project ? RecordingProjectFile.displayName(of: finished.video.location) : finished.video.location.lastPathComponent
         let poster = await VideoPoster.image(of: finished.video) ?? VideoPoster.placeholder(finished.pixelSize)
         let record: CaptureRecord
         do {
@@ -397,7 +404,10 @@ final class AppCoordinator {
             .flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
     }
 
+    /// A picture opens in the editor, a video becomes a project in the video editor, and a project opens as it is.
     func importFile(_ url: URL) {
+        if case .success(let folder) = URLCommand.validatedProjectFolder(path: url.path) { openVideoEditor(folder); return }
+        if VideoImport.canImport(url) { Task { await openVideo(url.standardizedFileURL.resolvingSymlinksInPath()) }; return }
         guard case .success(let file) = URLCommand.validatedImageURL(url) else {
             Log.shell.error("not an image file: \(url.path, privacy: .public)")
             return

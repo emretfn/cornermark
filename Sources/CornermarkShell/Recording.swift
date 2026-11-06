@@ -41,8 +41,10 @@ enum RecordingOutput {
         return f.string(from: date)
     }
 
-    /// Never overwrites: a second recording within the same second gets " 2", " 3", and so on.
-    static func uniqueFolder(in folder: URL, for date: Date) -> URL { unique(in: folder, base: folderName(for: date), suffix: "", isDirectory: true) }
+    /// A project package. Never overwrites: a second recording within the same second gets " 2", " 3", and so on.
+    static func uniqueFolder(in folder: URL, for date: Date) -> URL {
+        unique(in: folder, base: folderName(for: date), suffix: ".\(RecordingProjectFile.packageExtension)", isDirectory: true)
+    }
 
     /// A finished file, `Cornermark Recording 2026-11-03 at 14.05.09.mp4` or `.gif`, never overwriting either.
     static func uniqueFile(in folder: URL, for date: Date, extension ext: String) -> URL {

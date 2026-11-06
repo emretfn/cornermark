@@ -33,14 +33,15 @@ final class InspectorView: NSView {
     /// Sliders work in this range. A stored size outside it is kept until the slider moves.
     static let sizeRange = 0.5...4.0
 
-    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?) {
+    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?,
+              origin: RecordingProject.Source.Origin = .recording, hasAudio: Bool = false) {
         self.cursor = cursor
         for (s, b) in railButtons { b.isSelected = s == section }
         title.stringValue = section.title
-        let isCursor = section == .cursor
-        cursorRows.forEach { $0.isHidden = !isCursor }
-        emptyNote.isHidden = isCursor || section == .background
-        emptyNote.stringValue = Self.note(section)
+        let note = Self.note(section, origin: origin, hasAudio: hasAudio)
+        cursorRows.forEach { $0.isHidden = section != .cursor || !note.isEmpty }
+        emptyNote.isHidden = note.isEmpty
+        emptyNote.stringValue = note
         backgroundPanel.isHidden = section != .background
         backgroundPanel.show(background, picture: picture)
         showCursor.state = cursor.isVisible ? .on : .off
@@ -50,8 +51,17 @@ final class InspectorView: NSView {
         cursorSizeValue.textColor = cursor.isVisible ? DS.Color.textSecondary : DS.Color.textDisabled
     }
 
-    /// What a section without settings says. Each one states what this recording holds, not what a later version adds.
-    static func note(_ section: EditorSection) -> String {
+    /// What a section without settings says. Each one states what this video holds, not what a later version adds.
+    static func note(_ section: EditorSection, origin: RecordingProject.Source.Origin = .recording, hasAudio: Bool = false) -> String {
+        if origin == .file {
+            switch section {
+            case .cursor: return "This video was opened from a file, so its pointer is part of the picture. Record for Editing to change the pointer afterwards."
+            case .keystrokes: return "This video was opened from a file, so no keystrokes were recorded with it."
+            case .audio: return hasAudio ? "This video plays and exports with its own sound." : "This video has no sound."
+            case .camera: return "This video has no camera."
+            case .background, .motionBlur: break
+            }
+        }
         switch section {
         case .cursor: return ""
         case .keystrokes: return "This recording has no keystrokes."

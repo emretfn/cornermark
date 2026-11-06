@@ -109,7 +109,7 @@ func checkVideoEditor() async throws {
     check(c.overlay.card(forRecord: project.id) == nil || c.overlay.card(forRecord: project.id)?.state == .closing, "and closes the card")
     check(w.presented.contains { $0 === c.videoEditors[key]?.window } && nothingOnScreen(), "the editor is presented through the environment and stays off screen here")
     let editor = c.videoEditors[key]
-    check(editor?.window?.title == folder.lastPathComponent, "the window is titled with the recording's name", detail: editor?.window?.title ?? "nil")
+    check(editor?.window?.title == "Cornermark Recording 2026-11-03 at 14.05.09", "the window is titled with the recording's name, without the package extension", detail: editor?.window?.title ?? "nil")
 
     c.perform(.openHistory)
     guard let h = c.history else { return check(false, "History opens") }
