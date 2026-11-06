@@ -61,8 +61,10 @@ final class L10nTests: XCTestCase {
         L10n.setLanguage(.de, current: Locale(identifier: "de_CH"))
         XCTAssertEqual(L10n.locale.identifier, "de_CH")
         L10n.setLanguage(.ar, current: Locale(identifier: "de_CH"))
-        XCTAssertEqual(L10n.locale.identifier, "ar")
+        XCTAssertEqual(L10n.locale.numberingSystem.identifier, "arab")
         XCTAssertTrue(L10n.isRightToLeft)
+        L10n.setLanguage(.ar, current: Locale(identifier: "ar_MA"))
+        XCTAssertEqual(L10n.locale.identifier, "ar_MA")
     }
 
     func testCatalogParsesPluralForms() throws {
@@ -85,5 +87,32 @@ final class PseudoLanguageTests: XCTestCase {
         XCTAssertTrue(L10n.isRightToLeft)
         L10n.setLanguage(.en)
         XCTAssertEqual(tr("Save"), "Save")
+    }
+}
+
+final class EmbeddedCatalogTests: XCTestCase {
+    override func tearDown() { L10n.setLanguage(.en) }
+
+    func testEveryLanguageShipsACompleteCatalog() throws {
+        let enURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Localization/en.json")
+        let english = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: enURL)) as? [String: Any])
+        for language in Language.allCases where language != .en {
+            let json = try XCTUnwrap(Catalogs.json[language.rawValue], "\(language.rawValue) is not embedded")
+            let catalog = try Catalog(json: json)
+            XCTAssertEqual(Set(catalog.entries.keys), Set(english.keys), "\(language.rawValue) keys")
+        }
+    }
+
+    func testSwitchingLanguageTranslatesAtRuntime() {
+        L10n.setLanguage(.tr, current: Locale(identifier: "en_US"))
+        XCTAssertEqual(tr("General"), "Genel")
+        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 3), "3 gün")
+        L10n.setLanguage(.ar, current: Locale(identifier: "en_US"))
+        XCTAssertNotEqual(tr("General"), "General")
+        XCTAssertTrue(trPlural(one: "{count} second", other: "{count} seconds", count: 5).contains("٥"))
+        XCTAssertEqual(trPlural(one: "{count} second", other: "{count} seconds", count: 2), "ثانيتان")
+        L10n.setLanguage(.en)
+        XCTAssertEqual(tr("General"), "General")
     }
 }

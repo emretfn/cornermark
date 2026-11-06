@@ -72,7 +72,8 @@ public enum L10n {
     }
 
     private static func apply(_ language: Language, current: Locale, pseudo: ((String) -> String)?) {
-        let locale = Language(preference: current.identifier) == language ? current : Locale(identifier: language.rawValue)
+        // The pseudo language keeps English number formatting so harness expectations stay put.
+        let locale = pseudo != nil ? current : Language(preference: current.identifier) == language ? current : defaultLocale(for: language)
         let changed: Bool = lock.withLock {
             guard pseudo != nil || state.pseudo != nil || state.language != language || state.locale.identifier != locale.identifier else { return false }
             state = State(language: language, locale: locale, catalog: catalog(for: language), pseudo: pseudo)
@@ -81,6 +82,12 @@ public enum L10n {
         guard changed else { return }
         let post = { NotificationCenter.default.post(name: didChange, object: nil) }
         if Thread.isMainThread { post() } else { DispatchQueue.main.sync(execute: post) }
+    }
+
+    /// The locale for a language the Mac does not already run in. Arabic's CLDR default writes Latin digits,
+    /// but the Arabic catalog writes Arabic-Indic digits inside sentences, so both are made to agree.
+    static func defaultLocale(for language: Language) -> Locale {
+        Locale(identifier: language == .ar ? "ar@numbers=arab" : language.rawValue)
     }
 
     private static func catalog(for language: Language) -> Catalog {
@@ -93,13 +100,10 @@ public enum L10n {
 
     static func lookup(_ key: String) -> (CatalogEntry?, Language, Locale) {
         lock.withLock {
-            let entry = state.catalog.entries[key]
-            guard let pseudo = state.pseudo else { return (entry, state.language, state.locale) }
-            switch entry {
-            case .plural(let forms)?: return (.plural(forms.mapValues(pseudo)), state.language, state.locale)
-            case .text(let s)?: return (.text(pseudo(s)), state.language, state.locale)
-            case nil: return (.text(pseudo(key)), state.language, state.locale)
-            }
+            // The pseudo language renders the English through `transform`, never a catalog, so a harness check
+            // reads the same text whatever the translations say.
+            guard let pseudo = state.pseudo else { return (state.catalog.entries[key], state.language, state.locale) }
+            return (.text(pseudo(key)), state.language, state.locale)
         }
     }
 
