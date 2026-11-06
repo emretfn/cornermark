@@ -81,7 +81,7 @@ Press `Ctrl+Shift+9` and select an area, a window, or a whole display. **Record 
 A recording made for editing opens in the video editor: settings on the left, the preview in the middle, and the timeline at the bottom. You can:
 
 - Split, delete, and trim clips, and undo every edit.
-- Add zooms on the timeline. The camera eases in and out, and zooms that follow each other hand over without returning to full size.
+- Add zooms on the timeline. A zoom holds the spot where you added it or follows the pointer, the camera eases in and out, and zooms that follow each other hand over without returning to full size.
 - Resize, restyle, smooth, or hide the pointer, and show clicks with a press effect and a ripple.
 - Move or restyle the camera bubble and the keystroke badge, and set the level of each sound track.
 - Put the video on a gradient, a wallpaper, a picture, or a colour, with padding, a shadow, rounded corners, and an aspect ratio such as 16:9 or 9:16.
