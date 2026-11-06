@@ -106,7 +106,7 @@ enum VideoEditorFilm {
     }
 
     static func e3(_ f: Film, _ s: EditorStage) async throws {
-        f.title = "E3  The settings rail: Cursor, Keystrokes, Audio, Camera, Background and Motion Blur. Choosing one switches the panel."
+        f.title = "E3  The settings rail: Cursor, Clicks, Keystrokes, Audio, Camera, Background and Motion Blur. Choosing one switches the panel."
         guard let editor = try await s.openProject() else { throw FilmError.missing("the editor") }
         let video = editor.videoURL
         let before = sha256OrUnreadable(video)
@@ -114,7 +114,7 @@ enum VideoEditorFilm {
         for section in EditorSection.allCases.dropFirst() + [.cursor] {
             let button = editor.view(identifier: "video.rail.\(section.rawValue)") as! NSButton
             await s.press(button, in: editor, note: section.title)
-            f.hold(1.6, "\(section.title): \(section == .cursor ? "Show cursor and Size." : InspectorView.note(section))")
+            f.hold(1.6, "\(section.title): \(section == .cursor ? "Show cursor and Size." : section == .clicks ? "Press effect and Ripple." : InspectorView.note(section))")
         }
         let show = editor.view(identifier: "video.cursor.show") as! NSButton
         await s.press(show, in: editor, note: "Show cursor: off")

@@ -111,7 +111,7 @@ func checkVideoZoom() async throws {
     check(title?.stringValue == "Zoom" && panel?.isHidden == false && editor.view(identifier: "video.cursor.show")?.isHidden == true,
           "picking a zoom switches the panel to the zoom's settings", detail: title?.stringValue ?? "nil")
     let rail = EditorSection.allCases.compactMap { editor.view(identifier: "video.rail.\($0.rawValue)") as? IconButton }
-    check(rail.count == 6 && rail.allSatisfy { !$0.isSelected }, "the rail marks no section while a zoom has the panel")
+    check(rail.count == EditorSection.allCases.count && rail.allSatisfy { !$0.isSelected }, "the rail marks no section while a zoom has the panel")
     let blocks = (lane.accessibilityChildren() as? [NSAccessibilityElement]) ?? []
     check(blocks.count == 1 && blocks[0].accessibilityLabel() == "Zoom 200%, \(Timecode.text(1)) to \(Timecode.text(3))" && blocks[0].isAccessibilitySelected(),
           "each zoom is an accessible button naming its level and times", detail: blocks.first?.accessibilityLabel() ?? "none")

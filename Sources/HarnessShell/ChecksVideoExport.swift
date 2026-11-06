@@ -352,7 +352,7 @@ private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: S
 @MainActor
 private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: ScriptedClock, root: URL, decoder: (URL) -> StillFrames?) async throws {
     section("video export: cursor style, motion and hiding match the preview")
-    let copy = try movingPointerCopy(of: folder, in: root)
+    let copy = try clickingCopy(of: folder, in: root)
     var typed = try RecordingProjectFile.read(from: copy)
     typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false)]
     try RecordingProjectFile.write(typed, to: copy)
@@ -418,4 +418,5 @@ private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: Scripted
     shown.edits.cursor = choices[0]
     check((0.0...0.9).contains(frameState(shown, outputTime: 1.25).cursor?.opacity ?? -1) && frameState(shown, outputTime: 1.6).cursor == nil,
           "the measured moments include a pointer mid-fade and a hidden one")
+    try await checkClickExport(editor, frames: frames, clock: clock, root: root)
 }

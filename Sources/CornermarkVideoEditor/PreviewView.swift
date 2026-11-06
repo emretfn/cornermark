@@ -15,11 +15,10 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera(); marks.show(state?.input, crop: state?.crop ?? .full) } } }
-    /// How the click rings and the keystroke badge look, from the project's edits.
-    var inputLook = (clicks: ClickHighlight(), keystrokes: KeystrokeDisplay()) {
-        didSet { if oldValue.clicks != inputLook.clicks || oldValue.keystrokes != inputLook.keystrokes { marks.look = inputLook } }
-    }
+    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera(); placeRings(); badge.show(state?.input.badge, crop: state?.crop ?? .full) } } }
+    var highlight = ClickHighlight() { didSet { if oldValue != highlight { placeRings() } } }
+    /// How the keystroke badge looks, from the project's edits.
+    var keystrokes = KeystrokeDisplay() { didSet { if oldValue != keystrokes { badge.look = keystrokes } } }
     /// Where the recording sits on the finished video.
     var canvas: VideoCanvas? { didSet { if oldValue != canvas { needsLayout = true } } }
     /// The picture the background shows when its fill is an added image.
@@ -40,10 +39,11 @@ final class PreviewView: NSView {
     private let picture = CALayer()
     private let pointer = CAShapeLayer()
     private var pointerStyle = CursorStyle.white
+    private var rings: [RingLayer] = []
     /// The camera's shadow, and inside it the clipped picture, drawn as `CameraBubblePainter` draws it in export.
     private let cameraHolder = CALayer()
     private let cameraPicture = CALayer()
-    private let marks = InputMarksLayer()
+    private let badge = BadgeLayer()
     /// What the stage shows now, so a layout that changes nothing draws nothing.
     private var drawnBackdrop: (canvas: VideoCanvas, width: Int, height: Int)?
 
@@ -71,7 +71,7 @@ final class PreviewView: NSView {
         cameraHolder.isHidden = true
         cameraHolder.addSublayer(cameraPicture)
         picture.addSublayer(cameraHolder)
-        picture.addSublayer(marks)
+        picture.addSublayer(badge)
         picture.addSublayer(pointer)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -107,14 +107,15 @@ final class PreviewView: NSView {
             stage.frame = stageRect
             picture.frame = CGRect(x: f.minX * kx, y: stageRect.height - f.maxY * ky, width: f.width * kx, height: f.height * ky)
             picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
-            marks.frame = picture.bounds
-            marks.pointSize = pointSize
-            marks.contentsScale = window?.backingScaleFactor ?? 2
+            badge.frame = picture.bounds
+            badge.pointSize = pointSize
+            badge.contentsScale = window?.backingScaleFactor ?? 2
         }
         drawBackdrop(canvas)
         placeCrop()
         placeCursor()
         placeCamera()
+        placeRings()
     }
 
     /// Where the recording sits in the view, in the view's bottom-left coordinates, after the last layout.
@@ -178,6 +179,27 @@ final class PreviewView: NSView {
         pointerStyle = style
     }
 
+    private func placeRings() {
+        withoutAnimation {
+            let placed = pointSize.width > 0 && pointSize.height > 0 ? state?.input.rings ?? [] : []
+            while rings.count < placed.count {
+                let ring = RingLayer()
+                picture.insertSublayer(ring, below: pointer)
+                rings.append(ring)
+            }
+            let size = picture.bounds.size
+            let crop = state?.crop ?? .full
+            let kx = size.width / (pointSize.width * crop.width), ky = size.height / (pointSize.height * crop.height)
+            for (i, layer) in rings.enumerated() {
+                guard i < placed.count else { layer.isHidden = true; continue }
+                layer.isHidden = false
+                layer.show(placed[i], highlight)
+                layer.position = CGPoint(x: (placed[i].x - crop.x * pointSize.width) * kx, y: size.height - (placed[i].y - crop.y * pointSize.height) * ky)
+                layer.setAffineTransform(CGAffineTransform(scaleX: kx, y: ky))
+            }
+        }
+    }
+
     /// Camera rects count from the area's top-left corner with y down, like pointer samples.
     private func placeCamera() {
         withoutAnimation {
@@ -212,13 +234,42 @@ final class PreviewView: NSView {
     }
 }
 
-/// The click rings and the keystroke badge, drawn by the painter export uses into a layer over the picture, through the zoom's crop. It
-/// redraws only when the marks or the crop change while a mark is on screen.
-final class InputMarksLayer: CALayer {
+private final class RingLayer: CALayer {
+    private let halo = CAShapeLayer()
+    private let line = CAShapeLayer()
+
+    override init() {
+        super.init()
+        allowsGroupOpacity = true
+        for l in [halo, line] { addSublayer(l) }
+        line.fillColor = nil
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+    required init?(coder: NSCoder) { fatalError("RingLayer is created in code") }
+
+    func show(_ ring: ClickRing, _ h: ClickHighlight) {
+        let width = InputOverlayPainter.ringLineWidth(h)
+        let path = CGPath(ellipseIn: CGRect(x: -ring.radius, y: -ring.radius, width: ring.radius * 2, height: ring.radius * 2), transform: nil)
+        let color = InputOverlayInk.design.click(h.color)
+        opacity = Float(ring.opacity)
+        halo.path = path
+        halo.fillColor = h.style == .filled ? color.copy(alpha: InputOverlayPainter.ringFillAlpha) : nil
+        halo.strokeColor = InputOverlayInk.design.halo
+        halo.lineWidth = InputOverlayPainter.ringHaloWidth(h)
+        line.path = path
+        line.strokeColor = color
+        line.lineWidth = width
+    }
+}
+
+/// The keystroke badge, drawn by the painter export uses into a layer over the picture, through the zoom's crop. Click rings are not its
+/// business: `RingLayer`s draw them, so a ring is drawn once. It redraws only when the badge or the crop change while a badge is on screen.
+private final class BadgeLayer: CALayer {
     var pointSize = CGSize(width: 16, height: 9) { didSet { if oldValue != pointSize { setNeedsDisplay() } } }
-    var look = (clicks: ClickHighlight(), keystrokes: KeystrokeDisplay()) { didSet { setNeedsDisplay() } }
-    private var input = InputOverlayState()
-    /// The part of the recorded area the picture shows. The marks sit in the recording's points, so the crop moves them like the pointer.
+    var look = KeystrokeDisplay() { didSet { setNeedsDisplay() } }
+    private var badge: KeyBadge?
+    /// The part of the recorded area the picture shows. The badge sits in the recording's points, so the crop moves it like the pointer.
     private var crop = ZoomRect.full
 
     override init() {
@@ -231,23 +282,22 @@ final class InputMarksLayer: CALayer {
         super.init(layer: layer)
     }
 
-    required init?(coder: NSCoder) { fatalError("InputMarksLayer is created in code") }
+    required init?(coder: NSCoder) { fatalError("BadgeLayer is created in code") }
 
-    func show(_ next: InputOverlayState?, crop nextCrop: ZoomRect) {
-        let next = next ?? InputOverlayState()
-        guard next != input || nextCrop != crop else { return }
-        let drawsSomething = !input.isEmpty || !next.isEmpty
-        input = next
+    func show(_ next: KeyBadge?, crop nextCrop: ZoomRect) {
+        guard next != badge || nextCrop != crop else { return }
+        let drawsSomething = badge != nil || next != nil
+        badge = next
         crop = nextCrop
         if drawsSomething { setNeedsDisplay() }
     }
 
     override func draw(in ctx: CGContext) {
-        guard !input.isEmpty, pointSize.width > 0, pointSize.height > 0 else { return }
+        guard let badge, pointSize.width > 0, pointSize.height > 0 else { return }
         // The layer counts from its bottom-left, the painter in the recording's points from the top-left.
         ctx.translateBy(x: 0, y: bounds.height)
         ctx.scaleBy(x: bounds.width / (pointSize.width * crop.width), y: -bounds.height / (pointSize.height * crop.height))
         ctx.translateBy(x: -crop.x * pointSize.width, y: -crop.y * pointSize.height)
-        InputOverlayPainter.draw(input, area: pointSize, highlight: look.clicks, keystrokes: look.keystrokes, ink: .design, in: ctx)
+        InputOverlayPainter.draw(InputOverlayState(badge: badge), area: pointSize, highlight: ClickHighlight(), keystrokes: look, ink: .design, in: ctx)
     }
 }

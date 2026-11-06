@@ -42,7 +42,7 @@ public struct ExportFrameRenderer: @unchecked Sendable {
     /// The recorded area in points, the unit of pointer positions.
     public let pointSize: CGSize
     public let canvas: VideoCanvas
-    let clicks: ClickHighlight
+    let highlight: ClickHighlight
     let keystrokes: KeystrokeDisplay
     /// The fill and shadow, made once: the recording is opaque, so nothing behind it changes from frame to frame.
     let backdrop: CGImage?
@@ -52,7 +52,7 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         width = plan.width; height = plan.height
         pointSize = CGSize(width: max(project.source.pointWidth, 1), height: max(project.source.pointHeight, 1))
         canvas = project.canvas
-        clicks = project.edits.clicks
+        highlight = project.edits.clicks
         keystrokes = project.edits.keystrokes
         backdrop = VideoBackdrop.image(canvas, width: plan.width, height: plan.height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
     }
@@ -82,7 +82,7 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         }
         // The crop zooms the recording inside the frame, and the frame's clip cuts what falls outside it.
         if let source { ctx.draw(source, in: Self.pictureRect(state.crop, in: frame)) }
-        // The camera bubble is an overlay on the frame, so it ignores the crop. The keystroke badge and the pointer are in recording points and follow it.
+        // The camera bubble is an overlay on the frame, so it ignores the crop. Rings and the pointer are in recording points and follow it.
         if let placed = state.camera, let camera {
             ctx.saveGState()
             ctx.translateBy(x: frame.minX, y: frame.maxY)
@@ -96,7 +96,7 @@ public struct ExportFrameRenderer: @unchecked Sendable {
             ctx.scaleBy(x: frame.width / (pointSize.width * crop.width), y: -frame.height / (pointSize.height * crop.height))
             ctx.translateBy(x: -pointSize.width * crop.x, y: -pointSize.height * crop.y)
             if !state.input.isEmpty {
-                InputOverlayPainter.draw(state.input, area: pointSize, highlight: clicks, keystrokes: keystrokes, ink: .design, in: ctx)
+                InputOverlayPainter.draw(state.input, area: pointSize, highlight: highlight, keystrokes: keystrokes, ink: .design, in: ctx)
             }
             if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
         }

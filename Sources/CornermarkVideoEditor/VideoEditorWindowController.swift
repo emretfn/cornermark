@@ -262,6 +262,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
         inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }
+        inspector.onClicks = { [unowned self] in setClickHighlight($0) }
         inspector.backgroundPanel.onChange = { [unowned self] in setBackground($0, coalescing: $1) }
         inspector.backgroundPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
         inspector.backgroundPanel.onAddImage = { [unowned self] in addBackgroundImage() }
@@ -372,6 +373,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         var edits = state.project.edits
         edits.audio = audio
         commit(edits, coalescing: key)
+    }
+
+    public func setClickHighlight(_ clicks: ClickHighlight) {
+        var edits = state.project.edits
+        edits.clicks = clicks
+        commit(edits)
     }
 
     // MARK: Clips
@@ -900,7 +907,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             cameraFrames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying)
             if let image = cameraFrames.frame(at: frame.sourceTime) { preview.cameraImage = image }
         }
-        preview.inputLook = (state.project.edits.clicks, state.project.edits.keystrokes)
+        preview.keystrokes = state.project.edits.keystrokes
+        preview.highlight = state.project.edits.clicks
         preview.state = frame
         preview.canvas = state.project.canvas
         timeline.time = t
@@ -931,7 +939,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let size = ExportPlan(project: project, settings: ExportSettings())
         inspector.backgroundPanel.videoSize = CGSize(width: size.width, height: size.height)
         let zooms = project.edits.zooms
-        inspector.show(state.section, cursor: project.edits.cursor, background: background, picture: backgroundPicture.image,
+        inspector.show(state.section, cursor: project.edits.cursor, clicks: project.edits.clicks, hasClicks: !project.events.clicks.isEmpty,
+                       background: background, picture: backgroundPicture.image,
                        zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count,
                        origin: project.source.origin, hasAudio: frames.hasAudio)
         timeline.zoomLane.zooms = zooms
