@@ -331,10 +331,9 @@ final class BackgroundPanel: NSView {
         aspect.controlSize = .small
         aspect.font = DS.Text.label.font
         aspect.setAccessibilityIdentifier("video.background.aspect")
-        aspect.setAccessibilityLabel("Aspect ratio")
+        aspect.setAccessibilityLabel("Ratio")
         aspect.toolTip = "The finished video's shape"
         let menu = NSMenu()
-        // Auto, then wide and square shapes, then tall ones, then Custom.
         for (i, option) in VideoAspect.presets.enumerated() {
             if i == 1 || option == .ratio(width: 4, height: 5) { menu.addItem(Self.separator()) }
             let item = NSMenuItem(title: option.title, action: nil, keyEquivalent: "")
@@ -358,7 +357,6 @@ final class BackgroundPanel: NSView {
         return item
     }
 
-    /// Two numbers whose ratio is the shape, shown only for Custom.
     private func customAspectRow() -> NSView {
         let times = NSTextField.label("\u{00D7}", style: DS.Text.caption, color: DS.Color.textSecondary)
         times.alignment = .center
@@ -367,7 +365,7 @@ final class BackgroundPanel: NSView {
             field.cell?.sendsActionOnEndEditing = true
             field.setAccessibilityIdentifier(id)
             field.setAccessibilityLabel(label)
-            field.toolTip = "Only the shape counts: Export sets the size"
+            field.toolTip = "Only the shape counts: Export sets the size. Shapes run from 1:4 to 4:1."
             field.target = self
             field.action = #selector(customAspectTyped)
         }
@@ -408,7 +406,7 @@ final class BackgroundPanel: NSView {
 
     @objc private func customAspectTyped() {
         guard case .custom(let w, let h) = background.aspect else { return }
-        func side(_ field: NSTextField, _ old: Int) -> Int { Int(field.stringValue.filter(\.isNumber)) ?? old }
+        func side(_ field: NSTextField, _ old: Int) -> Int { Int(field.stringValue.trimmingCharacters(in: .whitespaces)) ?? old }
         let typed = VideoAspect.custom(side(aspectWidth, w), side(aspectHeight, h))
         if typed != background.aspect {
             var next = background

@@ -126,8 +126,11 @@ func checkVideoAspect(_ w: World, folder: URL) async throws {
     height?.stringValue = "99999"; height.map(fire)
     check(editor.state.project.edits.background.aspect == .custom(width: 2500, height: 9999) && height?.stringValue == "9999" && width?.stringValue == "2500",
           "a number past the limits is held to them and the fields show what the video uses", detail: "\(editor.state.project.edits.background.aspect)")
-    width?.stringValue = "abc"; width.map(fire)
-    check(width?.stringValue == "2500", "a field that is not a number goes back to the value in use")
+    for typed in ["abc", "2.35"] {
+        width?.stringValue = typed; width.map(fire)
+        check(width?.stringValue == "2500" && editor.state.project.edits.background.aspect == .custom(width: 2500, height: 9999),
+              "a field that is not a whole number, here \(typed), goes back to the value in use", detail: width?.stringValue ?? "nil")
+    }
     editor.undo(); editor.undo()
     check(editor.state.project.edits.background.aspect == .custom(width: 1080, height: before.height), "each typed number is one undo step",
           detail: "\(editor.state.project.edits.background.aspect)")

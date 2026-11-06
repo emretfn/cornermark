@@ -60,7 +60,6 @@ public struct VideoBackground: Codable, Equatable, Sendable {
 /// The finished video's shape. Auto keeps the shape the recording and its padding give; a ratio grows the video to it around them.
 public enum VideoAspect: Hashable, Codable, Sendable {
     case auto
-    /// One of `presets`.
     case ratio(width: Int, height: Int)
     /// Typed by the viewer. Only the shape counts: the export panel picks the size.
     case custom(width: Int, height: Int)
