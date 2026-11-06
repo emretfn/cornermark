@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// Large countdown digits centred on a display. Keys still reach the session so Escape cancels.
 final class CountdownPanel: OverlayWindow {
@@ -9,10 +10,11 @@ final class CountdownPanel: OverlayWindow {
     init(display: DisplayGeometry, host: OverlayHost) {
         let size = CountdownView.size
         let frame = CGRect(x: display.frame.midX - size.width / 2, y: display.frame.midY - size.height / 2, width: size.width, height: size.height)
-        view = CountdownView(frame: CGRect(origin: .zero, size: size), hint: "Esc to cancel")
+        view = CountdownView(frame: CGRect(origin: .zero, size: size), hint: tr("Esc to cancel"))
         super.init(frame: frame)
         keyHost = host
         contentView = view
+        view.applyLanguageDirection()
     }
 
     func show(_ remaining: Int) {
@@ -28,7 +30,7 @@ public final class CountdownView: NSView {
     public static let size = CGSize(width: card.width + 2 * inset, height: card.height + 2 * inset)
 
     public var remaining = 0 { didSet { needsDisplay = true } }
-    private let hint: String
+    public let hint: String
 
     public init(frame: CGRect, hint: String) {
         self.hint = hint
@@ -45,7 +47,7 @@ public final class CountdownView: NSView {
         let hintBox = CGRect(x: card.minX, y: card.minY + DS.Space.s16, width: card.width, height: hint.lineHeight)
         let digit = DS.Text.numeral
         let digitBox = CGRect(x: card.minX, y: hintBox.maxY + DS.Space.s8, width: card.width, height: digit.lineHeight)
-        for (text, style, color, box) in [("\(remaining)", digit, DS.Color.textPrimary, digitBox), (self.hint, hint, DS.Color.textSecondary, hintBox)] {
+        for (text, style, color, box) in [(Readout.number(remaining), digit, DS.Color.textPrimary, digitBox), (self.hint, hint, DS.Color.textSecondary, hintBox)] {
             var attributes = style.attributes(color: color)
             let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
             paragraph.alignment = .center
@@ -110,40 +112,88 @@ final class ScrollHUDView: Surface {
     var onDone: (() -> Void)?
     var onCancel: (() -> Void)?
     private var preview: CGImage?
-    private let done = Button(title: "Done", variant: .primary)
-    private let cancel = Button(title: "Cancel", variant: .secondary)
-    private let title = NSTextField.label("Scrolling capture", style: DS.Text.captionStrong, color: DS.Color.textSecondary)
+    private var progress = ScrollProgress()
+    private var languageObserver: NSObjectProtocol?
+    private let done = Button(title: tr("Done"), variant: .primary)
+    private let cancel = Button(title: tr("Cancel"), variant: .secondary)
+    private let title = NSTextField.label(tr("Scrolling capture"), style: DS.Text.captionStrong, color: DS.Color.textSecondary)
     private let height = NSTextField.label("", style: DS.Text.readoutLarge, color: DS.Color.textPrimary)
     private let hintIcon = NSImageView()
     private let hintText = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
-    private var well: CGRect { contentRect.insetBy(dx: DS.Space.s12, dy: DS.Space.s12).divided(atDistance: 52, from: .minXEdge).slice }
+    private var leftToRight = LeftToRightFrames()
+    /// Where the text column starts, laid out left to right.
+    private var textX: CGFloat = 0
+    private var leftToRightWell: CGRect { contentRect.insetBy(dx: DS.Space.s12, dy: DS.Space.s12).divided(atDistance: 52, from: .minXEdge).slice }
+    /// The preview's well sits first in reading order, so on the right in a right-to-left language. The picture in it is never mirrored.
+    private var well: CGRect { mirrored(leftToRightWell) }
 
     init(frame frameRect: NSRect) {
         super.init(style: .hud, shadowInset: Self.inset)
         setFrameSize(Self.size)
 
         let card = contentRect
-        let textX = well.maxX + DS.Space.s12
+        textX = leftToRightWell.maxX + DS.Space.s12
         let textWidth = card.maxX - DS.Space.s12 - textX
         title.frame = CGRect(x: textX, y: card.maxY - DS.Space.s12 - DS.Text.captionStrong.lineHeight, width: textWidth, height: DS.Text.captionStrong.lineHeight)
         height.frame = CGRect(x: textX, y: title.frame.minY - DS.Space.s2 - DS.Text.readoutLarge.lineHeight, width: textWidth, height: DS.Text.readoutLarge.lineHeight)
         hintIcon.symbolConfiguration = .init(pointSize: DS.Size.iconSmall, weight: .medium)
-        hintIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Warning")
+        hintIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: tr("Warning"))
         hintIcon.contentTintColor = DS.Color.warningText
         hintIcon.frame = CGRect(x: textX, y: height.frame.minY - DS.Space.s4 - DS.Text.caption.lineHeight, width: DS.Size.iconSmall, height: DS.Text.caption.lineHeight)
         hintText.frame = CGRect(x: textX, y: hintIcon.frame.minY, width: textWidth, height: DS.Text.caption.lineHeight)
 
-        done.frame.origin = CGPoint(x: card.maxX - DS.Space.s12 - done.frame.width, y: card.minY + DS.Space.s12)
         done.target = self; done.action = #selector(doneTapped)
         done.setAccessibilityIdentifier("cornermark.scroll.done")
-        cancel.frame.origin = CGPoint(x: done.frame.minX - DS.Space.s8 - cancel.frame.width, y: done.frame.minY)
         cancel.target = self; cancel.action = #selector(cancelTapped)
         cancel.setAccessibilityIdentifier("cornermark.scroll.cancel")
         for v in [title, height, hintIcon, hintText, done, cancel] as [NSView] { addSubview(v) }
+        layoutButtons()
         apply(ScrollProgress(), preview: nil)
+        leftToRight.record(in: self)
+        applyLanguageDirection()
+        leftToRight.apply(to: self)
+        languageObserver = NotificationCenter.default.addObserver(forName: L10n.didChange, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.languageChanged() }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit {
+        if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
+    }
+
+    /// Done sits at the end of the card and Cancel before it, each as wide as its title, so a new language lays them out again.
+    private func layoutButtons() {
+        let card = contentRect
+        for button in [done, cancel] { button.frame.size = button.intrinsicContentSize }
+        let doneFrame = CGRect(origin: CGPoint(x: card.maxX - DS.Space.s12 - done.frame.width, y: card.minY + DS.Space.s12), size: done.frame.size)
+        place(done, ltr: doneFrame)
+        place(cancel, ltr: CGRect(origin: CGPoint(x: doneFrame.minX - DS.Space.s8 - cancel.frame.width, y: doneFrame.minY), size: cancel.frame.size))
+    }
+
+    private func place(_ view: NSView, ltr: CGRect) {
+        view.frame = mirrored(ltr)
+        leftToRight.record(view, in: self)
+    }
+
+    /// The card is on screen while a capture scrolls, so a language switch re-words it in place and keeps its progress and preview.
+    private func languageChanged() {
+        title.stringValue = tr("Scrolling capture")
+        done.title = tr("Done")
+        cancel.title = tr("Cancel")
+        done.setAccessibilityLabel(done.title)
+        cancel.setAccessibilityLabel(cancel.title)
+        hintIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: tr("Warning"))
+        layoutButtons()
+        apply(progress, preview: nil)
+        applyLanguageDirection()
+        needsDisplay = true
+    }
+
+    override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { leftToRight.apply(to: self) }
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) {}
@@ -153,14 +203,16 @@ final class ScrollHUDView: Surface {
 
     func apply(_ progress: ScrollProgress, preview: CGImage?) {
         if let preview { self.preview = preview }
+        self.progress = progress
         height.stringValue = Self.format(progress.lines)
         let warning = progress.hint == .scrollSlower
         // The warning never rides on colour alone: it keeps its own symbol and wording.
         hintIcon.isHidden = !warning
         hintText.textColor = warning ? DS.Color.warningText : DS.Color.textSecondary
-        hintText.stringValue = warning ? "Scroll slower, or back up a little" : (progress.lines == 0 ? "Starting" : "Keep scrolling down")
-        hintText.frame.origin.x = (warning ? hintIcon.frame.maxX + DS.Space.s4 : hintIcon.frame.minX)
-        hintText.frame.size.width = contentRect.maxX - DS.Space.s12 - hintText.frame.minX
+        hintText.stringValue = warning ? tr("Scroll slower, or back up a little") : (progress.lines == 0 ? tr("Starting") : tr("Keep scrolling down"))
+        let hintX = warning ? textX + DS.Size.iconSmall + DS.Space.s4 : textX
+        hintText.frame = mirrored(CGRect(x: hintX, y: hintText.frame.minY, width: contentRect.maxX - DS.Space.s12 - hintX, height: hintText.frame.height))
+        leftToRight.record(hintText, in: self)
         needsDisplay = true
     }
 
@@ -178,9 +230,7 @@ final class ScrollHUDView: Surface {
     }
 
     private static func format(_ lines: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return (f.string(from: NSNumber(value: lines)) ?? "\(lines)") + " px"
+        tr("{lines} px", ["lines": lines])
     }
 }
 
