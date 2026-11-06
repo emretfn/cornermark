@@ -194,6 +194,7 @@ Task { @MainActor in
         try await checkVideoAfterRecording()
         try await checkVideoMotionBlur()
         try await checkVideoShortcuts()
+        try await checkLocalizedWindows()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")
