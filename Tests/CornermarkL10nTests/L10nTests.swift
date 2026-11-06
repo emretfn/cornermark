@@ -72,3 +72,18 @@ final class L10nTests: XCTestCase {
         XCTAssertThrowsError(try Catalog(json: #"{"x": {"several": "y"}}"#))
     }
 }
+
+final class PseudoLanguageTests: XCTestCase {
+    override func tearDown() { L10n.setLanguage(.en) }
+
+    func testPseudoLanguageMarksEveryString() {
+        L10n.setPseudoLanguage(.ar) { "‹\($0)›" }
+        XCTAssertEqual(tr("Save"), "‹Save›")
+        XCTAssertEqual(tr("Version {version}.", ["version": "2"]), "‹Version 2.›")
+        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 1), "‹1 day›")
+        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 3), "‹3 days›")
+        XCTAssertTrue(L10n.isRightToLeft)
+        L10n.setLanguage(.en)
+        XCTAssertEqual(tr("Save"), "Save")
+    }
+}

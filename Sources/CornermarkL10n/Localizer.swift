@@ -48,6 +48,7 @@ public enum L10n {
         var language: Language = .en
         var locale = Locale(identifier: "en")
         var catalog = Catalog(entries: [:])
+        var pseudo: ((String) -> String)?
     }
 
     private static let lock = NSLock()
@@ -61,10 +62,20 @@ public enum L10n {
 
     /// Switches the interface language. A no-op when nothing changes; otherwise posts `didChange`.
     public static func setLanguage(_ language: Language, current: Locale = .current) {
+        apply(language, current: current, pseudo: nil)
+    }
+
+    /// For the harnesses: switches to `language` but renders every string, translated or not, through `transform`,
+    /// so a check can tell a string that follows the language from one that was left hard-coded.
+    public static func setPseudoLanguage(_ language: Language, transform: @escaping (String) -> String) {
+        apply(language, current: Locale(identifier: "en_US_POSIX"), pseudo: transform)
+    }
+
+    private static func apply(_ language: Language, current: Locale, pseudo: ((String) -> String)?) {
         let locale = Language(preference: current.identifier) == language ? current : Locale(identifier: language.rawValue)
         let changed: Bool = lock.withLock {
-            guard state.language != language || state.locale.identifier != locale.identifier else { return false }
-            state = State(language: language, locale: locale, catalog: catalog(for: language))
+            guard pseudo != nil || state.pseudo != nil || state.language != language || state.locale.identifier != locale.identifier else { return false }
+            state = State(language: language, locale: locale, catalog: catalog(for: language), pseudo: pseudo)
             return true
         }
         guard changed else { return }
@@ -81,7 +92,15 @@ public enum L10n {
     }
 
     static func lookup(_ key: String) -> (CatalogEntry?, Language, Locale) {
-        lock.withLock { (state.catalog.entries[key], state.language, state.locale) }
+        lock.withLock {
+            let entry = state.catalog.entries[key]
+            guard let pseudo = state.pseudo else { return (entry, state.language, state.locale) }
+            switch entry {
+            case .plural(let forms)?: return (.plural(forms.mapValues(pseudo)), state.language, state.locale)
+            case .text(let s)?: return (.text(pseudo(s)), state.language, state.locale)
+            case nil: return (.text(pseudo(key)), state.language, state.locale)
+            }
+        }
     }
 
     /// Fills `{name}` placeholders. Numbers are written the way `locale` writes them.
@@ -117,9 +136,15 @@ public func trPlural(one: String, other: String, count: Int, _ args: [String: An
     let (entry, language, locale) = L10n.lookup(other)
     var all = args
     all["count"] = count
-    if case .plural(let forms)? = entry {
+    switch entry {
+    case .plural(let forms)?:
         let form = forms[language.pluralCategory(for: count)] ?? forms[.other] ?? other
         return L10n.fill(form, all, locale: locale)
+    case .text(let pseudo)? where pseudo != other:
+        let (oneEntry, _, _) = L10n.lookup(one)
+        if count == 1, case .text(let pseudoOne)? = oneEntry { return L10n.fill(pseudoOne, all, locale: locale) }
+        return L10n.fill(pseudo, all, locale: locale)
+    default: break
     }
     return L10n.fill(count == 1 ? one : other, all, locale: locale)
 }

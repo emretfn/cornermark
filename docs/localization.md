@@ -49,3 +49,7 @@ Arabic, Hebrew and Persian mirror the interface. `NSApp.userInterfaceLayoutDirec
 2. Run `swift run L10nCheck --write`. It rewrites `en.json` and lists the keys every language is now missing or no longer uses.
 3. Translate those keys in each `Localization/<code>.json` from the English, then run `--write` again.
 4. `swift run L10nCheck` must print `RESULT ok`.
+
+## Checking a window in a harness
+
+`L10n.setPseudoLanguage(.ar) { "‹\($0)›" }` switches to a right-to-left language and wraps every string that goes through `tr`. A harness check walks the window's views after the switch and asserts that each visible label, button title, tooltip and accessibility label is wrapped, so a hard-coded string or a window that did not re-render fails. `L10n.setLanguage(.en)` switches back. The harnesses never read the Mac's language: `L10n` starts in English, and the harness environment reports English as the preferred language.
