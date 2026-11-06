@@ -921,7 +921,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         state.export = .exporting(0)
         refresh()
         onExport(.started(ExportPlan(project: project, settings: settings, sourceBytes: sourceBytes)))
-        let job = Task.detached {
+        let job = Task.detached(priority: .userInitiated) {
             try await VideoExporter.export(project: project, video: video, settings: settings, to: output) { [weak self] fraction in
                 Task { @MainActor in self?.exportProgressed(fraction) }
             }

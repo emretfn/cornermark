@@ -187,9 +187,13 @@ final class VideoExporterTests: XCTestCase {
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")
+        // Progress arrives on the export's own thread, so the job is cancelled from outside, the way the editor's Cancel does.
+        final class Job: @unchecked Sendable { var task: Task<ExportReport, Error>? }
+        let job = Job()
         let task = Task { try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: out) { fraction in
-            if fraction > 0.2 { withUnsafeCurrentTask { $0?.cancel() } }
+            if fraction > 0.2 { job.task?.cancel() }
         } }
+        job.task = task
         do {
             _ = try await task.value
             XCTFail("a cancelled export must not finish")

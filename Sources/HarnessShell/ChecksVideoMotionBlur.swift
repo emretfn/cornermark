@@ -236,7 +236,8 @@ func checkVideoMotionBlur() async throws {
             }
             print(String(format: "BLURPARITY %@° %@ t=%.3f samples=%d accumulator-vs-reference %@ | file-vs-reference %@ | file-vs-sharp %@", name, kind, t,
                          samples.count, acc.description, enc.description, vsSharp.description))
-            check(acc.max <= 1, "\(name)° \(kind): the accumulator is the plain average of its drawings", detail: acc.description)
+            // A frame whose crop moves is averaged on the GPU, whose sampler differs from Core Graphics by a few levels at sharp edges.
+            check(acc.max <= 8 && acc.over16 == 0 && acc.psnr > 55, "\(name)° \(kind): the accumulator is the plain average of its drawings", detail: acc.description)
             check(enc.psnr > 35, "\(name)° \(kind): the file's frame is the reference within compression loss", detail: enc.description)
             if kind == "still" {
                 check(samples.count == 1, "\(name)° still: a still frame is drawn once")

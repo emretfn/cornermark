@@ -106,6 +106,12 @@ func runGifTests() async {
         check(customFacts?.frames == 30 && customFacts?.width == 480 && customFacts?.loopCount == 0, "options set the rate and the size",
               detail: "\(customFacts?.frames ?? -1) frames, \(customFacts?.width ?? -1) wide, loop \(String(describing: customFacts?.loopCount))")
 
+        // Threads scale the frames and encode the batches beside each other; the bytes of the file must not depend on how many there are.
+        let serial = try await GifConverter.convert(report.url, to: gif("one-thread"), workers: 1)
+        let wide = try await GifConverter.convert(report.url, to: gif("many-threads"), workers: 6)
+        let one = try? Data(contentsOf: serial.url), many = try? Data(contentsOf: wide.url), standard = try? Data(contentsOf: out.url)
+        check(one != nil && one == many && one == standard, "the GIF is the same file with one thread or six", detail: "\(one?.count ?? -1) / \(many?.count ?? -1) / \(standard?.count ?? -1) bytes")
+
         let (long, longVideo) = try await recordFixture("gif-long", area: nil, fps: 30, pacing: .scripted(frames: 600))
         let before = footprintMB()
         let longGif = try await GifConverter.convert(long.url, to: gif("long"))
