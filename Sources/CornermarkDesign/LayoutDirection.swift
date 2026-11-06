@@ -13,13 +13,26 @@ extension NSView {
     /// Sets the current language's layout direction on this view and every subview, so leading and trailing
     /// constraints and stack views mirror. Call it after building a view tree and after adding subviews later.
     public func applyLanguageDirection(_ direction: NSUserInterfaceLayoutDirection = L10n.layoutDirection) {
+        var flipped: [NSView] = []
+        setDirection(direction, flipped: &flipped)
+        // Inside a window, an active leading or trailing constraint keeps the side it resolved to when it was
+        // activated, so flipping a view's direction moves nothing until its constraints are activated again.
+        let sided: Set<NSLayoutConstraint.Attribute> = [.leading, .trailing]
+        let owners = flipped + [superview].compactMap { $0 }
+        let stale = Set(owners.flatMap(\.constraints)).filter { sided.contains($0.firstAttribute) || sided.contains($0.secondAttribute) }
+        NSLayoutConstraint.deactivate(Array(stale))
+        NSLayoutConstraint.activate(Array(stale))
+    }
+
+    private func setDirection(_ direction: NSUserInterfaceLayoutDirection, flipped: inout [NSView]) {
         let resolved: NSUserInterfaceLayoutDirection = self is KeepsLeftToRight ? .leftToRight : direction
         if userInterfaceLayoutDirection != resolved {
             userInterfaceLayoutDirection = resolved
+            flipped.append(self)
             needsLayout = true
             needsDisplay = true
         }
-        for sub in subviews { sub.applyLanguageDirection(resolved) }
+        for sub in subviews { sub.setDirection(resolved, flipped: &flipped) }
     }
 
     public var isRightToLeft: Bool { userInterfaceLayoutDirection == .rightToLeft }
