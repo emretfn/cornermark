@@ -1,5 +1,5 @@
 #!/bin/bash
-# link.sh <path> | link.sh open <image-path> | link.sh edit-recording <project-folder> [export] | link.sh unknown-link
+# link.sh <path> | link.sh open <image-or-video-path> | link.sh edit-recording <project-folder> [export] | link.sh unknown-link
 # link.sh record/test-window [editor <project-folder> <scene>] | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | record/camera [query] | link.sh record/stop
 # Sends one link to the recorded instance only, watches focus while it lands, and prints what the app logged.
 set -euo pipefail

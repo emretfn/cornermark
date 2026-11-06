@@ -130,7 +130,7 @@ func checkRecording() async throws {
     check(await waitUntil { w.coordinator.recording.phase == .idle && w.coordinator.hud.lastMessage?.hasPrefix("Saved ") == true }, "the recording finishes and says so", detail: "\(w.coordinator.hud.lastMessage ?? "nil")")
     let folder = w.saveDir
     let files = recordings(in: folder)
-    check(projects(in: folder).map(\.lastPathComponent) == ["Cornermark Recording 2026-11-03 at 14.05.09"], "it lands in the save folder as a project folder with a dated name", detail: "\(projects(in: folder).map(\.lastPathComponent))")
+    check(projects(in: folder).map(\.lastPathComponent) == ["Cornermark Recording 2026-11-03 at 14.05.09.cornermarkvideo"], "it lands in the save folder as a project package with a dated name", detail: "\(projects(in: folder).map(\.lastPathComponent))")
     check(w.coordinator.hud.lastMessage == "Saved Cornermark Recording 2026-11-03 at 14.05.09", "and the message names the project", detail: "\(w.coordinator.hud.lastMessage ?? "nil")")
     if let project = projects(in: folder).first, let saved = try? RecordingProjectFile.read(from: project) {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: project.path)) ?? []).sorted()
@@ -151,7 +151,7 @@ func checkRecording() async throws {
 
     check(link("record?display=1") && link("record/stop"), "a second recording in the same second starts and stops")
     check(await waitUntil { recordings(in: folder).count == 2 && w.coordinator.recording.phase == .idle }, "and gets its own name", detail: "\(projects(in: folder).map(\.lastPathComponent))")
-    check(projects(in: folder).map(\.lastPathComponent).contains("Cornermark Recording 2026-11-03 at 14.05.09 2"), "with a number appended", detail: "\(projects(in: folder).map(\.lastPathComponent))")
+    check(projects(in: folder).map(\.lastPathComponent).contains("Cornermark Recording 2026-11-03 at 14.05.09 2.cornermarkvideo"), "with a number appended", detail: "\(projects(in: folder).map(\.lastPathComponent))")
 
     w.env.frameSource = { _, _ in throw RecordingRefusal.notTestWindow(9) }
     check(link("record?window=9") && w.coordinator.recording.phase == .idle && recordings(in: folder).count == 2 && w.coordinator.hud.lastMessage == "Recording not allowed",

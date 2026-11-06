@@ -3,8 +3,8 @@ import CornermarkCore
 import CornermarkDesign
 import QuartzCore
 
-/// The finished video at the playhead: the background, the source frame `frameState` names, the camera, the click rings and keystroke
-/// badge, and the pointer it places, in the outline export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
+/// The finished video at the playhead: the background, the source frame `frameState` names cropped to its zoom, the camera, the click rings and
+/// keystroke badge, and the pointer it places, in the look export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
 /// The video is content, so only the area around it follows the appearance.
 final class PreviewView: NSView {
     /// The recorded area in points, the unit of pointer positions.
@@ -15,7 +15,7 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCursor(); placeCamera(); marks.show(state?.input) } } }
+    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera(); marks.show(state?.input, crop: state?.crop ?? .full) } } }
     /// How the click rings and the keystroke badge look, from the project's edits.
     var inputLook = (clicks: ClickHighlight(), keystrokes: KeystrokeDisplay()) {
         didSet { if oldValue.clicks != inputLook.clicks || oldValue.keystrokes != inputLook.keystrokes { marks.look = inputLook } }
@@ -39,6 +39,7 @@ final class PreviewView: NSView {
     private let stage = CALayer()
     private let picture = CALayer()
     private let pointer = CAShapeLayer()
+    private var pointerStyle = CursorStyle.white
     /// The camera's shadow, and inside it the clipped picture, drawn as `CameraBubblePainter` draws it in export.
     private let cameraHolder = CALayer()
     private let cameraPicture = CALayer()
@@ -58,14 +59,8 @@ final class PreviewView: NSView {
         stage.borderWidth = 1
         stage.masksToBounds = true
         stage.addSublayer(picture)
-        let outline = CGMutablePath()
-        outline.addLines(between: PointerShape.outline)
-        outline.closeSubpath()
-        pointer.path = outline
-        pointer.fillColor = PointerShape.fill
-        pointer.strokeColor = PointerShape.stroke
-        pointer.lineWidth = PointerShape.lineWidth
         pointer.lineJoin = .round
+        dress(.white)
         pointer.isHidden = true
         cameraPicture.contentsGravity = .resizeAspectFill
         cameraPicture.masksToBounds = true
@@ -115,8 +110,15 @@ final class PreviewView: NSView {
             marks.contentsScale = window?.backingScaleFactor ?? 2
         }
         drawBackdrop(canvas)
+        placeCrop()
         placeCursor()
         placeCamera()
+    }
+
+    /// Where the recording sits in the view, in the view's bottom-left coordinates, after the last layout.
+    var pictureRect: CGRect {
+        let p = picture.frame
+        return p.offsetBy(dx: stage.frame.minX, dy: stage.frame.minY)
     }
 
     /// The video fitted into the view, in the view's bottom-left coordinates.
@@ -138,7 +140,15 @@ final class PreviewView: NSView {
         withoutAnimation { stage.contents = image }
     }
 
-    /// Pointer samples count from the recorded area's top-left corner with y down; the picture layer counts from its bottom-left.
+    /// The crop picks the part of the recording the frame shows; `contentsRect` counts from the picture's bottom-left, the crop from its
+    /// top-left. The frame's rounded clip and the picture layer's bounds stay put, so the zoom happens inside the frame.
+    private func placeCrop() {
+        let crop = state?.crop ?? .full
+        withoutAnimation { picture.contentsRect = CGRect(x: crop.x, y: 1 - crop.y - crop.height, width: crop.width, height: crop.height) }
+    }
+
+    /// Pointer samples count from the recorded area's top-left corner with y down and sit in recording coordinates, so the crop moves
+    /// them. The picture layer counts from its bottom-left. The camera bubble does not follow the crop: it is a separate overlay.
     private func placeCursor() {
         withoutAnimation {
             guard let cursor = state?.cursor, pointSize.width > 0, pointSize.height > 0 else {
@@ -146,11 +156,24 @@ final class PreviewView: NSView {
                 return
             }
             let size = picture.bounds.size
-            let kx = size.width / pointSize.width, ky = size.height / pointSize.height
+            let crop = state?.crop ?? .full
+            let kx = size.width / (pointSize.width * crop.width), ky = size.height / (pointSize.height * crop.height)
+            if cursor.style != pointerStyle { dress(cursor.style) }
             pointer.isHidden = false
-            pointer.position = CGPoint(x: cursor.x * kx, y: size.height - cursor.y * ky)
+            pointer.opacity = Float(cursor.opacity)
+            pointer.position = CGPoint(x: (cursor.x - crop.x * pointSize.width) * kx,
+                                     y: size.height - (cursor.y - crop.y * pointSize.height) * ky)
             pointer.setAffineTransform(CGAffineTransform(scaleX: cursor.scale * kx, y: -cursor.scale * ky))
         }
+    }
+
+    private func dress(_ style: CursorStyle) {
+        let look = PointerShape.look(style)
+        pointer.path = look.path
+        pointer.fillColor = look.fill
+        pointer.strokeColor = look.stroke
+        pointer.lineWidth = look.lineWidth
+        pointerStyle = style
     }
 
     /// Camera rects count from the area's top-left corner with y down, like pointer samples.
@@ -187,12 +210,14 @@ final class PreviewView: NSView {
     }
 }
 
-/// The click rings and the keystroke badge, drawn by the painter export uses into a layer over the picture. It redraws only when the
-/// marks change, which is never while no key or click is on screen.
+/// The click rings and the keystroke badge, drawn by the painter export uses into a layer over the picture, through the zoom's crop. It
+/// redraws only when the marks or the crop change while a mark is on screen.
 final class InputMarksLayer: CALayer {
     var pointSize = CGSize(width: 16, height: 9) { didSet { if oldValue != pointSize { setNeedsDisplay() } } }
     var look = (clicks: ClickHighlight(), keystrokes: KeystrokeDisplay()) { didSet { setNeedsDisplay() } }
     private var input = InputOverlayState()
+    /// The part of the recorded area the picture shows. The marks sit in the recording's points, so the crop moves them like the pointer.
+    private var crop = ZoomRect.full
 
     override init() {
         super.init()
@@ -206,18 +231,21 @@ final class InputMarksLayer: CALayer {
 
     required init?(coder: NSCoder) { fatalError("InputMarksLayer is created in code") }
 
-    func show(_ next: InputOverlayState?) {
+    func show(_ next: InputOverlayState?, crop nextCrop: ZoomRect) {
         let next = next ?? InputOverlayState()
-        guard next != input else { return }
+        guard next != input || nextCrop != crop else { return }
+        let drawsSomething = !input.isEmpty || !next.isEmpty
         input = next
-        setNeedsDisplay()
+        crop = nextCrop
+        if drawsSomething { setNeedsDisplay() }
     }
 
     override func draw(in ctx: CGContext) {
         guard !input.isEmpty, pointSize.width > 0, pointSize.height > 0 else { return }
         // The layer counts from its bottom-left, the painter in the recording's points from the top-left.
         ctx.translateBy(x: 0, y: bounds.height)
-        ctx.scaleBy(x: bounds.width / pointSize.width, y: -bounds.height / pointSize.height)
+        ctx.scaleBy(x: bounds.width / (pointSize.width * crop.width), y: -bounds.height / (pointSize.height * crop.height))
+        ctx.translateBy(x: -crop.x * pointSize.width, y: -crop.y * pointSize.height)
         InputOverlayPainter.draw(input, area: pointSize, highlight: look.clicks, keystrokes: look.keystrokes, ink: .design, in: ctx)
     }
 }

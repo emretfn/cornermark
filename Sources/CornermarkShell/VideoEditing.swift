@@ -28,18 +28,85 @@ extension AppCoordinator {
         // Only an editor someone can see plays the recording's sound. A harness or a scripted instance never orders windows in.
         editor.playsSound = env.isOnscreen
         editor.exportFolder = { [unowned self] in env.store.incomingDirectory }
-        editor.onExport = { [unowned self] event in handleExport(event, project: key) }
-        editor.onClose = { [unowned self] closed in
-            Log.shell.notice("video editor closed project=\(key.lastPathComponent, privacy: .public) result=\(String(describing: closed), privacy: .public)")
-            if case .failed = closed { hud.show("Could not save the edits. Check that the recording's folder can be written to.", symbol: "exclamationmark.triangle.fill") }
-            videoEditors[key] = nil
+        // Save As moves the editor to another folder, so each callback asks the editor where it is now.
+        editor.onExport = { [weak editor, unowned self] event in handleExport(event, project: editor?.folder ?? key) }
+        editor.onClose = { [weak editor, unowned self] closed in
+            let folder = editor?.folder ?? key
+            Log.shell.notice("video editor closed project=\(folder.lastPathComponent, privacy: .public) result=\(String(describing: closed), privacy: .public)")
+            if case .failed = closed { hud.show("Could not save the edits. Check that the project's folder can be written to.", symbol: "exclamationmark.triangle.fill") }
+            videoEditors[folder] = nil
         }
+        editor.onSave = { [weak editor, unowned self] result in
+            Log.shell.notice("video project saved project=\((editor?.folder ?? key).lastPathComponent, privacy: .public) result=\(String(describing: result), privacy: .public)")
+            if case .failed = result { hud.show("Could not save the edits. Choose File > Save As to keep them somewhere else.", symbol: "exclamationmark.triangle.fill") }
+        }
+        editor.onSaveAs = { [weak editor, unowned self] from, to in
+            guard let editor else { return }
+            videoEditors[from] = nil
+            videoEditors[to] = editor
+            Log.shell.notice("video project saved as project=\(to.lastPathComponent, privacy: .public) from=\(from.lastPathComponent, privacy: .public)")
+            let kind = env.store.list(filter: CaptureFilter(recordings: true)).first { $0.video?.location.standardizedFileURL.resolvingSymlinksInPath().path == from.path }?.kind
+            let project = editor.state.project
+            Task { [self] in await self.listProject(to, project: project, kind: kind ?? .imported) }
+        }
+        // A scripted instance never shows a panel, so Save As writes a copy beside the project.
+        if !env.isOnscreen { editor.chooseSaveLocation = { _, name, done in done(Self.uniquePackage(in: key.deletingLastPathComponent(), name: "\(name) copy")) } }
         videoEditors[key] = editor
         let source = editor.state.project.source
         Log.shell.notice("video editor opened project=\(key.lastPathComponent, privacy: .public) seconds=\(String(format: "%.3f", source.duration), privacy: .public) size=\(source.pixelWidth, privacy: .public)x\(source.pixelHeight, privacy: .public) pointerSamples=\(editor.state.project.events.pointer.count, privacy: .public)")
         env.present(editor.window)
         if env.isOnscreen { editor.show() }
         return editor
+    }
+
+    /// Makes a project from a video file and opens it. The project lands in the save folder and in History, which lists recent projects.
+    func openVideo(_ file: URL) async {
+        let folder = settings.value.resolvedSaveFolder(default: env.defaultSaveFolder)
+        let made: (folder: URL, project: RecordingProject)
+        do { made = try await VideoImport.makeProject(from: file, in: folder) } catch {
+            Log.shell.error("video not opened file=\(file.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            return hud.show(Self.importFailure(error), symbol: "exclamationmark.triangle.fill")
+        }
+        let s = made.project.source
+        Log.shell.notice("video opened from file file=\(file.lastPathComponent, privacy: .public) project=\(made.folder.lastPathComponent, privacy: .public) seconds=\(String(format: "%.3f", s.duration), privacy: .public) size=\(s.pixelWidth, privacy: .public)x\(s.pixelHeight, privacy: .public) fps=\(s.fps, privacy: .public)")
+        await listProject(made.folder, project: made.project, kind: .imported)
+        openVideoEditor(made.folder)
+    }
+
+    /// Asks for a video file to open. A scripted instance has no panel to show and says so.
+    func chooseAndOpenVideo() {
+        guard env.isOnscreen else { return Log.shell.error("open video refused: this instance shows no panels") }
+        chooseVideo { [unowned self] url in if let url { Task { await openVideo(url) } } }
+    }
+
+    private func listProject(_ folder: URL, project: RecordingProject, kind: CaptureKind) async {
+        let video = RecordedVideo(location: folder, format: .project, duration: project.outputDuration)
+        let size = CGSize(width: project.source.pixelWidth, height: project.source.pixelHeight)
+        let poster = await VideoPoster.image(of: video) ?? VideoPoster.placeholder(size)
+        do { _ = try env.store.addRecording(video, poster: poster, kind: kind, pixelSize: size, now: env.clock()) } catch {
+            return Log.shell.error("history write failed for a project: \(error.localizedDescription, privacy: .public)")
+        }
+        history?.reload()
+    }
+
+    static func uniquePackage(in folder: URL, name: String) -> URL {
+        let ext = RecordingProjectFile.packageExtension
+        var url = folder.appendingPathComponent("\(name).\(ext)", isDirectory: true)
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("\(name) \(n).\(ext)", isDirectory: true)
+            n += 1
+        }
+        return url
+    }
+
+    static func importFailure(_ error: Error) -> String {
+        switch error as? VideoImportError {
+        case .notAVideo?: return "Could not open the file. Choose an MP4 or MOV video."
+        case .noPicture?: return "Could not open the video: it has no picture. Choose a video that plays in a player."
+        case .turned?: return "Could not open the video: it is stored turned on its side. Turn it upright in another app, then open it again."
+        case nil: return "Could not open the video. Check that it plays and that the save folder can be written to, then try again."
+        }
     }
 
     func handleExport(_ event: ExportEvent, project folder: URL) {
