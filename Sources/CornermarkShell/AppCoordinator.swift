@@ -83,6 +83,39 @@ final class AppCoordinator {
     }
 
     #if DEBUG
+    /// Scripted checks of the running development app, where nothing outside it may click or take screenshots:
+    /// `debug/language?name=<item>` picks an item of the language popup in Settings > General through the popup's own
+    /// action, as a click would (`system` picks the first item), and `debug/snapshot?window=settings&path=<png>` writes
+    /// the Settings window as it is drawn.
+    private func handleDebug(_ url: URL) -> Bool {
+        let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        func find<T: NSView>(_ type: T.Type, _ id: String, in view: NSView?) -> T? {
+            guard let view else { return nil }
+            if let match = view as? T, match.accessibilityIdentifier() == id { return match }
+            return view.subviews.lazy.compactMap { find(type, id, in: $0) }.first
+        }
+        switch url.path {
+        case "/language":
+            showSettings()
+            guard let popup = find(NSPopUpButton.self, "general.language", in: settingsWindow?.window?.contentView), let name = query["name"] else { return false }
+            let index = name == "system" ? 0 : popup.indexOfItem(withTitle: name)
+            guard index >= 0 else { return false }
+            popup.selectItem(at: index)
+            popup.sendAction(popup.action, to: popup.target)
+            Log.shell.notice("debug language picked=\(name, privacy: .public) now=\(L10n.language.rawValue, privacy: .public)")
+            return true
+        case "/snapshot":
+            guard query["window"] == "settings", let path = query["path"], let frame = settingsWindow?.window?.contentView?.superview,
+                  let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return false }
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            do { try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) } catch { return false }
+            Log.shell.notice("debug snapshot path=\(path, privacy: .public)")
+            return true
+        default:
+            return false
+        }
+    }
+
     private func testStage() -> NSView? {
         guard let root = AppEnvironment.isolatedRoot, let file = RecordingTestStageFile.read(root: root), file.stage == "audio" else { return nil }
         let ctx = SettingsContext(env: env, store: settings, hotKeyStatus: { [:] }, loginError: { nil })
@@ -129,6 +162,9 @@ final class AppCoordinator {
     /// Entry for `cornermark://` links. Anything unrecognized is logged and ignored.
     @discardableResult
     func handle(url: URL) -> Bool {
+        #if DEBUG
+        if url.host == "debug" { return handleDebug(url) }
+        #endif
         switch URLCommand.parse(url, timerSeconds: settings.value.timerSeconds) {
         case .success(let action):
             #if DEBUG
