@@ -38,6 +38,7 @@ Task { @MainActor in
     await runInputTests()
     await runCameraTests()
     await runAudioTests()
+    await runMicrophoneFormatTests()
     check(LiveMicrophoneSource.sessionsOpened == 0 && MicrophoneAccess.requests == 0, "no real audio device was opened and microphone access was never requested")
     check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))
     let c = Checks.shared
