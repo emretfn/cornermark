@@ -33,7 +33,7 @@ enum InputFilm {
         f.toggle("recording.clicks", in: sw, note: "Highlight clicks: on")
         f.hold(1.2, "Ring options wake up: color, style and size, and Animate clicks.")
         try await recordAndPlay(f, w, "display=1&style=video", keep: "R12-default", seconds: 2.5,
-                                note: "Record Video with the defaults: an animated lemon outline ring at each scripted click.")
+                                note: "Record MP4 with the defaults: an animated lemon outline ring at each scripted click.")
         f.layers = { [unowned f] in f.windowLayer(sw.window!, at: f.settingsOrigin) }
         f.refresh()
         f.choose("recording.clickColor", 3, in: sw, note: "Color: Red")
@@ -65,7 +65,7 @@ enum InputFilm {
         f.refresh()
         f.toggle("recording.clicks", in: sw, note: "Highlight clicks: on, animated, the default")
         try await recordAndPlay(f, w, "display=1&style=video", keep: "R13-recorded", seconds: 5.5,
-                                note: "Record Video of the whole fixture display. Clicks at 0.3, 1.9, 3.5 and 5.1 s.")
+                                note: "Record MP4 of the whole fixture display. Clicks at 0.3, 1.9, 3.5 and 5.1 s.")
         try await replay(f, "R13-recorded", from: 1.7, to: 2.5, speed: 0.1,
                          note: "The click at 1.9 s at a tenth of the speed: the ring grows from 60% and fades out by 2.3 s.")
     }
@@ -95,7 +95,7 @@ enum InputFilm {
         f.choose("recording.keyStyle", 0, in: sw, note: "Style: Dark")
         try await recordAndPlay(f, w, "display=1&style=video", keep: "R14-all-bottom-right-small-dark", seconds: 5.5,
                                 note: "Bottom right, small, dark.")
-        try await recordProject(f, w, note: "Record for Editing keeps the keys as a track in project.json, with these settings, and no badge in its video.")
+        try await recordProject(f, w, note: "Record Project keeps the keys as a track in project.json, with these settings, and no badge in its video.")
         f.layers = { [unowned f] in f.windowLayer(sw.window!, at: f.settingsOrigin) }
         f.dark = true
         f.refresh()
@@ -112,7 +112,7 @@ enum InputFilm {
         f.refresh()
         f.toggle("recording.keys", in: sw, note: "Show keystrokes: on, Shortcuts only, the default")
         try await recordAndPlay(f, w, "display=1&style=video", keep: "R15-recorded", seconds: 6.5,
-                                note: "Record Video. Shortcuts at 0.9 s (⇧⌘4) and 4.6 s (⌘S).")
+                                note: "Record MP4. Shortcuts at 0.9 s (⇧⌘4) and 4.6 s (⌘S).")
         try await replay(f, "R15-recorded", from: 0.8, to: 1.3, speed: 0.1,
                          note: "The entry at a tenth of the speed: it grows from 90% to full size in 0.2 s.")
         try await replay(f, "R15-recorded", from: 2.3, to: 2.9, speed: 0.25,
@@ -179,7 +179,7 @@ enum InputFilm {
         let k = project.edits.keystrokes
         let keys = project.events.keys.map { String(format: "%.2f %@", $0.t, $0.label) }.joined(separator: ", ")
         f.status = { "project.json events.keys: \(keys)   edits.keystrokes: \(k.keys.rawValue) \(k.position.rawValue) \(k.size.rawValue) \(k.theme.rawValue)" }
-        await f.show(record.video!.file, label: "Record for Editing", at: 3.0, extra: "  keys in project.json: \(project.events.keys.count), clicks: \(project.events.clicks.count)")
+        await f.show(record.video!.file, label: "Record Project", at: 3.0, extra: "  keys in project.json: \(project.events.keys.count), clicks: \(project.events.clicks.count)")
         f.layers = { [unowned f] in f.resultLayers() }
         f.refresh()
         f.hold(4, note)

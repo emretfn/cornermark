@@ -34,26 +34,26 @@ enum OverlayFilm {
         await r.open(at: CGPoint(x: 330, y: 520))
         r.hold(1.2, note: "Ctrl+Shift+9 (Record Screen) opened the overlay. Nothing is selected, so the start buttons wait.")
         r.drag(from: CGPoint(x: 330, y: 520), to: CGPoint(x: 950, y: 170), frames: 45, note: "Dragging an area")
-        r.hold(1.5, note: "The panel sits in the middle of the selection: targets, W x H, aspect ratio, Record Video, Record for Editing.")
+        r.hold(1.5, note: "The panel sits in the middle of the selection: targets, W x H, aspect ratio, Record MP4, Record Project.")
         r.type("640", into: "width", note: "Typing an exact width")
         r.type("360", into: "height", note: "Typing an exact height")
         r.hold(1.0, note: "The selection is now 640 x 360, top-left corner kept.")
         r.choose(aspect: 2, note: "Aspect ratio set to 4:3 in the panel")
         r.hold(1.0, note: "The aspect lock keeps the width and makes it 4:3: 640 x 480.")
-        await r.click("start.video", note: "Record Video")
+        await r.click("start.video", note: "Record MP4")
         await r.result(1.8)
     }
 
     static func r2(_ r: Reel) async {
-        r.title = "R2  The panel has three start buttons, each showing its shortcut: Record Video (Return), Record for Editing (Shift-Return), Record GIF (Option-Return)."
+        r.title = "R2  The panel has three start buttons, each showing its shortcut: Record MP4 (Return), Record Project (Shift-Return), Record GIF (Option-Return)."
         let area = CGRect(x: 300, y: 180, width: 680, height: 380)
         r.remember(area)
         await r.open(at: CGPoint(x: 640, y: 300))
-        r.hold(1.5, note: "Record Video is the one primary action. Record for Editing keeps the pointer and edits changeable. Record GIF makes an animated GIF.")
-        r.glide(to: r.center(of: "start.video"), frames: 18, note: "Record Video shows Return")
-        r.hold(0.8, note: "Record Video shows Return")
-        r.glide(to: r.center(of: "start.editing"), frames: 14, note: "Record for Editing shows Shift-Return")
-        r.hold(0.8, note: "Record for Editing shows Shift-Return")
+        r.hold(1.5, note: "Record MP4 is the one primary action. Record Project keeps the pointer and edits changeable. Record GIF makes an animated GIF.")
+        r.glide(to: r.center(of: "start.video"), frames: 18, note: "Record MP4 shows Return")
+        r.hold(0.8, note: "Record MP4 shows Return")
+        r.glide(to: r.center(of: "start.editing"), frames: 14, note: "Record Project shows Shift-Return")
+        r.hold(0.8, note: "Record Project shows Shift-Return")
         r.key(36, "\r", [.shift], note: "Pressed Shift-Return")
         await r.result(1.6)
         r.remember(area)
@@ -63,7 +63,7 @@ enum OverlayFilm {
         await r.result(1.6)
         r.remember(area)
         await r.open(at: CGPoint(x: 640, y: 300))
-        await r.click("start.editing", note: "Clicked Record for Editing")
+        await r.click("start.editing", note: "Clicked Record Project")
         await r.result(1.6)
     }
 
@@ -72,7 +72,7 @@ enum OverlayFilm {
         let area = CGRect(x: 300, y: 180, width: 680, height: 380)
         r.remember(area)
         await r.open(at: CGPoint(x: 640, y: 300))
-        r.hold(1.2, note: "The overlay opens on the last area. Three start buttons: Record Video, Record for Editing, Record GIF.")
+        r.hold(1.2, note: "The overlay opens on the last area. Three start buttons: Record MP4, Record Project, Record GIF.")
         r.glide(to: r.center(of: "start.gif"), frames: 18, note: "Record GIF shows Option-Return")
         r.hold(1.0, note: "Record GIF shows Option-Return")
         await r.click("start.gif", note: "Clicked Record GIF")
@@ -104,7 +104,7 @@ enum OverlayFilm {
         await r.click("target.area", note: "Area target again")
         r.hold(0.8, note: "Back to drawing an area")
         r.drag(from: CGPoint(x: 420, y: 560), to: CGPoint(x: 1000, y: 220), frames: 26, note: "Area")
-        await r.click("start.video", note: "Record Video")
+        await r.click("start.video", note: "Record MP4")
         await r.result(1.5)
         await r.open(at: CGPoint(x: 640, y: 360))
         await r.click("target.fullscreen", note: "Fullscreen target")
@@ -130,7 +130,7 @@ enum OverlayFilm {
         r.hold(0.6, note: "Moving away keeps the pick")
         r.clickDesktop(note: "Clicked Terminal: the pick moves to it")
         r.hold(1.2, note: "Terminal picked")
-        await r.click("start.video", note: "Record Video")
+        await r.click("start.video", note: "Record MP4")
         await r.result(2.0)
     }
 
@@ -153,7 +153,7 @@ enum OverlayFilm {
         }
         r.drag(from: CGPoint(x: 300, y: 370), to: CGPoint(x: 300, y: 445), frames: 24, note: "Moving the selection up towards the top of the display")
         r.hold(1.4, note: "Moved and snapped: top flush with the display (720), right edge back on Notes (640)")
-        await r.click("start.video", note: "Record Video")
+        await r.click("start.video", note: "Record MP4")
         await r.result(1.4)
         await r.open(at: CGPoint(x: 640, y: 100))
         r.hold(2.0, note: "Opened again: the last area is already selected")
@@ -331,7 +331,7 @@ final class Reel {
             case .display(let id, nil):
                 what = "the whole of display \(id.map(String.init) ?? "?")"
             }
-            let result: [RecordingStyle: String] = [.video: "a video (Record Video)", .editing: "a project (Record for Editing)", .gif: "an animated GIF (Record GIF)"]
+            let result: [RecordingStyle: String] = [.video: "a video (Record MP4)", .editing: "a project (Record Project)", .gif: "an animated GIF (Record GIF)"]
             text = "Overlay closed. It asks to record \(what), as \(result[style] ?? style.rawValue)."
         case .cancelled?: text = "Overlay closed. Nothing is recorded."
         default:

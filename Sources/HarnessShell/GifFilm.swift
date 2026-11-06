@@ -88,7 +88,7 @@ enum GifFilm {
         f.layers = { f.cardLayers(w) + f.magnified(w) }
         f.status = { "history: \(w.store.list().count) entries  cards: \(c.overlay.stack.count)  converting: \(c.makingGifs.count)" }
         f.hold(1.2, "The desktop. Nothing is recording.")
-        await f.record(w, "display=1&x=0&y=0&width=960&height=540&style=video", label: nil, note: "Record Video runs, then stops")
+        await f.record(w, "display=1&x=0&y=0&width=960&height=540&style=video", label: nil, note: "Record MP4 runs, then stops")
         guard let video = w.store.list().first, let file = video.video?.file, let card = c.overlay.card(forRecord: video.id),
               let view = c.overlay.cardView(for: card), let panel = c.overlay.panel(for: card) else { throw FilmError.missing("the video card") }
         let hash = sha256(file)
@@ -116,7 +116,7 @@ enum GifFilm {
 
         let project = await recordOnce(w, "display=1&x=0&y=0&width=960&height=540")
         f.refresh()
-        f.hold(1.5, "A Record for Editing project: its card has no Convert to GIF, because its pointer is not in its video.")
+        f.hold(1.5, "A Record Project project: its card has no Convert to GIF, because its pointer is not in its video.")
         try await showHistory(f, w, select: video.id, note: "History: the video selected. Convert to GIF is on.")
         guard let h = c.history, let hw = h.window, let button = h.actionButtons["gif"] else { throw FilmError.missing("Convert to GIF in History") }
         f.glide(to: f.center(of: button, in: hw, at: f.historyOrigin), "Convert to GIF in the action bar")

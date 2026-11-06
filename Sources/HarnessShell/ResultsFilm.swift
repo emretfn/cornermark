@@ -31,7 +31,7 @@ enum ResultsFilm {
         defer { w.cleanup() }
         let sw = try f.openRecordingPane(w)
         f.hold(1.5, "Settings > Recording. Defaults: 60 fps, High, Retina, No limit.")
-        await f.record(w, "display=1&x=0&y=0&width=960&height=540&style=video", label: "Defaults", note: "Record Video of a 960 x 540 pt area on a 2x display")
+        await f.record(w, "display=1&x=0&y=0&width=960&height=540&style=video", label: "Defaults", note: "Record MP4 of a 960 x 540 pt area on a 2x display")
         f.hold(2.5, "Retina keeps every pixel: 1920 x 1080 at 60 fps.")
         f.choose("recording.fps", 0, in: sw, note: "Frame rate: 30 fps")
         f.choose("recording.quality", 2, in: sw, note: "Quality: Low")
@@ -48,20 +48,20 @@ enum ResultsFilm {
     }
 
     static func r16(_ f: Film) async throws {
-        f.title = "R16  Show or hide the cursor. Record Video draws it into the picture; Record for Editing keeps it as a track that starts shown or hidden."
+        f.title = "R16  Show or hide the cursor. Record MP4 draws it into the picture; Record Project keeps it as a track that starts shown or hidden."
         let (w, _) = try recordingWorld(frames: 45)
         defer { w.cleanup() }
         let sw = try f.openRecordingPane(w)
         f.hold(1.5, "Settings > Recording > Show cursor is on.")
-        await f.record(w, "display=1&x=0&y=0&width=320&height=180&style=video", label: "Show cursor on", note: "Record Video with the cursor shown", at: 0.3)
+        await f.record(w, "display=1&x=0&y=0&width=320&height=180&style=video", label: "Show cursor on", note: "Record MP4 with the cursor shown", at: 0.3)
         f.hold(2.5, "The cursor is part of the video's picture.")
         f.toggle("recording.cursor", in: sw, note: "Show cursor: off")
-        await f.record(w, "display=1&x=0&y=0&width=320&height=180&style=video", label: "Show cursor off", note: "Record Video with the cursor hidden", at: 0.3)
+        await f.record(w, "display=1&x=0&y=0&width=320&height=180&style=video", label: "Show cursor off", note: "Record MP4 with the cursor hidden", at: 0.3)
         f.hold(2.5, "Same moment, same scene, no cursor in the picture.")
-        await f.record(w, "display=1&x=0&y=0&width=320&height=180", label: "For Editing, cursor off", note: "Record for Editing with the cursor hidden", at: 0.3)
-        f.hold(3, "Record for Editing never films the cursor. Its project starts with the cursor hidden and keeps the track to show later.")
+        await f.record(w, "display=1&x=0&y=0&width=320&height=180", label: "Project, cursor off", note: "Record Project with the cursor hidden", at: 0.3)
+        f.hold(3, "Record Project never films the cursor. Its project starts with the cursor hidden and keeps the track to show later.")
         f.toggle("recording.cursor", in: sw, note: "Show cursor: on again")
-        await f.record(w, "display=1&x=0&y=0&width=320&height=180", label: "For Editing, cursor on", note: "Record for Editing with the cursor shown", at: 0.3)
+        await f.record(w, "display=1&x=0&y=0&width=320&height=180", label: "Project, cursor on", note: "Record Project with the cursor shown", at: 0.3)
         f.hold(3, "Now its project starts with the cursor shown. The video itself is still cursor-free.")
         f.dark = true
         f.refresh()
@@ -75,7 +75,7 @@ enum ResultsFilm {
         let c = w.coordinator
         f.layers = { f.cardLayers(w) + f.magnified(w) }
         f.hold(1.2, "The desktop. Nothing is recording.")
-        await f.record(w, "display=1&x=0&y=0&width=960&height=540&style=video", label: nil, note: "Record Video runs, then stops")
+        await f.record(w, "display=1&x=0&y=0&width=960&height=540&style=video", label: nil, note: "Record MP4 runs, then stops")
         guard let video = w.store.list(filter: CaptureFilter(recordings: true)).first, let card = c.overlay.card(forRecord: video.id),
               let view = c.overlay.cardView(for: card), let panel = c.overlay.panel(for: card) else { throw FilmError.missing("the video card") }
         f.status = { "history: \(w.store.list().count) entries, newest video=\(video.video!.format.rawValue) \(ImageOutput.durationText(video.video!.duration))  cards: \(c.overlay.stack.count)" }
@@ -94,8 +94,8 @@ enum ResultsFilm {
         view.mouseExited(with: Synth.enterExit(.mouseExited, in: panel))
         f.glide(to: CGPoint(x: 600, y: 420), "Moving away")
         f.refresh()
-        await f.record(w, "display=1&x=0&y=0&width=960&height=540", label: nil, note: "Record for Editing runs, then stops")
-        f.hold(2.2, "A second card stacks above the first. Record for Editing offers Edit instead of Play and shows its project folder.")
+        await f.record(w, "display=1&x=0&y=0&width=960&height=540", label: nil, note: "Record Project runs, then stops")
+        f.hold(2.2, "A second card stacks above the first. Record Project offers Edit instead of Play and shows its project folder.")
 
         c.perform(.openHistory)
         guard let h = c.history, let hw = h.window else { throw FilmError.missing("History") }

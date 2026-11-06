@@ -333,7 +333,7 @@ final class RecordingPane: SettingsPane {
                 Form.row(title: "Largest size", caption: Form.caption("A larger recording is scaled down to fit."), control: limit),
             ], footer: "Recordings are saved to the save folder set in General."),
             .init("Cursor", rows: [
-                Form.row(title: "Show cursor", caption: Form.caption("Record Video draws the cursor into the video. Record for Editing keeps it separate, so you can still hide it later."),
+                Form.row(title: "Show cursor", caption: Form.caption("Record MP4 draws the cursor into the video. Record Project keeps it separate, so you can still hide it later."),
                          control: cursor),
             ]),
             .init("While recording", rows: [
@@ -343,7 +343,7 @@ final class RecordingPane: SettingsPane {
                 Form.row(title: "Keep notifications out of the video", caption: Form.caption("Notifications still appear on your screen."), control: notifications),
             ], footer: "The display stays awake while recording."),
             .init("Clicks", rows: [
-                Form.row(title: "Highlight clicks", caption: Form.caption("Draws a ring where you click. Record for Editing keeps every click, so you can add rings later."),
+                Form.row(title: "Highlight clicks", caption: Form.caption("Draws a ring where you click. Record Project keeps every click, so you can add rings later."),
                          control: clicks),
                 Form.row(title: "Ring", control: Form.hstack([clickColor, clickStyle, clickSize], spacing: DS.Space.s6)),
                 Form.row(title: "Animate clicks", control: clickAnimation),

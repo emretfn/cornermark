@@ -88,6 +88,44 @@ public enum RecordingStyle: String, Hashable, CaseIterable {
     case gif
 }
 
+/// What a recording takes besides the picture. The recording panel has one toggle for each.
+public enum RecordingSource: String, Hashable, CaseIterable, Sendable {
+    case microphone, systemAudio, camera, input
+
+    public var name: String {
+        switch self {
+        case .microphone: return "Microphone"
+        case .systemAudio: return "System audio"
+        case .camera: return "Camera"
+        case .input: return "Clicks and keys"
+        }
+    }
+}
+
+/// What the recording panel shows of the sources: the ones the next recording takes, and one line about a source that needs attention.
+public struct RecordingSources: Equatable, Sendable {
+    public enum Note: Equatable, Sendable {
+        /// A source someone wants but cannot have yet, and how to allow it.
+        case blocked(String)
+        /// Worth knowing before a start button is pressed.
+        case hint(String)
+
+        public var text: String {
+            switch self {
+            case .blocked(let text), .hint(let text): return text
+            }
+        }
+    }
+
+    public var on: Set<RecordingSource>
+    public var note: Note?
+
+    public init(on: Set<RecordingSource> = [], note: Note? = nil) {
+        self.on = on
+        self.note = note
+    }
+}
+
 public enum Flow: Hashable {
     /// Releasing the mouse commits (area, scrolling).
     case immediate

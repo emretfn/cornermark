@@ -88,7 +88,7 @@ struct RecordingPreferences: Codable, Equatable {
     var quality: VideoQuality = .high
     var density: PixelDensity = .retina
     var limit: SizeLimit = .none
-    /// Record Video draws the pointer into its picture. Record for Editing keeps it as a track either way, and this is whether it starts shown.
+    /// Record MP4 draws the pointer into its picture. Record Project keeps it as a track either way, and this is whether it starts shown.
     var showCursor = true
     var showQuickAccess = true
     static let countdownChoices = [0, 3, 5, 10]

@@ -1,22 +1,41 @@
 import AppKit
 import CornermarkDesign
 
-/// The panel of a recording overlay: what to film, its size, and the buttons that start it. It sits in the middle of the
-/// selection. Mouse events stop here so clicking its background never starts a new selection underneath it.
+/// The panel of a recording overlay: what to film, its size, what the recording takes besides the picture, and the buttons that start
+/// it. It sits in the middle of the selection. Mouse events stop here so clicking its background never starts a new selection underneath it.
 final class RecordingPanel: Surface {
     var onAction: ((ToolbarAction) -> Void)?
+    var onToggle: ((RecordingSource) -> Void)?
 
     /// Holds the `hud` elevation's ambient shadow (blur 24 at y 8) with room to spare.
     private static let inset = DS.Space.s32
     private static let fieldWidth: CGFloat = 52
     private static let aspectWidth: CGFloat = 72
     private static let keyNames: [RecordingStyle: String] = [.video: "Return", .editing: "Shift-Return", .gif: "Option-Return"]
+    /// What each start button leaves behind, for its tooltip and VoiceOver.
+    static let outcomes: [RecordingStyle: String] = [
+        .video: "Saves one MP4 to share right away, with the pointer drawn in",
+        .editing: "Saves a project you can edit: pointer, clicks, keys, camera and sound stay separate until you export",
+        .gif: "Saves one animated GIF, without sound",
+    ]
+
+    /// A source's toggle: the glyph while it is on and the slashed one while it is off, so the state never rests on colour alone.
+    static func look(_ source: RecordingSource) -> (on: String, off: String, help: String) {
+        switch source {
+        case .microphone: return ("mic.fill", "mic.slash", "Record your voice. Record GIF never records sound.")
+        case .systemAudio: return ("speaker.wave.2.fill", "speaker.slash", "Record what your Mac plays. Record GIF never records sound.")
+        case .camera: return ("video.fill", "video.slash", "Show the camera in a bubble.")
+        case .input: return ("cursorarrow.click.2", "cursorarrow.slash", "Show clicks and keystrokes.")
+        }
+    }
 
     private let targets: [(mode: ToolbarMode, button: IconButton)]
     private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
     private let widthField = TextInput(placeholder: "W", monospaced: true, centered: true)
     private let heightField = TextInput(placeholder: "H", monospaced: true, centered: true)
     private let starts: [(style: RecordingStyle, button: Button)]
+    private let sources: [(source: RecordingSource, button: IconButton)]
+    private let note = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
 
     init() {
         targets = [
@@ -25,10 +44,11 @@ final class RecordingPanel: Surface {
             (.fullscreen, IconButton(symbol: "display", label: "Fullscreen", size: .large)),
         ]
         starts = [
-            (.video, Button(title: "Record Video", variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}")),
-            (.editing, Button(title: "Record for Editing", variant: .secondary, size: .large, shortcut: "\u{21E7}\u{21A9}")),
+            (.video, Button(title: "Record MP4", variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}")),
+            (.editing, Button(title: "Record Project", variant: .secondary, size: .large, shortcut: "\u{21E7}\u{21A9}")),
             (.gif, Button(title: "Record GIF", variant: .secondary, size: .large, shortcut: "\u{2325}\u{21A9}")),
         ]
+        sources = RecordingSource.allCases.map { ($0, IconButton(symbol: Self.look($0).off, label: $0.name, size: .regular)) }
         super.init(style: .hud, shadowInset: Self.inset)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -38,9 +58,10 @@ final class RecordingPanel: Surface {
         let row = DS.Size.controlLarge
         let left = Self.inset + pad
 
-        // The top row, laid out first to learn the panel's width.
+        // The top row, laid out first to learn the panel's width. The sources sit between it and the start buttons.
         var x = left
-        let top = Self.inset + pad + row + 2 * pad
+        let middle = Self.inset + pad + row + 2 * pad
+        let top = middle + DS.Size.control + 2 * pad
         func centred(_ height: CGFloat) -> CGFloat { top + (row - height) / 2 }
         func divider() {
             x += DS.Space.s8
@@ -109,11 +130,35 @@ final class RecordingPanel: Surface {
             item.button.action = #selector(startClicked(_:))
             item.button.setAccessibilityIdentifier("cornermark.record.start.\(item.style.rawValue)")
             let key = Self.keyNames[item.style] ?? "Return"
-            item.button.toolTip = "\(item.button.title) (\(key))"
+            let outcome = Self.outcomes[item.style] ?? ""
+            item.button.toolTip = "\(outcome) (\(key))"
             item.button.setAccessibilityLabel("\(item.button.title), \(key)")
+            item.button.setAccessibilityHelp(outcome + ".")
             addSubview(item.button)
             bx += share + (i < starts.count - 1 ? gap : 0)
         }
+
+        var sx = left
+        for item in sources {
+            item.button.frame.origin = CGPoint(x: sx, y: middle)
+            item.button.selection = .neutral
+            item.button.target = self
+            item.button.action = #selector(sourceClicked(_:))
+            item.button.setAccessibilityIdentifier("cornermark.record.source.\(item.source.rawValue)")
+            item.button.setAccessibilityRole(.checkBox)
+            item.button.setAccessibilityHelp(Self.look(item.source).help)
+            addSubview(item.button)
+            sx += DS.Size.control + DS.Space.s4
+        }
+        let noteX = sx - DS.Space.s4 + DS.Space.s12
+        note.frame = CGRect(x: noteX, y: middle, width: max(x, bx) - noteX, height: DS.Size.control)
+        note.maximumNumberOfLines = 2
+        note.lineBreakMode = .byWordWrapping
+        note.cell?.wraps = true
+        note.cell?.truncatesLastVisibleLine = true
+        note.setAccessibilityIdentifier("cornermark.record.sources.note")
+        addSubview(note)
+        show(RecordingSources())
 
         setFrameSize(NSSize(width: max(x, bx) + pad + Self.inset, height: top + row + pad + Self.inset))
     }
@@ -140,6 +185,28 @@ final class RecordingPanel: Surface {
 
     /// The visible panel, inside the transparent margin that holds its shadow.
     var pillRect: CGRect { contentRect }
+
+    /// The toggles follow what the next recording takes. The note is set to its text's height and centred on the toggles.
+    func show(_ state: RecordingSources) {
+        for item in sources {
+            let on = state.on.contains(item.source)
+            let look = Self.look(item.source)
+            item.button.isSelected = on
+            item.button.symbol = on ? look.on : look.off
+            item.button.toolTip = "\(item.source.name): \(on ? "on" : "off"). \(look.help)"
+            item.button.setAccessibilityValue(on ? 1 : 0)
+        }
+        let text = state.note?.text ?? ""
+        guard note.stringValue != text || note.isHidden != text.isEmpty else { return }
+        note.stringValue = text
+        note.isHidden = text.isEmpty
+        if case .blocked = state.note { note.textColor = DS.Color.textPrimary } else { note.textColor = DS.Color.textSecondary }
+        let row = sources[0].button.frame
+        let fit = note.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: note.frame.width, height: .greatestFiniteMagnitude)).height ?? 0
+        let height = min(fit.rounded(.up), row.height)
+        note.frame = CGRect(x: note.frame.minX, y: row.midY - height / 2, width: note.frame.width, height: height)
+        if !text.isEmpty { NSAccessibility.post(element: note, notification: .announcementRequested, userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]) }
+    }
 
     func update(_ machine: SelectionMachine) {
         let mode = machine.recordingMode
@@ -172,6 +239,10 @@ final class RecordingPanel: Surface {
 
     @objc private func targetClicked(_ sender: IconButton) {
         if let item = targets.first(where: { $0.button === sender }) { onAction?(.mode(item.mode)) }
+    }
+
+    @objc private func sourceClicked(_ sender: IconButton) {
+        if let item = sources.first(where: { $0.button === sender }) { onToggle?(item.source) }
     }
 
     @objc private func startClicked(_ sender: Button) {
