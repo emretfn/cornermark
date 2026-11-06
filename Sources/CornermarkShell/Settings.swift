@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkL10n
 import Foundation
 
 struct AfterCapture: OptionSet, Codable, Equatable {
@@ -28,10 +29,10 @@ enum ScreenCorner: String, Codable, CaseIterable {
     case bottomRight, bottomLeft, topRight, topLeft
     var title: String {
         switch self {
-        case .bottomRight: return "Bottom right"
-        case .bottomLeft: return "Bottom left"
-        case .topRight: return "Top right"
-        case .topLeft: return "Top left"
+        case .bottomRight: return tr("Bottom right")
+        case .bottomLeft: return tr("Bottom left")
+        case .topRight: return tr("Top right")
+        case .topLeft: return tr("Top left")
         }
     }
     var isRight: Bool { self == .bottomRight || self == .topRight }
@@ -40,7 +41,13 @@ enum ScreenCorner: String, Codable, CaseIterable {
 
 enum OverlaySize: String, Codable, CaseIterable {
     case small, medium, large
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .small: return tr("Small")
+        case .medium: return tr("Medium")
+        case .large: return tr("Large")
+        }
+    }
     var cardWidth: CGFloat {
         switch self {
         case .small: return 160
@@ -200,6 +207,8 @@ struct Settings: Codable, Equatable {
     /// The version that last ran, so the first launch after an update can say so. Nil before the first run.
     var lastRunVersion: String?
     var recording = RecordingPreferences()
+    /// The interface language the user picked. Nil follows the Mac's preferred languages.
+    var language: Language?
 
     var overlayAutoClose: Double? {
         get { autoCloseSeconds > 0 ? autoCloseSeconds : nil }
@@ -231,6 +240,7 @@ struct Settings: Codable, Equatable {
         checkForUpdatesAutomatically = get(.checkForUpdatesAutomatically, d.checkForUpdatesAutomatically)
         lastRunVersion = get(.lastRunVersion, d.lastRunVersion)
         recording = get(.recording, d.recording)
+        language = get(.language, d.language)
         self = normalized()
     }
 
@@ -243,6 +253,11 @@ struct Settings: Codable, Equatable {
         s.autoCloseSeconds = s.autoCloseSeconds > 0 ? min(max(s.autoCloseSeconds, 1), 600) : 0
         s.recording = s.recording.normalized()
         return s
+    }
+
+    /// The language the interface shows: the one picked, else the first of `preferences` that Cornermark speaks, else English.
+    func interfaceLanguage(preferences: [String]) -> Language {
+        language ?? Language.resolve(preferences: preferences)
     }
 
     /// Custom binding, else the table default, unless the user switched the shortcut off.

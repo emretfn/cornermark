@@ -81,6 +81,8 @@ final class AppEnvironment {
     var systemAudioSource: (FrameSource) -> AudioSource? = { _ in nil }
     /// The window a scripted instance films. Nil in a normal instance.
     var recordingTestWindow: RecordingTestWindowHosting?
+    /// The Mac's preferred languages, most preferred first. Only the live app reads the real ones, so every other instance is English.
+    var preferredLanguages: () -> [String] = { ["en"] }
     /// Where recordings in progress are noted, so one cut off by a crash is finished at the next launch. Nil keeps no notes.
     var recordingJournal: RecordingJournal?
 

@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkEditor
+import CornermarkL10n
 import CornermarkVideoEditor
 import ImageIO
 
@@ -43,6 +44,8 @@ final class AppCoordinator {
     init(env: AppEnvironment) {
         self.env = env
         settings = SettingsStore(defaults: env.defaults)
+        // Before anything is built, so every window and menu starts in the right language.
+        L10n.setLanguage(settings.value.interfaceLanguage(preferences: env.preferredLanguages()))
         capture = CaptureController(source: env.screen, presentation: env.presentation)
         let store = settings
         overlay = QuickAccessManager(env: env) { store.value }
@@ -70,7 +73,7 @@ final class AppCoordinator {
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
-        pins.onCopied = { [unowned self] in hud.show("Copied") }
+        pins.onCopied = { [unowned self] in hud.show(tr("Copied")) }
         updates.closeEditors = { [unowned self] in closeAllEditors() }
         settings.observe { [unowned self] old, new in settingsChanged(from: old, to: new) }
         applyCaptureSettings()
@@ -101,7 +104,7 @@ final class AppCoordinator {
         case .openSettings: showSettings()
         case .checkForUpdates: Task { await updates.perform() }
         case .whatsNew: showWhatsNew()
-        case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
+        case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show(tr("No closed overlay to restore"), symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
         case .openRecording(let folder): openVideoEditor(folder)
@@ -155,7 +158,7 @@ final class AppCoordinator {
                 let listed = env.store.list().contains { $0.video?.location.standardizedFileURL.path == entry.location.standardizedFileURL.path }
                 if !listed { await recordingFinished(finished) }
                 Log.shell.notice("recording recovered location=\(entry.location.lastPathComponent, privacy: .public) format=\(entry.format.rawValue, privacy: .public) seconds=\(String(format: "%.3f", finished.video.duration), privacy: .public) size=\(Int(finished.pixelSize.width), privacy: .public)x\(Int(finished.pixelSize.height), privacy: .public) alreadyListed=\(listed, privacy: .public)")
-                hud.show("Recovered a recording that was cut off", symbol: "arrow.uturn.backward.circle.fill")
+                hud.show(tr("Recovered a recording that was cut off"), symbol: "arrow.uturn.backward.circle.fill")
             } catch {
                 Log.shell.error("recording not recovered location=\(entry.location.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
             }
@@ -172,18 +175,18 @@ final class AppCoordinator {
             record = try env.store.addRecording(finished.video, poster: poster, kind: finished.kind, pixelSize: finished.pixelSize, now: env.clock())
         } catch {
             Log.shell.error("history write failed for a recording: \(error.localizedDescription, privacy: .public)")
-            return hud.show("Saved \(name)")
+            return hud.show(tr("Saved {name}", ["name": name]))
         }
         history?.reload()
         Log.shell.notice("recording listed record=\(record.id.uuidString, privacy: .public) format=\(finished.video.format.rawValue, privacy: .public) seconds=\(String(format: "%.3f", finished.video.duration), privacy: .public) card=\(self.settings.value.recording.showQuickAccess, privacy: .public)")
-        if settings.value.recording.showQuickAccess { overlay.add(record: record, image: poster) } else { hud.show("Saved \(name)") }
+        if settings.value.recording.showQuickAccess { overlay.add(record: record, image: poster) } else { hud.show(tr("Saved {name}", ["name": name])) }
     }
 
     /// The recording's file, or nil after saying it is gone.
     func videoFile(_ record: CaptureRecord) -> RecordedVideo? {
         guard let video = record.video else { return nil }
         guard FileManager.default.fileExists(atPath: video.file.path) else {
-            hud.show("Recording not found. Look for it in the save folder.", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Recording not found. Look for it in the save folder."), symbol: "exclamationmark.triangle.fill")
             return nil
         }
         return video
@@ -194,9 +197,9 @@ final class AppCoordinator {
     /// A recording copies as its file. A picture copies as its pixels.
     func copy(_ record: CaptureRecord, image: @autoclosure () -> CGImage?) {
         if record.isRecording {
-            if let video = videoFile(record), ImageOutput.copy(file: video.file, to: env.pasteboard) { hud.show("Copied") }
+            if let video = videoFile(record), ImageOutput.copy(file: video.file, to: env.pasteboard) { hud.show(tr("Copied")) }
         } else if let image = image(), ImageOutput.copy(image, to: env.pasteboard) {
-            hud.show("Copied")
+            hud.show(tr("Copied"))
         }
     }
 
@@ -206,14 +209,14 @@ final class AppCoordinator {
         guard record.video?.format == .video, !makingGifs.contains(record.id), let video = videoFile(record) else { return }
         makingGifs.insert(record.id)
         Log.shell.notice("gif requested record=\(record.id.uuidString, privacy: .public) from=\(video.location.lastPathComponent, privacy: .public)")
-        hud.show("Converting to GIF", symbol: RecordedVideo.Format.gif.symbol)
+        hud.show(tr("Converting to GIF"), symbol: RecordedVideo.Format.gif.symbol)
         Task {
             defer { makingGifs.remove(record.id) }
             do {
                 await recordingFinished(try await RecordingOutput.makeGif(from: video.file, to: RecordingOutput.gifBeside(video.file), kind: record.kind))
             } catch {
                 Log.shell.error("gif not written record=\(record.id.uuidString, privacy: .public): \(String(describing: error), privacy: .public)")
-                hud.show("Could not convert to GIF. Check that the video plays, then try again.", symbol: "exclamationmark.triangle.fill")
+                hud.show(tr("Could not convert to GIF. Check that the video plays, then try again."), symbol: "exclamationmark.triangle.fill")
             }
         }
     }
@@ -276,7 +279,7 @@ final class AppCoordinator {
             case .failed(.permissionDenied): showPermissionWindow()
             case .failed(let failure):
                 Log.shell.error("capture failed: \(String(describing: failure), privacy: .public)")
-                hud.show("Capture failed", symbol: "exclamationmark.triangle.fill")
+                hud.show(tr("Capture failed"), symbol: "exclamationmark.triangle.fill")
             }
         }
     }
@@ -287,12 +290,12 @@ final class AppCoordinator {
             record = try env.store.add(out.image, kind: out.kind, pointScale: out.pointScale, now: env.clock())
         } catch {
             Log.shell.error("history write failed: \(error.localizedDescription, privacy: .public)")
-            return hud.show("Could not store the capture", symbol: "exclamationmark.triangle.fill")
+            return hud.show(tr("Could not store the capture"), symbol: "exclamationmark.triangle.fill")
         }
         let s = settings.value
         if s.playSound { env.playSound() }
         if s.afterCapture.contains(.copy), ImageOutput.copy(out.image, to: env.pasteboard) {
-            if !s.afterCapture.contains(.showOverlay) { hud.show("Copied to clipboard") }
+            if !s.afterCapture.contains(.showOverlay) { hud.show(tr("Copied to clipboard")) }
         }
         if s.afterCapture.contains(.save) { save(out.image, announce: !s.afterCapture.contains(.showOverlay)) }
         if s.afterCapture.contains(.openEditor) { openEditor(record) }
@@ -305,11 +308,11 @@ final class AppCoordinator {
         let s = settings.value
         do {
             let url = try ImageOutput.save(image, format: s.imageFormat, folder: s.resolvedSaveFolder(default: env.defaultSaveFolder), date: env.clock())
-            if announce { hud.show("Saved \(url.lastPathComponent)") }
+            if announce { hud.show(tr("Saved {name}", ["name": url.lastPathComponent])) }
             return url
         } catch {
             Log.shell.error("save failed: \(error.localizedDescription, privacy: .public)")
-            hud.show("Could not save", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not save"), symbol: "exclamationmark.triangle.fill")
             return nil
         }
     }
@@ -322,19 +325,18 @@ final class AppCoordinator {
                 let result = try await recognize(image)
                 self?.finishOCR(result)
             } catch {
-                self?.hud.show("Text recognition failed", symbol: "exclamationmark.triangle.fill")
+                self?.hud.show(tr("Text recognition failed"), symbol: "exclamationmark.triangle.fill")
             }
         }
     }
 
     func finishOCR(_ result: OCRResult) {
-        guard !result.isEmpty else { return hud.show("No text found", symbol: "text.viewfinder") }
+        guard !result.isEmpty else { return hud.show(tr("No text found"), symbol: "text.viewfinder") }
         ImageOutput.copy(text: result.clipboardText, to: env.pasteboard)
         if result.lines.isEmpty, let qr = result.qrPayloads.first {
-            hud.show("Copied QR code: \(qr.prefix(40))", symbol: "qrcode")
+            hud.show(tr("Copied QR code: {code}", ["code": String(qr.prefix(40))]), symbol: "qrcode")
         } else {
-            let n = result.clipboardText.count
-            hud.show("Copied \(n) character\(n == 1 ? "" : "s")", symbol: "text.viewfinder")
+            hud.show(trPlural(one: "Copied {count} character", other: "Copied {count} characters", count: result.clipboardText.count), symbol: "text.viewfinder")
         }
     }
 
@@ -382,14 +384,14 @@ final class AppCoordinator {
             return open
         }
         guard let (doc, assets) = try? env.store.openDocument(for: record) else {
-            hud.show("Could not open the capture", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not open the capture"), symbol: "exclamationmark.triangle.fill")
             return nil
         }
         var callbacks = EditorCallbacks()
         weak var opened: EditorWindowController?
         callbacks.onSaveProject = { [unowned self] doc, assets in storeEdit(doc, assets, for: record) }
         callbacks.onPin = { [unowned self] image in pins.pin(image, pointScale: record.pointScale) }
-        callbacks.onCopied = { [unowned self] in hud.show("Copied") }
+        callbacks.onCopied = { [unowned self] in hud.show(tr("Copied")) }
         callbacks.onClose = { [unowned self] in
             if let e = opened, e.currentDocument != doc { storeEdit(e.currentDocument, e.assets, for: record) }
             editors[record.id] = nil
@@ -432,7 +434,7 @@ final class AppCoordinator {
         }
         guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            return hud.show("Could not read the image", symbol: "exclamationmark.triangle.fill")
+            return hud.show(tr("Could not read the image"), symbol: "exclamationmark.triangle.fill")
         }
         let dpi = ((CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])?[kCGImagePropertyDPIWidth] as? Double) ?? 72
         let scale = min(max((dpi / 72).rounded(), 1), 4)
@@ -441,7 +443,7 @@ final class AppCoordinator {
             history?.reload()
             openEditor(record)
         } catch {
-            hud.show("Could not import the image", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not import the image"), symbol: "exclamationmark.triangle.fill")
         }
     }
 
@@ -515,6 +517,7 @@ final class AppCoordinator {
         }
         if old.customShortcuts != new.customShortcuts || old.disabledShortcuts != new.disabledShortcuts { hotKeys?.apply(new) }
         if old.launchAtLogin != new.launchAtLogin { applyLoginItem(new.launchAtLogin) }
+        if old.language != new.language { L10n.setLanguage(new.interfaceLanguage(preferences: env.preferredLanguages())) }
         settingsWindow?.refreshAll()
     }
 
@@ -525,7 +528,7 @@ final class AppCoordinator {
             loginError = nil
         } catch {
             settings.update { $0.launchAtLogin = !wanted }
-            loginError = "Could not change login item: \(error.localizedDescription)"
+            loginError = tr("Could not change login item: {reason}", ["reason": error.localizedDescription])
         }
     }
 
@@ -559,7 +562,7 @@ final class AppCoordinator {
     func announceUpdateIfNeeded() {
         guard let current = env.updateService.currentVersion else { return }
         if let previous = settings.value.lastRunVersion.flatMap(AppVersion.init), current > previous {
-            hud.show("Updated to Cornermark \(current)")
+            hud.show(tr("Updated to Cornermark {version}", ["version": current.description]))
         }
         settings.update { $0.lastRunVersion = current.description }
     }

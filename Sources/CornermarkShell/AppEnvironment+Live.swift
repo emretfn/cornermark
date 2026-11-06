@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkL10n
 import ServiceManagement
 
 final class MainAppLoginItem: LoginItemControlling {
@@ -48,7 +49,7 @@ extension AppEnvironment {
                 panel.canChooseDirectories = true
                 panel.canChooseFiles = false
                 panel.canCreateDirectories = true
-                panel.prompt = "Choose"
+                panel.prompt = tr("Choose")
                 NSApp.activate(ignoringOtherApps: true)
                 done(panel.runModal() == .OK ? panel.url : nil)
             },
@@ -72,6 +73,7 @@ extension AppEnvironment {
         env.microphoneSource = { LiveMicrophoneSource(deviceID: $0) }
         env.systemAudioSource = { ($0 as? StreamFrameSource)?.systemAudio }
         env.recordingJournal = RecordingJournal(folder: support.appendingPathComponent("\(AppVariant.current.name)/Unfinished Recordings", isDirectory: true))
+        env.preferredLanguages = { Locale.preferredLanguages }
         return env
     }
 
@@ -161,13 +163,14 @@ extension AppEnvironment {
         #if DEBUG
         if ProcessInfo.processInfo.environment["CORNERMARK_UPDATE_ASSUME_YES"] == "1" { return true }
         #endif
-        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "an unknown version"
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         let alert = NSAlert()
-        alert.messageText = "Cornermark \(release.version) is available"
+        alert.messageText = tr("Cornermark {version} is available", ["version": release.version.description])
         let notes = release.notesSummary()
-        alert.informativeText = "You have \(current)." + (notes.isEmpty ? "" : "\n\n\(notes)")
-        alert.addButton(withTitle: "Install and Relaunch")
-        alert.addButton(withTitle: "Later")
+        let installed = current.map { tr("You have {version}.", ["version": $0]) } ?? tr("You have an unknown version.")
+        alert.informativeText = installed + (notes.isEmpty ? "" : "\n\n\(notes)")
+        alert.addButton(withTitle: tr("Install and Relaunch"))
+        alert.addButton(withTitle: tr("Later"))
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -177,8 +180,8 @@ extension AppEnvironment {
         alert.alertStyle = .warning
         alert.messageText = update.title
         alert.informativeText = update.message
-        alert.addButton(withTitle: update.offersReleasePage ? "Open Release Page" : "OK")
-        if update.offersReleasePage { alert.addButton(withTitle: "Cancel") }
+        alert.addButton(withTitle: update.offersReleasePage ? tr("Open Release Page") : tr("OK"))
+        if update.offersReleasePage { alert.addButton(withTitle: tr("Cancel")) }
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn && update.offersReleasePage
     }

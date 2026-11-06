@@ -289,6 +289,7 @@ final class World {
             loginItem: login, updateService: updateService, defaultSaveFolder: root.appendingPathComponent("desktop", isDirectory: true),
             dragDirectory: drag, quit: { box.world?.quits += 1 })
         env.willPresent = { box.world?.presented.append($0) }
+        env.preferredLanguages = { ["en"] }
         env.confirmUpdate = { release in
             box.world?.confirmations.append(release)
             return box.world?.confirmAnswer ?? false
