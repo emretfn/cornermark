@@ -22,8 +22,9 @@ public final class IconButton: Pressable {
     }
 
     /// How the selected state looks. A tool picks with the accent; a button that only switches what a panel shows stays neutral,
-    /// because navigation never takes the accent. `inverse` is the strong neutral of a rail's open section, a graphite tile.
-    public enum Selection: CaseIterable { case accent, neutral, inverse }
+    /// because navigation never takes the accent. `inverse` is the strong neutral of a rail's open section, a graphite tile. `tile`
+    /// is a toggle that keeps its tile while off: plain `bgControl` off, and on a step lighter, bordered with `borderStrong`.
+    public enum Selection: CaseIterable { case accent, neutral, inverse, tile }
 
     public var selection = Selection.accent {
         didSet { needsDisplay = true }
@@ -38,6 +39,12 @@ public final class IconButton: Pressable {
     /// The colour behind the button, drawn as a ring around the check so it reads apart from the tile.
     public var markBackdrop = DS.Color.bgWindow {
         didSet { mark?.backdrop = markBackdrop }
+    }
+
+    /// Draws a slash across the glyph, for an off state whose symbol has no slashed form. The slash is cut out of the glyph with the
+    /// button's own fill, the way the system's slashed symbols are.
+    public var slashesGlyph = false {
+        didSet { needsDisplay = true }
     }
 
     public var isSelected = false {
@@ -84,6 +91,19 @@ public final class IconButton: Pressable {
         // A circle has less room than a rounded square, so the same glyph needs a smaller size to keep clear of its edge.
         let pointSize = glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize)
         Paint.symbol(symbol, in: bounds, pointSize: pointSize, look.text)
+        if slashesGlyph {
+            let box = CGRect(x: bounds.midX - pointSize * 0.6, y: bounds.midY - pointSize * 0.6, width: pointSize * 1.2, height: pointSize * 1.2)
+            let slash = NSBezierPath()
+            slash.move(to: CGPoint(x: box.minX, y: isFlipped ? box.minY : box.maxY))
+            slash.line(to: CGPoint(x: box.maxX, y: isFlipped ? box.maxY : box.minY))
+            slash.lineCapStyle = .round
+            slash.lineWidth = DS.Space.s4
+            (look.fill ?? DS.Color.bgWindow).setStroke()
+            slash.stroke()
+            slash.lineWidth = DS.Space.s2 - 0.5
+            look.text.setStroke()
+            slash.stroke()
+        }
     }
 
     public override func setFrameSize(_ newSize: NSSize) {
@@ -122,6 +142,15 @@ public final class IconButton: Pressable {
             case .accent: return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
             case .neutral: return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
             case .inverse: return ButtonAppearance(fill: state == .normal ? c.bgInverse : c.bgInverseHover, text: c.onInverse)
+            case .tile: return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary, border: c.borderStrong)
+            }
+        }
+        if selection == .tile {
+            switch state {
+            case .normal: return ButtonAppearance(fill: c.bgControl, text: c.textSecondary)
+            case .hover: return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
+            case .pressed: return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+            case .disabled: return ButtonAppearance(fill: c.bgControl, text: c.textDisabled)
             }
         }
         switch (tone, state) {

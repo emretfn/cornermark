@@ -7,6 +7,7 @@ func checkEditorControls() {
     fieldSlider()
     select()
     segmentTrack()
+    toggles()
 }
 
 private final class Counter: NSObject {
@@ -267,4 +268,29 @@ private func segmentTrack() {
     }
     let symbols = Segments(symbols: ["circle", "square", "rectangle"], labels: ["Circle", "Square", "Rectangle"], width: 144)
     check("a symbol track shares its width equally", symbols.style == .track && abs(symbols.tile(0).width - symbols.tile(2).width) <= 2 && symbols.intrinsicContentSize.width == 144 && symbols.intrinsicContentSize.height == DS.Size.control)
+}
+
+private func toggles() {
+    let c = DS.Color.self
+    let off = IconButton.look(tone: .plain, selected: false, selection: .tile, .normal)
+    let on = IconButton.look(tone: .plain, selected: true, selection: .tile, .normal)
+    check("a tile toggle keeps its tile while off: plain bgControl and textSecondary", off.fill == c.bgControl && off.text == c.textSecondary && off.border == nil)
+    check("on, the tile is a step lighter, bordered, its glyph textPrimary", on.fill == c.bgControlActive && on.border == c.borderStrong && on.text == c.textPrimary)
+    let rail = IconButton.look(tone: .plain, selected: true, selection: .inverse, .normal)
+    check("the rail's open section is an inverse graphite tile", rail.fill == c.bgInverse && rail.text == c.onInverse)
+    check("an unselected rail button stays quiet", IconButton.look(tone: .plain, selected: false, selection: .inverse, .normal).fill == nil)
+    let play = IconButton(symbol: "play.fill", label: "Play", size: .large, tone: .round)
+    check("the round play button is 36 pt on bgControl", play.intrinsicContentSize == NSSize(width: 36, height: 36)
+          && IconButton.look(tone: .round, selected: false, .normal).fill == c.bgControl)
+
+    let key = IconButton(symbol: "keyboard", label: "Keystrokes", size: .regular)
+    key.selection = .tile
+    let plain = renderedImage(of: key, appearance: .darkAqua)
+    key.slashesGlyph = true
+    let slashed = renderedImage(of: key, appearance: .darkAqua)
+    var differs = 0
+    for y in stride(from: 0, to: plain.pixelsHigh, by: 2) {
+        for x in stride(from: 0, to: plain.pixelsWide, by: 2) where !near(pixel(plain, x: x, y: y), pixel(slashed, x: x, y: y), tolerance: 0.1) { differs += 1 }
+    }
+    check("a glyph with no slashed symbol gets a drawn slash", differs > 10, "\(differs) pixels differ")
 }
