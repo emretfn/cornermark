@@ -835,7 +835,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         case .saveAs: chooseAndSaveAs()
         case .export: openExport()
         case .exportFrame: exportFrame()
-        case .step, .jump, .trimStart, .trimEnd, .pickZoom, .moveZoom, .resizeZoom, .openVideo: return false
+        case .step, .jump, .trimStart, .trimEnd, .pickZoom, .moveZoom, .resizeZoom, .moveTarget, .openVideo: return false
         }
         return true
     }

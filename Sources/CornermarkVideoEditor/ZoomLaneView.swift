@@ -79,7 +79,7 @@ final class ZoomLaneView: NSView {
     /// second with Shift. The keys come from `EditorShortcuts`.
     override func keyDown(with event: NSEvent) {
         guard let press = EditorShortcuts.match(event, in: .zoomLane) else { return super.keyDown(with: event) }
-        let step = (press.bySecond ? 1.0 : 0.1) * (press.forward ? 1 : -1)
+        let step = (press.enlarged ? 1.0 : 0.1) * (press.forward ? 1 : -1)
         switch press.command {
         case .pickZoom: onKey(.pick(press.forward ? 1 : -1))
         case .moveZoom: onKey(.move(by: step))

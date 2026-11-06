@@ -94,7 +94,7 @@ final class TimelineView: NSView {
     /// so every drag on an edge has a key too. Shift makes a step a second. The keys come from `EditorShortcuts`.
     override func keyDown(with event: NSEvent) {
         guard let press = EditorShortcuts.match(event, in: .timeline) else { return super.keyDown(with: event) }
-        let size = (press.bySecond ? 1 : frameStep) * (press.forward ? 1 : -1)
+        let size = (press.enlarged ? 1 : frameStep) * (press.forward ? 1 : -1)
         switch press.command {
         case .step: step(size)
         case .jump: jump(to: press.forward ? duration : 0)

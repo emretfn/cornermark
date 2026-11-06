@@ -5,19 +5,20 @@ import AppKit
 public enum EditorShortcuts {
     public static let all: [EditorShortcut] = [
         .init(.playPause, [.init(.space)], in: .window),
-        .init(.step, [.init(.left), .init(.right)], in: .timeline, shiftForSecond: true),
+        .init(.step, [.init(.left), .init(.right)], in: .timeline, shiftEnlarges: true),
         .init(.jump, [.init(.home), .init(.end)], in: .timeline),
         .init(.fullScreen, [.init(.letter("f"), [.control, .command])], in: .window),
         .init(.escape, [.init(.escape)], in: .window),
         .init(.split, [.init(.letter("b"), .command)], in: .window),
         .init(.delete, [.init(.delete), .init(.forwardDelete)], in: .window),
-        .init(.trimStart, [.init(.left, .option), .init(.right, .option)], in: .timeline, shiftForSecond: true),
-        .init(.trimEnd, [.init(.left, [.option, .command]), .init(.right, [.option, .command])], in: .timeline, shiftForSecond: true),
+        .init(.trimStart, [.init(.left, .option), .init(.right, .option)], in: .timeline, shiftEnlarges: true),
+        .init(.trimEnd, [.init(.left, [.option, .command]), .init(.right, [.option, .command])], in: .timeline, shiftEnlarges: true),
         .init(.addZoom, [.init(.letter("z"))], in: .window),
         .init(.duplicateZoom, [.init(.letter("d"), .command)], in: .window),
         .init(.pickZoom, [.init(.left), .init(.right)], in: .zoomLane),
-        .init(.moveZoom, [.init(.left, .option), .init(.right, .option)], in: .zoomLane, shiftForSecond: true),
-        .init(.resizeZoom, [.init(.left, [.option, .command]), .init(.right, [.option, .command])], in: .zoomLane, shiftForSecond: true),
+        .init(.moveZoom, [.init(.left, .option), .init(.right, .option)], in: .zoomLane, shiftEnlarges: true),
+        .init(.resizeZoom, [.init(.left, [.option, .command]), .init(.right, [.option, .command])], in: .zoomLane, shiftEnlarges: true),
+        .init(.moveTarget, [.init(.left), .init(.right), .init(.up), .init(.down)], in: .zoomTarget, shiftEnlarges: true),
         .init(.undo, [.init(.letter("z"), .command)], in: .window),
         .init(.redo, [.init(.letter("z"), [.shift, .command])], in: .window),
         .init(.save, [.init(.letter("s"), .command)], in: .window),
@@ -31,14 +32,14 @@ public enum EditorShortcuts {
         all.first { $0.command == command }!
     }
 
-    /// What a key press in `place` does: the command, which of its keys was pressed, and whether Shift made the step a second.
+    /// What a key press in `place` does: the command, which of its keys was pressed, and whether Shift made the step larger.
     public static func match(_ chord: EditorChord, in place: EditorPlace) -> EditorKeyPress? {
         for s in all where s.place == place {
-            if let i = s.keys.firstIndex(of: chord) { return EditorKeyPress(command: s.command, keyIndex: i, bySecond: false) }
-            if s.shiftForSecond, chord.modifiers.contains(.shift) {
+            if let i = s.keys.firstIndex(of: chord) { return EditorKeyPress(command: s.command, keyIndex: i, enlarged: false) }
+            if s.shiftEnlarges, chord.modifiers.contains(.shift) {
                 var plain = chord
                 plain.modifiers.remove(.shift)
-                if let i = s.keys.firstIndex(of: plain) { return EditorKeyPress(command: s.command, keyIndex: i, bySecond: true) }
+                if let i = s.keys.firstIndex(of: plain) { return EditorKeyPress(command: s.command, keyIndex: i, enlarged: true) }
             }
         }
         return nil
@@ -54,11 +55,11 @@ public struct EditorShortcut: Equatable, Sendable {
     /// Each key the command takes, in the order Settings shows them. A pair is back and forward, or start and end.
     public let keys: [EditorChord]
     public let place: EditorPlace
-    /// The same keys with Shift move a second at a time instead of the usual step.
-    public let shiftForSecond: Bool
+    /// The same keys with Shift take a larger step: a second on the timeline and the zoom lane, ten steps on the target frame.
+    public let shiftEnlarges: Bool
 
-    init(_ command: EditorCommand, _ keys: [EditorChord], in place: EditorPlace, shiftForSecond: Bool = false) {
-        self.command = command; self.keys = keys; self.place = place; self.shiftForSecond = shiftForSecond
+    init(_ command: EditorCommand, _ keys: [EditorChord], in place: EditorPlace, shiftEnlarges: Bool = false) {
+        self.command = command; self.keys = keys; self.place = place; self.shiftEnlarges = shiftEnlarges
     }
 
     /// How Settings writes the keys, such as `⌥← ⌥→`.
@@ -70,10 +71,16 @@ public struct EditorShortcut: Equatable, Sendable {
         case .window: nil
         case .timeline: "With the timeline focused."
         case .zoomLane: "With the zoom lane focused."
+        case .zoomTarget: "With a manual zoom's target frame focused."
         case .app: nil
         }
-        let shift = shiftForSecond ? (place == .zoomLane ? "0.1 s a press, a second with Shift." : "A frame a press, a second with Shift.") : nil
-        let parts = [whereText, shift].compactMap { $0 }
+        let step: String = switch place {
+        case .zoomLane: "0.1 s a press, a second with Shift."
+        case .zoomTarget: "1% of the picture a press, 10% with Shift."
+        default: "A frame a press, a second with Shift."
+        }
+        let shift = shiftEnlarges ? step : nil
+        let parts = [whereText, shift, command.detail].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 }
@@ -82,7 +89,7 @@ public struct EditorShortcut: Equatable, Sendable {
 public enum EditorCommand: String, CaseIterable, Sendable {
     case playPause, step, jump, fullScreen, escape
     case split, delete, trimStart, trimEnd
-    case addZoom, duplicateZoom, pickZoom, moveZoom, resizeZoom
+    case addZoom, duplicateZoom, pickZoom, moveZoom, resizeZoom, moveTarget
     case undo, redo, save, saveAs, openVideo, export, exportFrame
 
     public enum Group: String, CaseIterable, Sendable {
@@ -101,7 +108,7 @@ public enum EditorCommand: String, CaseIterable, Sendable {
         switch self {
         case .playPause, .step, .jump, .fullScreen, .escape: .playback
         case .split, .delete, .trimStart, .trimEnd: .clips
-        case .addZoom, .duplicateZoom, .pickZoom, .moveZoom, .resizeZoom: .zooms
+        case .addZoom, .duplicateZoom, .pickZoom, .moveZoom, .resizeZoom, .moveTarget: .zooms
         case .undo, .redo, .save, .saveAs, .openVideo, .export, .exportFrame: .file
         }
     }
@@ -122,6 +129,7 @@ public enum EditorCommand: String, CaseIterable, Sendable {
         case .pickZoom: "Select Previous or Next Zoom"
         case .moveZoom: "Move Zoom"
         case .resizeZoom: "Move Zoom End"
+        case .moveTarget: "Move Zoom Target"
         case .undo: "Undo"
         case .redo: "Redo"
         case .save: "Save"
@@ -131,22 +139,30 @@ public enum EditorCommand: String, CaseIterable, Sendable {
         case .exportFrame: "Export Current Frame as Image"
         }
     }
+
+    /// More of what the command does, when its name cannot say it all.
+    public var detail: String? {
+        switch self {
+        case .escape: "Also closes Animation Settings."
+        default: nil
+        }
+    }
 }
 
-/// Where a key is heard: anywhere in the editor window, only in the focused timeline or zoom lane, or in the app's menu.
-public enum EditorPlace: Sendable { case window, timeline, zoomLane, app }
+/// Where a key is heard: anywhere in the editor window, only in the focused timeline, zoom lane or target frame, or in the app's menu.
+public enum EditorPlace: Sendable { case window, timeline, zoomLane, zoomTarget, app }
 
 public struct EditorKeyPress: Equatable, Sendable {
     public var command: EditorCommand
-    /// Which of the command's keys: 0 is back or start, 1 is forward or end.
+    /// Which of the command's keys: 0 is back or start, 1 is forward or end; the target frame's are left, right, up and down.
     public var keyIndex: Int
-    public var bySecond: Bool
+    public var enlarged: Bool
     public var forward: Bool { keyIndex == 1 }
 }
 
 public struct EditorChord: Hashable, Sendable {
     public enum Key: Hashable, Sendable {
-        case space, escape, delete, forwardDelete, left, right, home, end
+        case space, escape, delete, forwardDelete, left, right, up, down, home, end
         case letter(Character)
     }
 
@@ -207,6 +223,8 @@ public struct EditorChord: Hashable, Sendable {
         case .forwardDelete: s += "\u{2326}"
         case .left: s += "\u{2190}"
         case .right: s += "\u{2192}"
+        case .up: s += "\u{2191}"
+        case .down: s += "\u{2193}"
         case .home: s += "Home"
         case .end: s += "End"
         case .letter(let c): s += c.uppercased()
@@ -228,6 +246,8 @@ public struct EditorChord: Hashable, Sendable {
         case .forwardDelete: words.append("Forward Delete")
         case .left: words.append("Left Arrow")
         case .right: words.append("Right Arrow")
+        case .up: words.append("Up Arrow")
+        case .down: words.append("Down Arrow")
         case .home: words.append("Home")
         case .end: words.append("End")
         case .letter(let c): words.append(c.uppercased())
@@ -236,7 +256,7 @@ public struct EditorChord: Hashable, Sendable {
     }
 
     private static let keys: [(key: Key, value: UInt16)] = [
-        (.space, 49), (.escape, 53), (.delete, 51), (.forwardDelete, 117), (.left, 123), (.right, 124), (.home, 115), (.end, 119),
+        (.space, 49), (.escape, 53), (.delete, 51), (.forwardDelete, 117), (.left, 123), (.right, 124), (.down, 125), (.up, 126), (.home, 115), (.end, 119),
         (.letter("b"), 11), (.letter("d"), 2), (.letter("e"), 14), (.letter("f"), 3), (.letter("o"), 31), (.letter("s"), 1), (.letter("z"), 6),
     ]
 }

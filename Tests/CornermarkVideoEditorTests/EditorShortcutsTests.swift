@@ -15,7 +15,7 @@ final class EditorShortcutsTests: XCTestCase {
     /// to one view.
     func testNoKeyMeansTwoThingsWhereItIsHeard() {
         func reach(_ s: EditorShortcut) -> [EditorChord] {
-            s.keys + (s.shiftForSecond ? s.keys.map { var c = $0; c.modifiers.insert(.shift); return c } : [])
+            s.keys + (s.shiftEnlarges ? s.keys.map { var c = $0; c.modifiers.insert(.shift); return c } : [])
         }
         for place in [EditorPlace.window, .timeline, .zoomLane] {
             let heard = EditorShortcuts.all.filter { $0.place == place || $0.place == .app || $0.place == .window }.flatMap(reach)
@@ -26,11 +26,11 @@ final class EditorShortcutsTests: XCTestCase {
     func testEachKeyMatchesItsOwnCommandAndShiftMakesASecond() {
         for s in EditorShortcuts.all {
             for (i, key) in s.keys.enumerated() {
-                XCTAssertEqual(EditorShortcuts.match(key, in: s.place), EditorKeyPress(command: s.command, keyIndex: i, bySecond: false), key.display)
+                XCTAssertEqual(EditorShortcuts.match(key, in: s.place), EditorKeyPress(command: s.command, keyIndex: i, enlarged: false), key.display)
                 var shifted = key
                 shifted.modifiers.insert(.shift)
                 let press = EditorShortcuts.match(shifted, in: s.place)
-                if s.shiftForSecond { XCTAssertEqual(press, EditorKeyPress(command: s.command, keyIndex: i, bySecond: true), shifted.display) }
+                if s.shiftEnlarges { XCTAssertEqual(press, EditorKeyPress(command: s.command, keyIndex: i, enlarged: true), shifted.display) }
             }
         }
     }
