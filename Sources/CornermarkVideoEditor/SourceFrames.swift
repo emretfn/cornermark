@@ -6,8 +6,9 @@ import VideoToolbox
 /// Pictures of the source video for the preview. The preview asks for the moment `frameState` names, so it shows what export will write.
 @MainActor
 public protocol SourceFrames: AnyObject {
-    /// Keeps decoding in step with the playhead: running while playing, parked on `sourceTime` while paused.
-    func follow(sourceTime: Double, playing: Bool)
+    /// Keeps decoding in step with the playhead: running while playing, parked on `sourceTime` while paused. `now` is the host time, in
+    /// seconds, at which the playhead is at `sourceTime`.
+    func follow(sourceTime: Double, playing: Bool, now: Double)
     /// The picture for `sourceTime` when a new one is ready, else nil and the preview keeps the one it shows.
     func frame(at sourceTime: Double) -> CGImage?
     /// Reads what the preview needs to know before the first frame, such as `hasAudio`.
@@ -134,19 +135,18 @@ public final class PlayerFrames: SourceFrames {
         player.currentItem?.audioMix = mix
     }
 
-    public func follow(sourceTime: Double, playing: Bool) {
-        let now = player.currentTime().seconds
+    public func follow(sourceTime: Double, playing: Bool, now: Double) {
         if playing {
             parkedAt = nil
-            let host = CMClockGetTime(CMClockGetHostTimeClock())
-            let settled = host.seconds - syncedAt > Self.settling
+            let settled = now - syncedAt > Self.settling
             // Inside a clip the source moves exactly as the clock does. A cut makes it jump, however little, and the player follows at once.
-            let jumped = lastAsked.map { abs((sourceTime - $0.source) - (host.seconds - $0.host)) > Self.jump } ?? false
-            lastAsked = (sourceTime, host.seconds)
-            guard player.rate == 0 || jumped || (settled && abs(now - sourceTime) > Self.drift) else { return }
+            // Both moves are measured at the instants the editor read its clock, so a late tick cannot pass for a jump.
+            let jumped = lastAsked.map { abs((sourceTime - $0.source) - (now - $0.host)) > Self.jump } ?? false
+            lastAsked = (sourceTime, now)
+            guard player.rate == 0 || jumped || (settled && abs(playerTime - sourceTime) > Self.drift) else { return }
             // Both clocks count host time, so the player shows `sourceTime` at the same instant the editor's playhead is there.
-            player.setRate(1, time: CMTime(seconds: sourceTime, preferredTimescale: 600), atHostTime: host)
-            syncedAt = host.seconds
+            player.setRate(1, time: CMTime(seconds: sourceTime, preferredTimescale: 600), atHostTime: CMTime(seconds: now, preferredTimescale: 1_000_000_000))
+            syncedAt = now
             syncs += 1
         } else {
             lastAsked = nil
@@ -157,8 +157,19 @@ public final class PlayerFrames: SourceFrames {
         }
     }
 
+    /// Where the player is. The item's timebase answers at once; `AVPlayer.currentTime()` waits for a player with a sound track to settle
+    /// after it was put in step, which held the main thread for about 100 ms per tick.
+    private var playerTime: Double {
+        guard let timebase = player.currentItem?.timebase else { return player.currentTime().seconds }
+        return CMTimebaseGetTime(timebase).seconds
+    }
+
     public func frame(at sourceTime: Double) -> CGImage? {
-        let time = CMTime(seconds: sourceTime, preferredTimescale: 600)
+        // Playing, the picture is the one the player is on. With a sound track its clock follows the sound device and runs a frame or
+        // two ahead of the editor's, inside `drift`; asking for the editor's moment then finds that picture already passed, and the
+        // preview skipped frames.
+        let playing = player.rate != 0 && abs(playerTime - sourceTime) <= Self.drift
+        let time = CMTime(seconds: playing ? playerTime : sourceTime, preferredTimescale: 600)
         guard output.hasNewPixelBuffer(forItemTime: time), let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return nil }
         var image: CGImage?
         VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)

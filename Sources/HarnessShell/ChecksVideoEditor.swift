@@ -31,7 +31,7 @@ final class StillFrames: SourceFrames {
         if let image = try? await generator.image(at: CMTime(seconds: time, preferredTimescale: 600)).image { ready = (time, image) }
     }
 
-    func follow(sourceTime: Double, playing: Bool) { followed.append((sourceTime, playing)) }
+    func follow(sourceTime: Double, playing: Bool, now: Double) { followed.append((sourceTime, playing)) }
 
     func frame(at sourceTime: Double) -> CGImage? {
         guard let ready, abs(ready.time - sourceTime) < 1e-6, delivered != sourceTime else { return nil }
@@ -155,6 +155,7 @@ func checkVideoEditor() async throws {
     try await checkVideoAspect(w, folder: folder)
     try await checkVideoEditorPerformance(folder: folder)
     try await checkVideoEditorLiveCut(folder: folder)
+    try await checkVideoEditorPlaybackWithSound(root: w.root)
 }
 
 @MainActor

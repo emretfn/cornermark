@@ -33,12 +33,25 @@ let manualZoomFilming = ProcessInfo.processInfo.environment["CORNERMARK_MANUAL_Z
 let shortcutsFilming = ProcessInfo.processInfo.environment["CORNERMARK_SHORTCUTS_FILM"]
 let panelSourcesFilming = ProcessInfo.processInfo.environment["CORNERMARK_PANEL_SOURCES_FILM"]
 let panelRenders = ProcessInfo.processInfo.environment["CORNERMARK_PANEL_RENDERS"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming, panelSourcesFilming, panelRenders].allSatisfy { $0 == nil } ? 420 : 900)) {
+let playbackProbe = ProcessInfo.processInfo.environment["CORNERMARK_PLAYBACK_PROBE"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming, panelSourcesFilming, panelRenders, playbackProbe].allSatisfy { $0 == nil } ? 420 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let playbackProbe {
+        // `check` runs only the harness check for playing with sound; a folder of recordings is measured instead.
+        let ok: Bool
+        if playbackProbe == "check" {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("cornermark-playback-\(UUID().uuidString.prefix(6))", isDirectory: true)
+            try? await checkVideoEditorPlaybackWithSound(root: root)
+            ok = Checks.shared.failed == 0
+        } else {
+            ok = await PlaybackProbe.run(inputs: URL(fileURLWithPath: playbackProbe, isDirectory: true))
+        }
+        filmDone(ok)
+    }
     if let panelRenders {
         let ok = await PanelRenders.run(out: URL(fileURLWithPath: panelRenders, isDirectory: true))
         filmDone(ok)

@@ -1037,13 +1037,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         state.transport.settle(now: now)
         let t = state.transport.time(at: now)
         let frame = frameState(state.project, outputTime: t)
-        frames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying)
+        frames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying, now: now)
         if let image = frames.frame(at: frame.sourceTime) {
             preview.image = image
             if !state.transport.isPlaying { awaitingSince = nil }
         }
         if let cameraFrames, frame.camera != nil {
-            cameraFrames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying)
+            cameraFrames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying, now: now)
             if let image = cameraFrames.frame(at: frame.sourceTime) { preview.cameraImage = image }
         }
         preview.keystrokes = state.project.edits.keystrokes
@@ -1242,8 +1242,9 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         exportJob?.cancel()
         displayLink?.invalidate()
         displayLink = nil
-        state.transport.pause(now: clock())
-        frames.follow(sourceTime: state.transport.time(at: clock()), playing: false)
+        let now = clock()
+        state.transport.pause(now: now)
+        frames.follow(sourceTime: state.transport.time(at: now), playing: false, now: now)
         onClose(writeIfChanged())
     }
 
