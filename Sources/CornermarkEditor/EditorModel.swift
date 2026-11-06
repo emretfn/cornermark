@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import CornermarkCore
+import CornermarkL10n
 
 struct Change: OptionSet {
     let rawValue: Int
@@ -17,8 +18,8 @@ enum CropAspect: CaseIterable {
 
     var title: String {
         switch self {
-        case .free: return "Free"
-        case .original: return "Original"
+        case .free: return tr("Free")
+        case .original: return tr("Original")
         case .square: return "1:1"
         case .fourThree: return "4:3"
         case .threeTwo: return "3:2"
