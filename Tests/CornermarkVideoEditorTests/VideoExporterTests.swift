@@ -210,6 +210,27 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertEqual(grey(150, 80), 0, "the rest is the black backdrop of a frame without a picture")
     }
 
+    func testABlurredFrameIsTheAverageOfItsDrawings() throws {
+        let pointer = (0...30).map { PointerSample(t: Double($0) / 30, x: 10 + Double($0) * 2.5, y: 20) }
+        let project = RecordingProject(source: .init(pixelWidth: 200, pixelHeight: 100, pointWidth: 100, pointHeight: 50, fps: 30, duration: 1),
+                                       events: .init(pointer: pointer), edits: .init(motionBlur: MotionBlur(shutterAngle: 360)))
+        let renderer = ExportFrameRenderer(plan: ExportPlan(project: project, settings: ExportSettings()), project: project, folder: nil)
+        let samples = frameSamples(project, outputTime: 0.5, fps: 30, pixelsAcross: renderer.frameRect.width)
+        XCTAssertEqual(samples.count, 16)
+        let blurred = try XCTUnwrap(renderer.image(samples, source: nil).flatMap { $0.dataProvider?.data as Data? })
+        let drawings = try samples.map { try XCTUnwrap(renderer.image($0, source: nil)?.dataProvider?.data as Data?) }
+        var worst = 0
+        for i in 0..<blurred.count {
+            let mean = (drawings.reduce(0.0) { $0 + Double($1[i]) } / Double(drawings.count)).rounded()
+            worst = max(worst, abs(Int(blurred[i]) - Int(mean)))
+        }
+        XCTAssertLessThanOrEqual(worst, 1, "the accumulator matches a plain average of the separate drawings")
+        let sharp = try XCTUnwrap(renderer.image(frameState(project, outputTime: 0.5), source: nil)?.dataProvider?.data as Data?)
+        XCTAssertNotEqual(blurred, sharp)
+        let one = try XCTUnwrap(renderer.image([samples[0]], source: nil)?.dataProvider?.data as Data?)
+        XCTAssertEqual(one, drawings[0], "one sample is drawn as the sharp frame is")
+    }
+
     func testAZoomMovesThePointerAndLeavesTheCameraBubbleInTheFrame() throws {
         let zoom = Zoom(start: 0, end: 1, scale: 2, center: ZoomPoint(x: 0.25, y: 0.25))
         var project = RecordingProject(source: .init(pixelWidth: 400, pixelHeight: 200, pointWidth: 100, pointHeight: 50, fps: 30, duration: 1),

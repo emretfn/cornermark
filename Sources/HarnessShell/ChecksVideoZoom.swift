@@ -83,6 +83,7 @@ func checkVideoZoom() async throws {
     typed.events.keys = [KeyEvent(t: 0.3, label: "\u{2318}K", isCommand: true), KeyEvent(t: 1.2, label: "\u{2318}J", isCommand: true),
                          KeyEvent(t: 1.9, label: "\u{2318}H", isCommand: true), KeyEvent(t: 5.5, label: "\u{2318}G", isCommand: true)]
     typed.edits.keystrokes.isVisible = false
+    typed.edits.motionBlur.scope = .off
     try RecordingProjectFile.write(typed, to: folder)
     guard let editor = w.coordinator.openVideoEditor(folder), let window = editor.window, let content = window.contentView,
           let lane = editor.view(identifier: "video.zoomLane") as? ZoomLaneView else {
