@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 import CornermarkCore
-import CornermarkDesign
+@testable import CornermarkDesign
 @testable import CornermarkVideoEditor
 import CryptoKit
 @testable import CornermarkShell
@@ -73,7 +73,29 @@ func editorImage(_ editor: VideoEditorWindowController, dark: Bool = false) -> C
         let f = panel.convert(panel.bounds, to: nil)
         if let image = rep.cgImage { ctx.draw(image, in: CGRect(x: f.minX - r.minX, y: f.minY - r.minY, width: f.width, height: f.height)) }
     }
+    // An open select's menu is its own window; it is drawn where it sits over the editor.
+    for select in openSelects(in: window.contentView) {
+        guard let menu = select.menuWindow, let image = viewImage(menu.list, appearance: window.appearance) else { continue }
+        let at = CGPoint(x: menu.frame.minX - window.frame.minX, y: menu.frame.minY - window.frame.minY)
+        ctx.draw(image, in: CGRect(x: at.x - r.minX, y: at.y - r.minY, width: menu.frame.width, height: menu.frame.height))
+    }
     return ctx.makeImage()
+}
+
+func openSelects(in view: NSView?) -> [Select] {
+    guard let view else { return [] }
+    return ((view as? Select).flatMap { $0.isMenuOpen ? [$0] : nil } ?? []) + view.subviews.flatMap(openSelects)
+}
+
+/// A view at 2x through cacheDisplay, under `appearance`.
+func viewImage(_ view: NSView, appearance: NSAppearance?) -> CGImage? {
+    view.appearance = appearance
+    view.layoutSubtreeIfNeeded()
+    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2), bitsPerSample: 8,
+                                     samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+    rep.size = view.bounds.size
+    view.cacheDisplay(in: view.bounds, to: rep)
+    return rep.cgImage
 }
 
 @MainActor
