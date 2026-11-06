@@ -148,6 +148,8 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
         if selected && state != .disabled {
             return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
         }
+        // A switched-off group still says which tile is chosen, the way a disabled checkbox keeps its mark.
+        if selected { return ButtonAppearance(fill: c.bgControlActive, text: c.textDisabled) }
         switch state {
         case .normal: return ButtonAppearance(fill: nil, text: labelled || quiet ? c.textSecondary : c.textPrimary)
         case .hover: return ButtonAppearance(fill: c.bgControlHover, text: c.textPrimary)
