@@ -65,16 +65,39 @@ public final class IconButton: Pressable {
         if let fill = look.fill { Paint.fill(path, fill) }
         if let border = look.border { Paint.strokeInside(path, border) }
         // A circle has less room than a rounded square, so the same glyph needs a smaller size to keep clear of its edge.
-        Paint.symbol(symbol, in: bounds, pointSize: glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize), look.text)
-        guard marksSelection, isSelected, state != .disabled else { return }
-        let d = Self.markDiameter
-        let mark = CGRect(x: bounds.maxX - d - 1, y: isFlipped ? bounds.maxY - d - 1 : bounds.minY + 1, width: d, height: d)
+        let pointSize = glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize)
+        guard marksSelection else {
+            Paint.symbol(symbol, in: bounds, pointSize: pointSize, look.text)
+            return
+        }
+        // A toggle that can carry the check keeps its glyph up and away from the check's corner in both states, so turning it on
+        // never moves the glyph, and the glyph is never drawn under the check or the gap around it.
+        let mark = markRect
+        let up = isFlipped ? -Self.markNudge : Self.markNudge
+        NSGraphicsContext.saveGraphicsState()
+        let clear = NSBezierPath(rect: bounds)
+        clear.append(NSBezierPath(ovalIn: mark.insetBy(dx: -Self.markGap, dy: -Self.markGap)))
+        clear.windingRule = .evenOdd
+        clear.addClip()
+        Paint.symbol(symbol, in: bounds.offsetBy(dx: -Self.markNudge, dy: up), pointSize: pointSize, look.text)
+        NSGraphicsContext.restoreGraphicsState()
+        guard isSelected, state != .disabled else { return }
         Paint.fill(NSBezierPath(ovalIn: mark), DS.Color.bgInverse)
         Paint.symbol("checkmark", in: mark, pointSize: Self.markGlyph, DS.Color.onInverse)
     }
 
-    static let markDiameter: CGFloat = 11
+    /// The check sits in the corner itself, on whole points, so it stays sharp and clear of the glyph.
+    var markRect: CGRect {
+        let d = Self.markDiameter
+        return CGRect(x: bounds.maxX - d, y: isFlipped ? bounds.maxY - d : bounds.minY, width: d, height: d)
+    }
+
+    static let markDiameter: CGFloat = 9
     static let markGlyph: CGFloat = 6
+    /// How far the glyph of a checkable toggle sits up and left of centre, so even the widest source glyph keeps `markGap` from the check.
+    static let markNudge: CGFloat = 2
+    /// The ring left empty around the check, in the button's own fill, so check and glyph never touch.
+    static let markGap: CGFloat = 1.5
 
     func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, selection: selection, state) }
 

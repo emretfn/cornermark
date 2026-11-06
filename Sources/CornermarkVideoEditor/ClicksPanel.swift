@@ -12,9 +12,9 @@ final class ClicksPanel: NSView {
     private let ripple = Checkbox(title: "Ripple")
     private let rippleNote = NSTextField(wrappingLabelWithString: "A ring marks each click, in the color and size below.")
     private let color = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), tilePadding: DS.Space.s4)
-    private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), tilePadding: DS.Space.s4)
-    private let motion = Segments(labels: ["Grow", "Still"], tilePadding: DS.Space.s4)
+    private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth)
+    private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth)
+    private let motion = Segments(labels: ["Grow", "Still"], width: SettingsPanel.controlWidth)
     private var ringLabels: [NSTextField] = []
     private var cursor = CursorSettings()
     private var clicks = ClickHighlight()
@@ -113,9 +113,12 @@ final class ClicksPanel: NSView {
             let label = NSTextField.label(title, style: DS.Text.label, color: DS.Color.textSecondary)
             label.widthAnchor.constraint(equalToConstant: InspectorView.labelColumn).isActive = true
             ringLabels.append(label)
+            // The control fills the rest of the row, so every row ends on the panel's right edge.
+            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
             let row = NSStackView(views: [label, control])
             row.spacing = DS.Space.s8
             row.alignment = .centerY
+            row.distribution = .fill
             return row
         }
         let rows = [row("Color", color), row("Size", size), row("Style", style), row("Motion", motion)]

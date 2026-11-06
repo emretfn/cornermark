@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkDesign
+@testable import CornermarkVideoEditor
 @testable import CornermarkShell
 
 /// Renders the real recording panel, its help window and the recording control bar offscreen into PNGs, and writes what the
@@ -16,6 +17,7 @@ enum PanelRenders {
         do {
             try await panel(out: out, notes: &notes)
             try await bar(out: out, notes: &notes)
+            try await editor(out: out, notes: &notes)
         } catch { failures.append("\(error)") }
         try? notes.joined(separator: "\n").write(to: out.appendingPathComponent("panel-renders.txt"), atomically: true, encoding: .utf8)
         print("RENDERS panel files=\((try? FileManager.default.contentsOfDirectory(atPath: out.path).count) ?? 0) failures=\(failures)")
@@ -44,8 +46,10 @@ enum PanelRenders {
         let c = w.coordinator
         w.env.hasInputPermission = { true }
         w.env.microphoneAccess = { .allowed }
+        w.env.cameraAccess = { .allowed }
         w.settings.update {
             $0.recording.audio.microphone = true
+            $0.recording.camera.isVisible = true
             $0.recording.keystrokes.isVisible = true
         }
         c.capture.lastSelection = PreviousSelection(rect: CGRect(x: 200, y: 160, width: 480, height: 270))
@@ -54,6 +58,9 @@ enum PanelRenders {
               let content = window.contentView else { throw FilmError.missing("the overlay") }
         guard let panel = findView("cornermark.record.options", in: content)?.superview else { throw FilmError.missing("the panel") }
         try write(image(panel, scale: 3), out.appendingPathComponent("panel.png"))
+        let panelOff = offPixelViews(in: panel)
+        notes.append("panel off-pixel views: \(panelOff.count)")
+        notes += panelOff
         let selection = CGRect(x: 200 - window.frame.minX - 40, y: 160 - window.frame.minY - 40, width: 560, height: 350)
         if let full = image(content, scale: 2) {
             let flippedY = content.bounds.height - selection.maxY
@@ -98,6 +105,7 @@ enum PanelRenders {
             host.frame.size.width = view.frame.width + 24
             view.frame.origin = CGPoint(x: 12, y: 12)
             try write(image(host, scale: 3), out.appendingPathComponent("bar-\(name).png"))
+            notes += offPixelViews(in: view).map { "  bar-\(name) off-pixel:" + $0 }
             notes.append("  bar-\(name): width \(Int(view.frame.width)) pt, stop: \(view.stop.accessibilityLabel() ?? "")")
         }
         notes.append("\ncontrol bar:")
@@ -121,5 +129,61 @@ enum PanelRenders {
         try shot("stop-pressed")
         view.stop.isHighlighted = false
         notes.append("  tooltips: stop=\(view.stop.toolTip ?? "") pause=\(view.pause.toolTip ?? "") resume=\(view.resume.toolTip ?? "") restart=\(view.restart.toolTip ?? "") confirmRestart=\(view.confirmRestart.toolTip ?? "") delete=\(view.delete.toolTip ?? "") confirmDelete=\(view.confirmDelete.toolTip ?? "") grip=\(view.grip.toolTip ?? "")")
+    }
+
+    /// The video editor at its film size: every rail section light and dark, a selected zoom with its panel, and the export and zoom
+    /// animation panels open. The project is recorded from the fixture display, so it carries no camera, microphone or key track.
+    private static func editor(out: URL, notes: inout [String]) async throws {
+        guard let film = Film(url: URL(fileURLWithPath: scratch).appendingPathComponent("editor-renders-\(UUID().uuidString.prefix(6)).mp4")) else {
+            throw FilmError.missing("a film to host the editor")
+        }
+        let stage = try await EditorStage(film)
+        defer { stage.w.cleanup() }
+        guard let editor = try await stage.openProject() else { throw FilmError.missing("the editor") }
+        var offPixel: [String] = []
+        func shot(_ name: String, darkToo: Bool = true) async throws {
+            await stage.settle(editor)
+            for line in offPixelViews(in: editor.window?.contentView) where !offPixel.contains(line) { offPixel.append(line) }
+            for dark in darkToo ? [false, true] : [false] {
+                try write(editorImage(editor, dark: dark), out.appendingPathComponent("editor-\(name)-\(dark ? "dark" : "light").png"))
+            }
+        }
+        for section in EditorSection.allCases {
+            editor.select(section)
+            try await shot(section.rawValue)
+        }
+        editor.select(.cursor)
+        if let zoom = editor.addZoom(from: 0.5, to: 1.4) {
+            editor.selectZoom(zoom.id)
+            await editor.zoomTargetSettled()
+            try await shot("zoom")
+            editor.openZoomAnimation()
+            try await shot("zoom-animation")
+            editor.closeZoomAnimation()
+            editor.selectZoom(nil)
+        }
+        editor.openExport()
+        try await shot("export")
+        notes.append("\noff-pixel views in any rendered state (window points; a 1x display needs whole points): \(offPixel.count)")
+        notes += offPixel
+        editor.closeExport()
+        notes.append("\neditor: \(EditorSection.allCases.count) sections, zoom, zoom animation and export rendered light and dark")
+        _ = await film.finish()
+    }
+
+    /// Views whose frame does not start on a whole point of the window, which draw their edges and text across two pixels at 1x.
+    static func offPixelViews(in root: NSView?) -> [String] {
+        guard let root else { return [] }
+        var out: [String] = []
+        func walk(_ v: NSView) {
+            guard !v.isHidden else { return }
+            let r = v.convert(v.bounds, to: nil)
+            if r.minX.rounded() != r.minX || r.minY.rounded() != r.minY {
+                out.append("  \(type(of: v)) \(v.accessibilityIdentifier()) \((v as? NSTextField)?.stringValue ?? (v as? NSButton)?.title ?? "") at \(r.origin.x), \(r.origin.y) size \(r.width) x \(r.height)")
+            }
+            v.subviews.forEach(walk)
+        }
+        walk(root)
+        return out
     }
 }

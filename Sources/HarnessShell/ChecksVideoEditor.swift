@@ -62,8 +62,12 @@ func editorImage(_ editor: VideoEditorWindowController, dark: Bool = false) -> C
     preview.updateLayer()
     layer.render(in: ctx)
     for id in ["video.export.panel", "video.zoomAnimation.panel"] {
+        // At the image's own 2x, so the floating panel is not an enlarged 1x copy laid over the sharp one.
         guard let panel = editor.view(identifier: id), !panel.isHiddenOrHasHiddenAncestor,
-              let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) else { continue }
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(panel.bounds.width * 2), pixelsHigh: Int(panel.bounds.height * 2),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { continue }
+        rep.size = panel.bounds.size
         panel.appearance = window.appearance
         panel.cacheDisplay(in: panel.bounds, to: rep)
         let f = panel.convert(panel.bounds, to: nil)
