@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/emretfn/cornermark/compare/v0.3.0...v0.4.0) (2026-11-06)
+
+
+### New
+
+* record the screen and edit recordings ([#40](https://github.com/emretfn/cornermark/issues/40)) ([7e027b8](https://github.com/emretfn/cornermark/commit/7e027b81979e8310f2dadf453871a4fc0c34724a))
+
+
+### Fixed
+
+* **build:** give development builds their own identity ([#39](https://github.com/emretfn/cornermark/issues/39)) ([a456b8b](https://github.com/emretfn/cornermark/commit/a456b8bddb1f941fc2d9ad2d09ac4f93c03cc84f))
+
 ## [0.3.0](https://github.com/emretfn/cornermark/compare/v0.2.1...v0.3.0) (2026-11-04)
 
 
