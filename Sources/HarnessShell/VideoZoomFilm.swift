@@ -362,7 +362,7 @@ extension EditorStage {
         ctx.setLineWidth(2)
         for i in 0...240 {
             let t = d * Double(i) / 240
-            let p = CGPoint(x: plot.minX + plot.width * CGFloat(i) / 240, y: y(ZoomCamera.rect(project.edits.zooms, at: t).scale))
+            let p = CGPoint(x: plot.minX + plot.width * CGFloat(i) / 240, y: y(ZoomCamera.rect(project, at: t).scale))
             i == 0 ? ctx.move(to: p) : ctx.addLine(to: p)
         }
         ctx.strokePath()

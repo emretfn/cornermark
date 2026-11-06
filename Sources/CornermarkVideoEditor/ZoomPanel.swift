@@ -19,12 +19,18 @@ final class ZoomPanel: NSStackView {
     private let slider = Slider()
     private let value = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let mode = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let modeNote = NSTextField(wrappingLabelWithString: ZoomPanel.modeNote)
+    private let modeNote = NSTextField(wrappingLabelWithString: ZoomPanel.modeNote(.followCursor))
     private let applyToAll = Button(title: "Apply Level to All", variant: .secondary, size: .small)
     private let remove = Button(title: "Remove Zoom", variant: .dangerGhost, size: .small)
     private var zoom: Zoom?
 
-    static let modeNote = "The camera stays on the spot where the zoom was added."
+    /// What each mode does, under the mode menu.
+    static func modeNote(_ mode: ZoomMode) -> String {
+        switch mode {
+        case .followCursor: return "The camera holds while the pointer stays near the middle of the view, then drifts to follow it."
+        case .manual: return "The camera stays on the spot where the zoom was added."
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -39,6 +45,7 @@ final class ZoomPanel: NSStackView {
         slider.doubleValue = zoom.scale
         value.stringValue = Zoom.percent(zoom.scale)
         mode.selectItem(at: ZoomMode.allCases.firstIndex(of: zoom.mode) ?? 0)
+        modeNote.stringValue = Self.modeNote(zoom.mode)
         applyToAll.isEnabled = count > 1
     }
 

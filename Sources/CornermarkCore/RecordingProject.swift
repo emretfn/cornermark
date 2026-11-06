@@ -275,7 +275,7 @@ public func frameState(_ project: RecordingProject, outputTime: Double) -> Frame
     let area = CGSize(width: project.source.pointWidth, height: project.source.pointHeight)
     let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
     // Zooms sit on the finished video's timeline, so the crop follows output time after clips have mapped it to the source.
-    let crop = ZoomCamera.rect(project.edits.zooms, at: outputTime)
+    let crop = ZoomCamera.rect(project, at: outputTime)
     // Rings and the badge are input overlays in recording coordinates, so the crop moves them like the pointer. The camera ignores it.
     return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera, crop: crop,
                       input: project.inputOverlay(at: sourceTime))
