@@ -290,7 +290,13 @@ func checkVideoZoom() async throws {
             print(String(format: "PARITY zoom+background+cursor t=%.2f scale=%.3f pointer=%@ preview-vs-drawn %@ | preview-vs-file %@", r.time, state.crop.scale,
                          state.cursor == nil ? "hidden" : "shown", r.drawn.description, r.encoded.description))
         }
-        check(rows.count == times.count && times.allSatisfy { frameState(combined, outputTime: $0).cursor != nil }, "the pointer is on screen at each measured moment")
+        let source = combined.source
+        check(rows.count == times.count && times.allSatisfy { t in
+            let state = frameState(combined, outputTime: t)
+            guard let p = state.cursor, source.pointWidth > 0, source.pointHeight > 0 else { return false }
+            let fx = p.x / source.pointWidth, fy = p.y / source.pointHeight
+            return fx >= state.crop.x && fx <= state.crop.x + state.crop.width && fy >= state.crop.y && fy <= state.crop.y + state.crop.height
+        }, "the pointer is inside the zoomed view at each measured moment")
         check(times.contains { (1.01...1.99).contains(frameState(combined, outputTime: $0).crop.scale) }, "one measured moment is partway through a zoom")
         check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
               "zoom, background and pointer: the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
