@@ -4,7 +4,7 @@ import CornermarkDesign
 @testable import CornermarkVideoEditor
 @testable import CornermarkShell
 
-/// A synthetic project with two zooms and a moving pointer, so a frame export shows the crop, the pointer and the background together.
+/// A synthetic project with zooms, a moving pointer and a gradient background, so a frame export shows them together.
 enum ShortcutScene {
     /// `pointerZoom` adds a third zoom over the pointer's sweep, which leaves no gap long enough for a new zoom.
     static func apply(_ project: inout RecordingProject, pointerZoom: Bool = true) {
