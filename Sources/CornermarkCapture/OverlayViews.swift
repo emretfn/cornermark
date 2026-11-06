@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 @MainActor
 protocol OverlayHost: AnyObject {
@@ -113,6 +114,7 @@ final class OverlayPanel: OverlayWindow {
         chrome = ChromeView(frame: bounds, display: display, host: host)
         root.addSubview(backdrop)
         root.addSubview(chrome)
+        root.applyLanguageDirection()
         super.init(frame: display.frame)
         keyHost = host
         contentView = root
@@ -131,7 +133,8 @@ final class OverlayPanel: OverlayWindow {
     }
 }
 
-final class BackdropView: NSView {
+/// The screenshot under the overlay: a picture, so it is never mirrored.
+final class BackdropView: NSView, KeepsLeftToRight {
     private let image: CGImage
 
     init(frame: CGRect, image: CGImage) {
@@ -181,7 +184,9 @@ enum Loupe {
     }
 }
 
-final class ChromeView: NSView {
+/// The selection, its handles, the crosshair and the loupe are drawn over the screenshot at the places it has on the screen, so this view
+/// is part of the picture and is never mirrored.
+final class ChromeView: NSView, KeepsLeftToRight {
     let display: DisplaySnapshot
     private weak var host: OverlayHost?
 
@@ -289,7 +294,7 @@ final class ChromeView: NSView {
         drawDim(except: visible.isEmpty ? nil : visible)
         if rect.insetBy(dx: -2, dy: -2).intersects(bounds) { drawSelection(rect, handles: handles) }
         if badge, !visible.isEmpty, m.chromeDisplay(for: r)?.id == display.displayID {
-            drawBadge(text: "\(Int(r.width.rounded())) × \(Int(r.height.rounded()))", anchoredTo: visible)
+            drawBadge(text: Readout.size(width: r.width, height: r.height), anchoredTo: visible)
         }
     }
 
@@ -363,7 +368,7 @@ final class ChromeView: NSView {
         DS.Color.accentSolid.setStroke()
         border.stroke()
         guard label else { return }
-        let text = [w.appName, "\(Int(w.frame.width.rounded())) × \(Int(w.frame.height.rounded()))"].filter { !$0.isEmpty }.joined(separator: "  ")
+        let text = [w.appName, Readout.size(width: w.frame.width, height: w.frame.height)].filter { !$0.isEmpty }.joined(separator: "  ")
         let size = pillSize(text)
         drawPill(text, at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2))
     }
@@ -418,7 +423,7 @@ final class ChromeView: NSView {
 
         let attrs = DS.Text.readout.attributes(color: DS.Color.textPrimary)
         let lineHeight = DS.Text.readout.lineHeight
-        let coords = "\(Int(c.x)), \(Int(bounds.height - c.y))"
+        let coords = Readout.point(x: Int(c.x), y: Int(bounds.height - c.y))
         let coordWidth = ceil((coords as NSString).size(withAttributes: attrs).width)
         (coords as NSString).draw(with: CGRect(x: total.midX - coordWidth / 2, y: origin.y + infoH - DS.Space.s4 - lineHeight, width: coordWidth, height: lineHeight),
                                   options: .usesLineFragmentOrigin, attributes: attrs)

@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// The all-in-one toolbar. Mouse events stop here so clicking its background never starts a new
 /// selection underneath it.
@@ -13,18 +14,19 @@ final class SelectionToolbar: Surface {
 
     private let modeButtons: [(mode: ToolbarMode, button: IconButton)]
     private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let widthField = TextInput(placeholder: "W", monospaced: true, centered: true)
-    private let heightField = TextInput(placeholder: "H", monospaced: true, centered: true)
-    private let captureButton = Button(title: "Capture", variant: .primary, size: .large)
+    private let widthField = TextInput(placeholder: tr("W"), monospaced: true, centered: true)
+    private let heightField = TextInput(placeholder: tr("H"), monospaced: true, centered: true)
+    private let captureButton = Button(title: tr("Capture"), variant: .primary, size: .large)
+    private var leftToRight = LeftToRightFrames()
 
     init(frame frameRect: NSRect) {
         modeButtons = [
-            (.area, IconButton(symbol: "rectangle.dashed", label: "Area", size: .large)),
-            (.window, IconButton(symbol: "macwindow", label: "Window", size: .large)),
-            (.fullscreen, IconButton(symbol: "display", label: "Fullscreen", size: .large)),
-            (.scrolling, IconButton(symbol: "arrow.up.and.down.text.horizontal", label: "Scrolling", size: .large)),
-            (.timer, IconButton(symbol: "timer", label: "Timer", size: .large)),
-            (.record, IconButton(symbol: "record.circle", label: "Record", size: .large)),
+            (.area, IconButton(symbol: "rectangle.dashed", label: tr("Area"), size: .large)),
+            (.window, IconButton(symbol: "macwindow", label: tr("Window"), size: .large)),
+            (.fullscreen, IconButton(symbol: "display", label: tr("Fullscreen"), size: .large)),
+            (.scrolling, IconButton(symbol: "arrow.up.and.down.text.horizontal", label: tr("Scrolling"), size: .large)),
+            (.timer, IconButton(symbol: "timer", label: tr("Timer"), size: .large)),
+            (.record, IconButton(symbol: "record.circle", label: tr("Record"), size: .large)),
         ]
         super.init(style: .hud, shadowInset: Self.inset)
 
@@ -57,7 +59,7 @@ final class SelectionToolbar: Surface {
         aspect.controlSize = .small
         aspect.font = DS.Text.label.font
         aspect.isBordered = false
-        aspect.toolTip = "Aspect ratio"
+        aspect.toolTip = tr("Aspect ratio")
         aspect.setAccessibilityIdentifier("cornermark.toolbar.aspect")
         aspect.frame = CGRect(x: x, y: centred(DS.Size.control), width: Self.aspectWidth, height: DS.Size.control)
         aspect.target = self
@@ -92,9 +94,17 @@ final class SelectionToolbar: Surface {
         x += captureButton.frame.width + pad
 
         setFrameSize(NSSize(width: x + Self.inset, height: rowHeight + 2 * pad + 2 * Self.inset))
+        leftToRight.record(in: self)
+        applyLanguageDirection()
+        leftToRight.apply(to: self)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The controls were placed left to right. A right-to-left bar writes the same frames mirrored.
+    override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { leftToRight.apply(to: self) }
+    }
 
     override var isFlipped: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -125,8 +135,8 @@ final class SelectionToolbar: Surface {
         for f in [widthField, heightField] { f.isEnabled = rect != nil }
         captureButton.isEnabled = rect != nil
         if let rect {
-            if widthField.currentEditor() == nil { widthField.stringValue = String(Int(rect.width.rounded())) }
-            if heightField.currentEditor() == nil { heightField.stringValue = String(Int(rect.height.rounded())) }
+            if widthField.currentEditor() == nil { widthField.stringValue = Readout.number(Int(rect.width.rounded())) }
+            if heightField.currentEditor() == nil { heightField.stringValue = Readout.number(Int(rect.height.rounded())) }
         } else {
             widthField.stringValue = ""; heightField.stringValue = ""
         }
@@ -142,8 +152,8 @@ final class SelectionToolbar: Surface {
         onAction?(.aspect(AspectLock.presets[i]))
     }
 
-    @objc private func widthChanged() { sizeEdited(width: Double(widthField.stringValue.trimmingCharacters(in: .whitespaces)), height: nil) }
-    @objc private func heightChanged() { sizeEdited(width: nil, height: Double(heightField.stringValue.trimmingCharacters(in: .whitespaces))) }
+    @objc private func widthChanged() { sizeEdited(width: Readout.parse(widthField.stringValue), height: nil) }
+    @objc private func heightChanged() { sizeEdited(width: nil, height: Readout.parse(heightField.stringValue)) }
 
     private func sizeEdited(width: Double?, height: Double?) {
         window?.makeFirstResponder(nil)

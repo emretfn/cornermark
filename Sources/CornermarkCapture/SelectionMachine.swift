@@ -1,5 +1,6 @@
 import CoreGraphics
 import CornermarkCore
+import CornermarkL10n
 
 public struct DisplayGeometry: Hashable {
     public var id: CGDirectDisplayID
@@ -69,7 +70,7 @@ public enum AspectLock: Hashable {
 
     public var title: String {
         if case .ratio(let w, let h) = self { return "\(w):\(h)" }
-        return "Free"
+        return tr("Free")
     }
 }
 
@@ -94,11 +95,11 @@ public enum RecordingSource: String, Hashable, CaseIterable, Sendable {
 
     public var name: String {
         switch self {
-        case .microphone: return "Microphone"
-        case .systemAudio: return "System audio"
-        case .camera: return "Camera"
-        case .clicks: return "Click highlights"
-        case .keystrokes: return "Keystrokes"
+        case .microphone: return tr("Microphone")
+        case .systemAudio: return tr("System audio")
+        case .camera: return tr("Camera")
+        case .clicks: return tr("Click highlights")
+        case .keystrokes: return tr("Keystrokes")
         }
     }
 }

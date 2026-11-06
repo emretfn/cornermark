@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 public enum OverlayPresentation {
     case onscreen
@@ -46,6 +47,7 @@ final class CaptureSession: OverlayHost {
     private var tickTimer: Timer?
     private var escapeMonitor: Any?
     private var previousApp: NSRunningApplication?
+    private var languageObserver: NSObjectProtocol?
 
     init(displays: [DisplaySnapshot], config: MachineConfig, source: ScreenSource, options: SessionOptions, onEnd: @escaping (SessionEnd) -> Void) {
         self.displays = displays
@@ -53,6 +55,31 @@ final class CaptureSession: OverlayHost {
         self.source = source
         self.options = options
         self.onEnd = onEnd
+        languageObserver = NotificationCenter.default.addObserver(forName: L10n.didChange, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.languageChanged() }
+        }
+    }
+
+    deinit {
+        if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
+    }
+
+    /// The toolbar and the recording panel are built from the machine's state, so a new language rebuilds them from it: the selection,
+    /// the target and the mode stay as they were. The help window is built again the next time it opens. What the overlay draws itself
+    /// reads the language when it draws.
+    private func languageChanged() {
+        guard onEnd != nil else { return }
+        toolbar?.removeFromSuperview()
+        toolbar = nil
+        recordingPanel?.removeFromSuperview()
+        recordingPanel = nil
+        if let help {
+            help.orderOut(nil)
+            help.close()
+            self.help = nil
+        }
+        for p in panels { p.root.applyLanguageDirection() }
+        refreshOverlay()
     }
 
     var windows: [NSWindow] {
@@ -297,10 +324,13 @@ final class CaptureSession: OverlayHost {
         if bar.superview !== panel.root {
             bar.removeFromSuperview()
             panel.root.addSubview(bar)
+            bar.applyLanguageDirection()
         }
     }
 
     func tearDown() {
+        if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
+        languageObserver = nil
         tickTimer?.invalidate(); tickTimer = nil
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
         escapeMonitor = nil

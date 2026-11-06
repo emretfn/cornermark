@@ -7,6 +7,7 @@ extension NSTextField {
         field.lineHeight = style.lineHeight
         field.font = style.font
         field.textColor = color
+        field.alignment = .natural
         field.maximumNumberOfLines = 1
         field.lineBreakMode = .byTruncatingTail
         return field

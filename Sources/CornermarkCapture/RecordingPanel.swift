@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// The panel of a recording overlay: quick options, what to film, its size, what the recording takes besides the picture, and the buttons
 /// that start it. It sits in the middle of the selection. Mouse events stop here so clicking its background never starts a new selection
@@ -19,53 +20,63 @@ final class RecordingPanel: Surface {
     private static let aspectWidth: CGFloat = 72
     /// Holds the longest note, Input Monitoring's, in two caption lines beside the toggles. HarnessShell measures every note against it.
     private static let noteWidth: CGFloat = 264
-    private static let keyNames: [RecordingStyle: String] = [.video: "Return", .editing: "Shift-Return", .gif: "Option-Return"]
+    private static func keyName(_ style: RecordingStyle) -> String {
+        switch style {
+        case .video: return tr("Return")
+        case .editing: return tr("Shift-Return")
+        case .gif: return tr("Option-Return")
+        }
+    }
+
     /// What each start button leaves behind, for its tooltip and VoiceOver.
-    static let outcomes: [RecordingStyle: String] = [
-        .video: "Saves one MP4 to share right away, with the pointer drawn in",
-        .editing: "Saves a project you can edit: pointer, clicks, keys, camera and sound stay separate until you export",
-        .gif: "Saves one animated GIF, without sound",
-    ]
+    static func outcome(_ style: RecordingStyle) -> String {
+        switch style {
+        case .video: return tr("Saves one MP4 to share right away, with the pointer drawn in")
+        case .editing: return tr("Saves a project you can edit: pointer, clicks, keys, camera and sound stay separate until you export")
+        case .gif: return tr("Saves one animated GIF, without sound")
+        }
+    }
 
     /// A source's toggle: the filled glyph and a check while it is on, the slashed one while it is off, so the state never rests on
     /// colour alone. The keyboard has no slashed symbol, so the toggle draws the slash over the outlined one. `action` names what turning it on does, for the tooltip.
     static func look(_ source: RecordingSource) -> (on: String, off: String, action: String, help: String) {
         switch source {
-        case .microphone: return ("mic.fill", "mic.slash", "Record microphone", "Records your voice. Record GIF never records sound.")
-        case .systemAudio: return ("speaker.wave.2.fill", "speaker.slash", "Record system audio", "Records what your Mac plays. Record GIF never records sound.")
-        case .camera: return ("video.fill", "video.slash", "Show camera", "Shows your camera in a bubble.")
-        case .clicks: return ("cursorarrow.click.2", "cursorarrow.slash", "Highlight clicks", "Draws a ring where you click.")
-        case .keystrokes: return ("keyboard.fill", "keyboard", "Show keystrokes", "Shows the keys you press. Keys typed in password fields never show.")
+        case .microphone: return ("mic.fill", "mic.slash", tr("Record microphone"), tr("Records your voice. Record GIF never records sound."))
+        case .systemAudio: return ("speaker.wave.2.fill", "speaker.slash", tr("Record system audio"), tr("Records what your Mac plays. Record GIF never records sound."))
+        case .camera: return ("video.fill", "video.slash", tr("Show camera"), tr("Shows your camera in a bubble."))
+        case .clicks: return ("cursorarrow.click.2", "cursorarrow.slash", tr("Highlight clicks"), tr("Draws a ring where you click."))
+        case .keystrokes: return ("keyboard.fill", "keyboard", tr("Show keystrokes"), tr("Shows the keys you press. Keys typed in password fields never show."))
         }
     }
 
-    private let optionsButton = IconButton(symbol: "slider.horizontal.3", label: "Recording options", size: .large)
+    private let optionsButton = IconButton(symbol: "slider.horizontal.3", label: tr("Recording options"), size: .large)
+    private var leftToRight = LeftToRightFrames()
     private var options: RecordingQuickOptions?
     private let help = IconButton(symbol: "questionmark.circle", label: RecordingHelpWindow.title, size: .large)
     private let targets: [(mode: ToolbarMode, button: IconButton)]
     private let aspect = Select()
-    private let widthField = TextInput(placeholder: "W", monospaced: true, centered: true)
-    private let heightField = TextInput(placeholder: "H", monospaced: true, centered: true)
+    private let widthField = TextInput(placeholder: tr("W"), monospaced: true, centered: true)
+    private let heightField = TextInput(placeholder: tr("H"), monospaced: true, centered: true)
     private let starts: [(style: RecordingStyle, button: Button)]
     private let sources: [(source: RecordingSource, button: IconButton)]
     private let note = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
 
     init() {
         targets = [
-            (.area, IconButton(symbol: "rectangle.dashed", label: "Area", size: .large)),
-            (.window, IconButton(symbol: "macwindow", label: "Window", size: .large)),
-            (.fullscreen, IconButton(symbol: "display", label: "Fullscreen", size: .large)),
+            (.area, IconButton(symbol: "rectangle.dashed", label: tr("Area"), size: .large)),
+            (.window, IconButton(symbol: "macwindow", label: tr("Window"), size: .large)),
+            (.fullscreen, IconButton(symbol: "display", label: tr("Fullscreen"), size: .large)),
         ]
         starts = [
-            (.video, Button(title: "Record MP4", variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}")),
-            (.gif, Button(title: "Record GIF", variant: .secondary, size: .large, shortcut: "\u{2325}\u{21A9}")),
-            (.editing, Button(title: "Record Project", variant: .secondary, size: .large, shortcut: "\u{21E7}\u{21A9}")),
+            (.video, Button(title: tr("Record MP4"), variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}")),
+            (.gif, Button(title: tr("Record GIF"), variant: .secondary, size: .large, shortcut: "\u{2325}\u{21A9}")),
+            (.editing, Button(title: tr("Record Project"), variant: .secondary, size: .large, shortcut: "\u{21E7}\u{21A9}")),
         ]
         sources = RecordingSource.allCases.map { ($0, IconButton(symbol: Self.look($0).off, label: $0.name, size: .regular)) }
         super.init(style: .hud, shadowInset: Self.inset)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Recording")
+        setAccessibilityLabel(tr("Recording"))
 
         let pad = DS.Space.s4
         let row = DS.Size.controlLarge
@@ -93,7 +104,7 @@ final class RecordingPanel: Surface {
         optionsButton.action = #selector(optionsClicked)
         optionsButton.setAccessibilityIdentifier("cornermark.record.options")
         optionsButton.setAccessibilityRole(.menuButton)
-        optionsButton.setAccessibilityHelp("Quality, frame rate, countdown and what the recording shows or leaves out.")
+        optionsButton.setAccessibilityHelp(tr("Quality, frame rate, countdown and what the recording shows or leaves out."))
         addSubview(optionsButton)
         x += row
         divider()
@@ -108,13 +119,13 @@ final class RecordingPanel: Surface {
         }
         divider()
 
-        for (field, id, label, action) in [(widthField, "cornermark.record.width", "Width", #selector(widthChanged)),
-                                           (heightField, "cornermark.record.height", "Height", #selector(heightChanged))] {
+        for (field, id, label, hint, action) in [(widthField, "cornermark.record.width", tr("Width"), tr("Width in points"), #selector(widthChanged)),
+                                                 (heightField, "cornermark.record.height", tr("Height"), tr("Height in points"), #selector(heightChanged))] {
             field.frame = CGRect(x: x, y: centred(DS.Size.control), width: Self.fieldWidth, height: DS.Size.control)
             field.cell?.sendsActionOnEndEditing = true
             field.setAccessibilityIdentifier(id)
             field.setAccessibilityLabel(label)
-            field.toolTip = "\(label) in points"
+            field.toolTip = hint
             field.target = self
             field.action = action
             addSubview(field)
@@ -130,8 +141,8 @@ final class RecordingPanel: Surface {
         divider()
 
         for lock in AspectLock.presets { aspect.addItem(withTitle: lock.title) }
-        aspect.toolTip = "Aspect ratio"
-        aspect.setAccessibilityLabel("Aspect ratio")
+        aspect.toolTip = tr("Aspect ratio")
+        aspect.setAccessibilityLabel(tr("Aspect ratio"))
         aspect.setAccessibilityIdentifier("cornermark.record.aspect")
         // The toggles and their note set the narrowest the panel can be. Any width they need past the top row goes to the aspect menu,
         // so the top row still ends at the panel's edge.
@@ -161,11 +172,11 @@ final class RecordingPanel: Surface {
             item.button.target = self
             item.button.action = #selector(startClicked(_:))
             item.button.setAccessibilityIdentifier("cornermark.record.start.\(item.style.rawValue)")
-            let key = Self.keyNames[item.style] ?? "Return"
-            let outcome = Self.outcomes[item.style] ?? ""
-            item.button.toolTip = "\(outcome) (\(key))"
-            item.button.setAccessibilityLabel("\(item.button.title), \(key)")
-            item.button.setAccessibilityHelp(outcome + ".")
+            let key = Self.keyName(item.style)
+            let outcome = Self.outcome(item.style)
+            item.button.toolTip = tr("{outcome} ({key})", ["outcome": outcome, "key": key])
+            item.button.setAccessibilityLabel(tr("{title}, {key}", ["title": item.button.title, "key": key]))
+            item.button.setAccessibilityHelp(tr("{outcome}.", ["outcome": outcome]))
             addSubview(item.button)
         }
         let line = Separator(axis: .horizontal)
@@ -175,7 +186,7 @@ final class RecordingPanel: Surface {
         help.target = self
         help.action = #selector(helpClicked)
         help.setAccessibilityIdentifier("cornermark.record.help")
-        help.setAccessibilityHelp("Opens a short explanation of project recordings.")
+        help.setAccessibilityHelp(tr("Opens a short explanation of project recordings."))
         addSubview(help)
 
         var sx = left
@@ -205,9 +216,17 @@ final class RecordingPanel: Surface {
         show(RecordingSources())
 
         setFrameSize(NSSize(width: left + width + pad + Self.inset, height: top + row + pad + Self.inset))
+        leftToRight.record(in: self)
+        applyLanguageDirection()
+        leftToRight.apply(to: self)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The controls were placed left to right. A right-to-left panel writes the same frames mirrored.
+    override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { leftToRight.apply(to: self) }
+    }
 
     override var isFlipped: Bool { false }
 
@@ -240,9 +259,10 @@ final class RecordingPanel: Surface {
             item.button.isEnabled = !waiting
             item.button.symbol = on ? look.on : look.off
             item.button.slashesGlyph = !on && !look.off.contains("slash")
-            item.button.toolTip = "\(look.action) (\(waiting ? "waiting for permission" : on ? "on" : "off"))"
+            item.button.toolTip = waiting ? tr("{action} (waiting for permission)", ["action": look.action])
+                : on ? tr("{action} (on)", ["action": look.action]) : tr("{action} (off)", ["action": look.action])
             item.button.setAccessibilityValue(on ? 1 : 0)
-            item.button.setAccessibilityHelp(waiting ? "Waiting for permission. \(look.help)" : look.help)
+            item.button.setAccessibilityHelp(waiting ? tr("Waiting for permission. {help}", ["help": look.help]) : look.help)
         }
         let text = state.note?.text ?? ""
         guard note.stringValue != text || note.isHidden != text.isEmpty else { return }
@@ -256,6 +276,7 @@ final class RecordingPanel: Surface {
         let fit = note.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: note.frame.width, height: .greatestFiniteMagnitude)).height ?? 0
         let height = min(fit.rounded(.up), row.height)
         note.frame = CGRect(x: note.frame.minX, y: row.midY - height / 2, width: note.frame.width, height: height)
+        leftToRight.record(note, in: self)
         if !text.isEmpty { NSAccessibility.post(element: note, notification: .announcementRequested, userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]) }
     }
 
@@ -281,8 +302,8 @@ final class RecordingPanel: Surface {
         aspect.isEnabled = mode != .window
         for item in starts { item.button.isEnabled = ready }
         if let size {
-            if widthField.currentEditor() == nil { widthField.stringValue = String(Int(size.width.rounded())) }
-            if heightField.currentEditor() == nil { heightField.stringValue = String(Int(size.height.rounded())) }
+            if widthField.currentEditor() == nil { widthField.stringValue = Readout.number(Int(size.width.rounded())) }
+            if heightField.currentEditor() == nil { heightField.stringValue = Readout.number(Int(size.height.rounded())) }
         } else {
             widthField.stringValue = ""; heightField.stringValue = ""
         }
@@ -301,7 +322,7 @@ final class RecordingPanel: Surface {
 
     /// Pickers under headings, then the switches, so every choice is one click from the open menu.
     private static func menu(for o: RecordingQuickOptions, target: RecordingPanel) -> NSMenu {
-        let menu = NSMenu(title: "Recording options")
+        let menu = NSMenu(title: tr("Recording options"))
         menu.autoenablesItems = false
         func item(_ title: String, on: Bool, id: String, _ change: @escaping (inout RecordingQuickOptions) -> Void) {
             let i = OptionItem(title: title, action: #selector(optionPicked(_:)), keyEquivalent: "")
@@ -311,19 +332,19 @@ final class RecordingPanel: Surface {
             i.identifier = NSUserInterfaceItemIdentifier("cornermark.record.option.\(id)")
             menu.addItem(i)
         }
-        menu.addItem(.sectionHeader(title: "Quality"))
+        menu.addItem(.sectionHeader(title: tr("Quality")))
         for q in VideoQuality.allCases { item(q.title, on: o.quality == q, id: "quality.\(q.rawValue)") { $0.quality = q } }
-        menu.addItem(.sectionHeader(title: "Frame Rate"))
-        for f in RecordingQuickOptions.fpsChoices { item("\(f) fps", on: o.fps == f, id: "fps.\(f)") { $0.fps = f } }
-        menu.addItem(.sectionHeader(title: "Countdown"))
+        menu.addItem(.sectionHeader(title: tr("Frame Rate")))
+        for f in RecordingQuickOptions.fpsChoices { item(tr("{fps} fps", ["fps": f]), on: o.fps == f, id: "fps.\(f)") { $0.fps = f } }
+        menu.addItem(.sectionHeader(title: tr("Countdown")))
         for c in RecordingQuickOptions.countdownChoices {
-            item(c == 0 ? "Off" : "\(c) seconds", on: o.countdown == c, id: "countdown.\(c)") { $0.countdown = c }
+            item(c == 0 ? tr("Off") : trPlural(one: "{count} second", other: "{count} seconds", count: c), on: o.countdown == c, id: "countdown.\(c)") { $0.countdown = c }
         }
         menu.addItem(.separator())
-        item("Show Cursor", on: o.showCursor, id: "cursor") { $0.showCursor.toggle() }
-        item("Dim Outside the Area", on: o.dimOutside, id: "dim") { $0.dimOutside.toggle() }
-        item("Keep Notifications Out of the Video", on: o.hideNotifications, id: "notifications") { $0.hideNotifications.toggle() }
-        item("Keep Desktop Icons Out of the Video", on: o.hideDesktopIcons, id: "desktopIcons") { $0.hideDesktopIcons.toggle() }
+        item(tr("Show Cursor"), on: o.showCursor, id: "cursor") { $0.showCursor.toggle() }
+        item(tr("Dim Outside the Area"), on: o.dimOutside, id: "dim") { $0.dimOutside.toggle() }
+        item(tr("Keep Notifications Out of the Video"), on: o.hideNotifications, id: "notifications") { $0.hideNotifications.toggle() }
+        item(tr("Keep Desktop Icons Out of the Video"), on: o.hideDesktopIcons, id: "desktopIcons") { $0.hideDesktopIcons.toggle() }
         return menu
     }
 
@@ -336,7 +357,8 @@ final class RecordingPanel: Surface {
     /// Opens under the button. An overlay that was never ordered in, as in a test, does not run the menu's modal loop.
     @objc private func optionsClicked() {
         guard let menu = optionsButton.menu, window?.isVisible == true else { return }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: isFlipped ? optionsButton.frame.height + DS.Space.s4 : -DS.Space.s4), in: optionsButton)
+        let x = optionsButton.isRightToLeft ? optionsButton.bounds.width - menu.size.width : 0
+        menu.popUp(positioning: nil, at: CGPoint(x: x, y: isFlipped ? optionsButton.frame.height + DS.Space.s4 : -DS.Space.s4), in: optionsButton)
     }
 
     @objc private func helpClicked() { onHelp?() }
@@ -359,8 +381,8 @@ final class RecordingPanel: Surface {
         onAction?(.aspect(AspectLock.presets[i]))
     }
 
-    @objc private func widthChanged() { sizeEdited(width: Double(widthField.stringValue.trimmingCharacters(in: .whitespaces)), height: nil) }
-    @objc private func heightChanged() { sizeEdited(width: nil, height: Double(heightField.stringValue.trimmingCharacters(in: .whitespaces))) }
+    @objc private func widthChanged() { sizeEdited(width: Readout.parse(widthField.stringValue), height: nil) }
+    @objc private func heightChanged() { sizeEdited(width: nil, height: Readout.parse(heightField.stringValue)) }
 
     private func sizeEdited(width: Double?, height: Double?) {
         window?.makeFirstResponder(nil)

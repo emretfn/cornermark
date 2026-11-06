@@ -13,6 +13,7 @@ checkStructure()
 checkElevation()
 checkComponents()
 checkEditorControls()
+checkDirection()
 renderSpecimens()
 
 if SilentNoResponder.isSilent {
