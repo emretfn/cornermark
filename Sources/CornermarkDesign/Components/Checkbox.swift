@@ -35,8 +35,14 @@ public final class Checkbox: Pressable {
         NSSize(width: title.isEmpty ? Self.boxSide : Self.boxSide + DS.Space.s8 + Paint.width(of: title, Self.style), height: size.height)
     }
 
-    private var box: CGRect {
-        CGRect(x: 0, y: (bounds.height - Self.boxSide) / 2, width: Self.boxSide, height: Self.boxSide)
+    /// The box leads the label, so it sits at the left edge, or the right edge in a right-to-left language.
+    var box: CGRect {
+        mirrored(CGRect(x: 0, y: (bounds.height - Self.boxSide) / 2, width: Self.boxSide, height: Self.boxSide))
+    }
+
+    var labelRect: CGRect {
+        let textX = Self.boxSide + DS.Space.s8
+        return mirrored(CGRect(x: textX, y: 0, width: bounds.width - textX, height: bounds.height))
     }
 
     override func shape(in rect: CGRect) -> NSBezierPath { .continuous(box, radius: DS.Radius.xs) }
@@ -47,8 +53,7 @@ public final class Checkbox: Pressable {
         if let fill = look.fill { Paint.fill(path, fill) }
         if let border = look.border { Paint.strokeInside(path, border) }
         if self.state == .on { drawMark(look.mark) }
-        let textX = Self.boxSide + DS.Space.s8
-        Paint.text(title, Self.style, look.text, in: CGRect(x: textX, y: 0, width: bounds.width - textX, height: bounds.height))
+        Paint.text(title, Self.style, look.text, in: labelRect, rtl: isRightToLeft)
     }
 
     /// Drawn as a path because the SF Symbol's own weight and corners look heavy and uneven at this size.

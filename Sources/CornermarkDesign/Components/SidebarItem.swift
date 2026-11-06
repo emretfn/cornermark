@@ -1,23 +1,22 @@
 import AppKit
+import CornermarkL10n
 
-/// A row of a sidebar: a symbol and a title, left-aligned, as wide as the sidebar lets it be. The selected row is a neutral
+/// A row of a sidebar: a symbol and a title, aligned to the leading edge, as wide as the sidebar lets it be. The selected row is a neutral
 /// fill, not the accent, because a sidebar is navigation and the accent belongs to what the page itself asks of you.
 public final class SidebarItem: Pressable {
     public let symbol: String
 
     public var isSelected = false {
-        didSet {
-            setAccessibilityValue(isSelected ? "Selected" : "Not selected")
-            needsDisplay = true
-        }
+        didSet { needsDisplay = true }
     }
+
+    public override func accessibilityValue() -> Any? { isSelected ? tr("Selected") : tr("Not selected") }
 
     public init(symbol: String, title: String) {
         self.symbol = symbol
         super.init(frame: .zero)
         self.title = title
         setAccessibilityLabel(title)
-        setAccessibilityValue("Not selected")
         frame.size = intrinsicContentSize
     }
 
@@ -43,9 +42,15 @@ public final class SidebarItem: Pressable {
     override func paint(_ state: InteractionState) {
         let look = Self.look(selected: isSelected, state)
         if let fill = look.fill { Paint.fill(shape(in: bounds), fill) }
-        Paint.symbol(symbol, in: CGRect(x: Self.padding, y: 0, width: DS.Size.icon, height: bounds.height), pointSize: DS.Size.icon, look.symbol)
+        Paint.symbol(symbol, in: symbolRect, pointSize: DS.Size.icon, look.symbol)
+        Paint.text(title, Self.style, look.title, in: titleRect, rtl: isRightToLeft)
+    }
+
+    var symbolRect: CGRect { mirrored(CGRect(x: Self.padding, y: 0, width: DS.Size.icon, height: bounds.height)) }
+
+    var titleRect: CGRect {
         let textX = Self.padding + DS.Size.icon + Self.gap
-        Paint.text(title, Self.style, look.title, in: CGRect(x: textX, y: 0, width: max(bounds.width - textX - Self.padding, 0), height: bounds.height))
+        return mirrored(CGRect(x: textX, y: 0, width: max(bounds.width - textX - Self.padding, 0), height: bounds.height))
     }
 
     struct Look {

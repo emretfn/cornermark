@@ -17,10 +17,18 @@ final class TextInputCell: NSTextFieldCell {
 
     override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
         super.edit(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+        followDirection(of: controlView, editor: textObj)
     }
 
     override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
         super.select(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+        followDirection(of: controlView, editor: textObj)
+    }
+
+    /// The shared field editor is created for the app's launch direction, so an empty field in a right-to-left language would put its
+    /// caret on the left. Telling it the field's direction puts the caret and the text against the right edge.
+    private func followDirection(of controlView: NSView, editor: NSText) {
+        editor.baseWritingDirection = controlView.isRightToLeft ? .rightToLeft : .natural
     }
 }
 
@@ -45,7 +53,7 @@ public final class TextInput: NSTextField {
         focusRingType = .exterior
         usesSingleLineMode = true
         font = style.font
-        alignment = centered ? .center : .left
+        alignment = centered ? .center : .natural
         (cell as? TextInputCell)?.isCentered = centered
         applyColors()
         frame.size = NSSize(width: 0, height: size.height)
@@ -55,6 +63,16 @@ public final class TextInput: NSTextField {
 
     public override var isEnabled: Bool {
         didSet { applyColors() }
+    }
+
+    public override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet {
+            guard oldValue != userInterfaceLayoutDirection else { return }
+            // Natural alignment follows the script of the text, which would leave an English name against the left edge of a right-to-left field.
+            if alignment != .center { alignment = isRightToLeft ? .right : .natural }
+            baseWritingDirection = isRightToLeft ? .rightToLeft : .natural
+            needsDisplay = true
+        }
     }
 
     private func applyColors() {
