@@ -149,6 +149,21 @@ func checkVideoShortcuts() async throws {
     let playing = editor.state.transport.isPlaying
     press(.playPause)
     check(playing && !editor.state.transport.isPlaying, "Space plays, and again pauses")
+    let manual = editor.state.project.edits.zooms.first { $0.mode == .manual }
+    editor.selectZoom(manual?.id)
+    content.layoutSubtreeIfNeeded()
+    if let target = editor.view(identifier: "video.zoom.target"), let manual {
+        window.makeFirstResponder(target)
+        let before = ZoomCamera.reachable(manual.center, scale: manual.scale)
+        press(.moveTarget, 1)
+        press(.moveTarget, 2, shift: true)
+        let after = editor.state.project.edits.zooms.first { $0.id == manual.id }.map { ZoomCamera.reachable($0.center, scale: $0.scale) }
+        check(after.map { abs($0.x - before.x - 0.01) < 1e-6 && abs($0.y - (before.y - 0.1)) < 1e-6 } ?? false,
+              "on a manual zoom's focused target frame, Right moves the target 1% and Shift-Up 10%", detail: "\(before) -> \(String(describing: after))")
+        window.makeFirstResponder(nil)
+    } else {
+        check(false, "a manual zoom shows its target frame")
+    }
     editor.removeAllZooms()
     editor.seek(to: 2)
     press(.addZoom)

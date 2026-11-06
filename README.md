@@ -156,6 +156,7 @@ The video editor has its own keys, listed under the global ones in Settings > Sh
 | Command-E | Export |
 | Shift-Command-E | Export Current Frame as Image |
 | Arrow keys on the timeline | Step a frame, or a second with Shift. Option trims the clip's start, Option-Command its end |
+| Arrow keys on a manual zoom's target frame | Move the spot the zoom holds, ten times as far with Shift |
 
 <p align="center">
   <img src="docs/screenshots/settings.png" width="640" alt="The Shortcuts section of the Settings window">

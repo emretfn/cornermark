@@ -133,6 +133,15 @@ enum VideoShortcutsFilm {
         await send(.pickZoom, "With the zoom lane focused, Right picks the next zoom.", key: 1)
         await send(.moveZoom, "Shift-Option-Right moves it a second later.", key: 1, shift: true)
         await send(.resizeZoom, "Option-Command-Left pulls its end in by 0.1 s.", key: 0)
+        if let manual = editor.state.project.edits.zooms.first(where: { $0.mode == .manual }) {
+            editor.selectZoom(manual.id)
+            editorWindow.contentView?.layoutSubtreeIfNeeded()
+            await s.settle(editor)
+            f.hold(1, "The harness picks the manual zoom: its panel shows the target frame.")
+            if let target = editor.view(identifier: "video.zoom.target") { editorWindow.makeFirstResponder(target) }
+            await send(.moveTarget, "With the target frame focused, Shift-Right moves the target 10% of the picture.", key: 1, shift: true)
+            await send(.moveTarget, "Up moves it 1%.", key: 2)
+        }
         editorWindow.makeFirstResponder(nil)
         await send(.fullScreen, "Control-Command-F opens Full Screen Preview.")
         await send(.escape, "Esc leaves it.")
