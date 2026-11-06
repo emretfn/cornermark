@@ -255,6 +255,7 @@ func checkVideoExport() async throws {
     } else { check(false, "the harness decoder is known") }
     if let frames = decoders[folder.standardizedFileURL.resolvingSymlinksInPath()] ?? decoders.values.first {
         try await checkBackgroundParity(editor, frames: frames, clock: clock, root: w.root)
+        try await checkAspectParity(editor, frames: frames, clock: clock, root: w.root)
     }
 
     section("video export: cancel")
