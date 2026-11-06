@@ -75,7 +75,7 @@ class SettingsPanel: NSView {
 /// Every cell of the grid, row by row, in the order `PositionGrid` lays them out.
 extension PositionGrid {
     convenience init(identifier: String) {
-        self.init(labels: GridPosition.allCases.map(\.title), identifier: identifier)
+        self.init(labels: GridPosition.allCases.map(\.localizedTitle), identifier: identifier)
     }
 
     var position: GridPosition {

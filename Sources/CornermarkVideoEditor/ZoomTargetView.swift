@@ -2,11 +2,12 @@ import AppKit
 import AVFoundation
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// Where a Manual zoom aims: a picture of the recording at the zoom's moment with the zoom's view drawn over it as a frame. Dragging
 /// the frame, or clicking where it should go, moves the view; on the focused picture the arrow keys move it a hundredth of the picture,
 /// Shift a tenth. The frame follows the pointer without animation, since it is direct manipulation.
-final class ZoomTargetView: NSView {
+final class ZoomTargetView: NSView, KeepsLeftToRight {
     enum Phase { case began, changed, ended, key }
 
     /// The new center, held where the view stays inside the picture.
@@ -23,8 +24,8 @@ final class ZoomTargetView: NSView {
             needsDisplay = true
             if let zoom {
                 let c = ZoomCamera.reachable(zoom.center, scale: zoom.scale)
-                setAccessibilityValue(String(format: "Center %d%% across, %d%% down, %@", Int((c.x * 100).rounded()), Int((c.y * 100).rounded()),
-                                             Zoom.percent(zoom.scale)))
+                setAccessibilityValue(tr("Center {x}% across, {y}% down, {level}", ["x": Digits.text(Int((c.x * 100).rounded())), "y": Digits.text(Int((c.y * 100).rounded())),
+                                                              "level": Digits.percent(zoom.scale)]))
             }
         }
     }
@@ -39,12 +40,12 @@ final class ZoomTargetView: NSView {
         focusRingType = .exterior
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Zoom target")
-        setAccessibilityHelp("Drag the frame to where the zoom should look, or use the arrow keys. Shift moves it further.")
+        setAccessibilityLabel(tr("Zoom target"))
+        setAccessibilityHelp(tr("Drag the frame to where the zoom should look, or use the arrow keys. Shift moves it further."))
         setAccessibilityIdentifier("video.zoom.target")
         // VoiceOver's actions menu moves the frame a tenth of the picture, the same as Shift with an arrow key.
-        setAccessibilityCustomActions([("left", -1.0, 0.0), ("right", 1, 0), ("up", 0, -1), ("down", 0, 1)].map { name, dx, dy in
-            NSAccessibilityCustomAction(name: "Move frame \(name)") { [weak self] in
+        setAccessibilityCustomActions([(tr("Move frame left"), -1.0, 0.0), (tr("Move frame right"), 1, 0), (tr("Move frame up"), 0, -1), (tr("Move frame down"), 0, 1)].map { name, dx, dy in
+            NSAccessibilityCustomAction(name: name) { [weak self] in
                 guard let self, let zoom else { return false }
                 let c = ZoomCamera.reachable(zoom.center, scale: zoom.scale)
                 send(c.x + dx * 10 * Self.step, c.y + dy * 10 * Self.step, .key)

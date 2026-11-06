@@ -1,17 +1,34 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The camera after recording: whether it shows, its shape, size, place and whether it is mirrored.
 final class CameraPanel: SettingsPanel {
     var onChange: (CameraBubble) -> Void = { _ in }
     private(set) var bubble = CameraBubble()
-    private let show = Checkbox(title: "Show camera")
-    private let shape = Segments(symbols: CameraBubble.Shape.allCases.map(CameraPanel.symbol), labels: CameraBubble.Shape.allCases.map(\.rawValue.capitalized),
+    private let show = Checkbox(title: tr("Show camera"))
+    private let shape = Segments(symbols: CameraBubble.Shape.allCases.map(CameraPanel.symbol), labels: CameraBubble.Shape.allCases.map(CameraPanel.title),
                                  width: SettingsPanel.controlWidth)
-    private let size = Segments(labels: CameraBubble.Size.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth, style: .track)
+    private let size = Segments(labels: CameraBubble.Size.allCases.map(CameraPanel.title), width: SettingsPanel.controlWidth, style: .track)
     private let position = PositionGrid(identifier: "video.camera.position")
-    private let mirror = Checkbox(title: "Mirror camera")
+    private let mirror = Checkbox(title: tr("Mirror camera"))
+
+    static func title(_ shape: CameraBubble.Shape) -> String {
+        switch shape {
+        case .circle: return tr("Circle")
+        case .square: return tr("Square")
+        case .rectangle: return tr("Rectangle")
+        }
+    }
+
+    static func title(_ size: CameraBubble.Size) -> String {
+        switch size {
+        case .small: return tr("Small")
+        case .medium: return tr("Medium")
+        case .large: return tr("Large")
+        }
+    }
 
     static func symbol(_ shape: CameraBubble.Shape) -> String {
         switch shape {
@@ -25,22 +42,22 @@ final class CameraPanel: SettingsPanel {
         super.init(frame: frameRect)
         show.setAccessibilityIdentifier("video.camera.show")
         mirror.setAccessibilityIdentifier("video.camera.mirror")
-        mirror.toolTip = "Show the camera the way a mirror would"
+        mirror.toolTip = tr("Show the camera the way a mirror would")
         for box in [show, mirror] {
             box.target = self
             box.action = #selector(changed)
         }
         shape.setAccessibilityIdentifier("video.camera.shape")
-        shape.setAccessibilityLabel("Camera shape")
+        shape.setAccessibilityLabel(tr("Camera shape"))
         size.setAccessibilityIdentifier("video.camera.size")
-        size.setAccessibilityLabel("Camera size")
+        size.setAccessibilityLabel(tr("Camera size"))
         for control in [shape, size] {
             control.target = self
             control.action = #selector(changed)
         }
-        position.setAccessibilityLabel("Camera position")
+        position.setAccessibilityLabel(tr("Camera position"))
         position.onPick = { [unowned self] _ in changed() }
-        add([show, row("Shape", [shape]), row("Size", [size]), row("Position", [position], alignment: .top), mirror])
+        add([show, row(tr("Shape"), [shape]), row(tr("Size"), [size]), row(tr("Position"), [position], alignment: .top), mirror])
         setAccessibilityIdentifier("video.camera")
     }
 

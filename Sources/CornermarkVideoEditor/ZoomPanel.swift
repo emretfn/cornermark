@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The settings of the zoom picked on the timeline, in place of a section's panel: its level as a slider with the presets as detents, its mode, the
 /// spot a Manual zoom aims at, and the edits that reach beyond it.
@@ -21,24 +22,24 @@ final class ZoomPanel: NSStackView {
     private let mode = Select()
     private let modeNote = NSTextField.label(ZoomPanel.modeNote(.followCursor), style: DS.Text.caption, color: DS.Color.textSecondary)
     let target = ZoomTargetView()
-    let animationSettings = Button(title: "Animation Settings", variant: .secondary, size: .small, symbol: "slider.horizontal.3")
-    private let applyToAll = Button(title: "Apply Level to All", variant: .secondary, size: .small)
-    private let remove = Button(title: "Remove Zoom", variant: .dangerGhost, size: .small)
+    let animationSettings = Button(title: tr("Animation Settings"), variant: .secondary, size: .small, symbol: "slider.horizontal.3")
+    private let applyToAll = Button(title: tr("Apply Level to All"), variant: .secondary, size: .small)
+    private let remove = Button(title: tr("Remove Zoom"), variant: .dangerGhost, size: .small)
     private var zoom: Zoom?
 
     /// What each mode does, in one line under the mode menu.
     static func modeNote(_ mode: ZoomMode) -> String {
         switch mode {
-        case .followCursor: return "Holds still, then drifts after the cursor."
-        case .manual: return "Holds the spot framed below."
+        case .followCursor: return tr("Holds still, then drifts after the cursor.")
+        case .manual: return tr("Holds the spot framed below.")
         }
     }
 
     /// The whole story, for the tooltip and VoiceOver.
     static func modeDetail(_ mode: ZoomMode) -> String {
         switch mode {
-        case .followCursor: return "The camera holds while the cursor stays near the middle of the view, then drifts to follow it."
-        case .manual: return "The camera holds the spot framed below. Drag the frame or use the arrow keys to move it."
+        case .followCursor: return tr("The camera holds while the cursor stays near the middle of the view, then drifts to follow it.")
+        case .manual: return tr("The camera holds the spot framed below. Drag the frame or use the arrow keys to move it.")
         }
     }
 
@@ -69,23 +70,23 @@ final class ZoomPanel: NSStackView {
         spacing = DS.Space.s8
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Zoom settings")
+        setAccessibilityLabel(tr("Zoom settings"))
         setAccessibilityIdentifier("video.zoom.panel")
 
         slider.minValue = Zoom.scaleRange.lowerBound
         slider.maxValue = Zoom.scaleRange.upperBound
         slider.isContinuous = true
         slider.style = .field
-        slider.format = Zoom.percent
+        slider.format = { Digits.percent($0) }
         // The presets are detents on the slider: ticks under the field that a drag snaps to.
         slider.detents = Zoom.levels
-        slider.setAccessibilityLabel("Zoom level")
+        slider.setAccessibilityLabel(tr("Zoom level"))
         slider.setAccessibilityIdentifier("video.zoom.level")
         slider.target = self
         slider.action = #selector(sliderMoved)
 
-        for m in ZoomMode.allCases { mode.addItem(withTitle: m.title) }
-        mode.setAccessibilityLabel("Zoom mode")
+        for m in ZoomMode.allCases { mode.addItem(withTitle: m.localizedTitle) }
+        mode.setAccessibilityLabel(tr("Zoom mode"))
         mode.setAccessibilityIdentifier("video.zoom.mode")
         mode.target = self
         mode.action = #selector(modePicked)
@@ -94,15 +95,15 @@ final class ZoomPanel: NSStackView {
 
         target.onChange = { [unowned self] in onChange(.center($0, $1)) }
         animationSettings.setAccessibilityIdentifier("video.zoom.animationSettings")
-        animationSettings.toolTip = "How every zoom in this video moves in, out and after the pointer"
+        animationSettings.toolTip = tr("How every zoom in this video moves in, out and after the pointer")
         animationSettings.onPress { [unowned self] in onChange(.animationSettings) }
         applyToAll.setAccessibilityIdentifier("video.zoom.applyToAll")
         applyToAll.onPress { [unowned self] in onChange(.applyToAll) }
         remove.setAccessibilityIdentifier("video.zoom.remove")
         remove.onPress { [unowned self] in onChange(.remove) }
 
-        let levelRow = row("Level", [slider])
-        let modeRow = row("Mode", [mode])
+        let levelRow = row(tr("Level"), [slider])
+        let modeRow = row(tr("Mode"), [mode])
         let buttons = NSStackView(views: [applyToAll, remove])
         buttons.spacing = DS.Space.s8
         for v in [levelRow, modeRow, modeNote, target, animationSettings, buttons] as [NSView] { addArrangedSubview(v) }

@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// The row under the preview: the time on the left; go to start, a round play or pause and go to end centred under the picture;
 /// the clip edits at the playhead, the volume and the preview-only switch on the right.
@@ -11,18 +12,18 @@ final class TransportBar: NSView {
     var onCommand: (Command) -> Void = { _ in }
     var onVolume: (Float) -> Void = { _ in }
 
-    let startButton = IconButton(symbol: "backward.end.fill", label: "Go to Start")
-    let playButton = IconButton(symbol: "play.fill", label: "Play (Space)", size: .large, tone: .round)
-    let pauseButton = IconButton(symbol: "pause.fill", label: "Pause (Space)", size: .large, tone: .round)
-    let endButton = IconButton(symbol: "forward.end.fill", label: "Go to End")
-    let splitButton = IconButton(symbol: "scissors", label: "Split Clip at Playhead (\u{2318}B)")
-    let deleteButton = IconButton(symbol: "trash", label: "Delete Clip (\u{232B})")
-    let muteButton = IconButton(symbol: "speaker.wave.2.fill", label: "Mute")
-    let unmuteButton = IconButton(symbol: "speaker.slash.fill", label: "Unmute")
+    let startButton = IconButton(symbol: "backward.end.fill", label: tr("Go to Start"))
+    let playButton = IconButton(symbol: "play.fill", label: tr("Play (Space)"), size: .large, tone: .round)
+    let pauseButton = IconButton(symbol: "pause.fill", label: tr("Pause (Space)"), size: .large, tone: .round)
+    let endButton = IconButton(symbol: "forward.end.fill", label: tr("Go to End"))
+    let splitButton = IconButton(symbol: "scissors", label: tr("Split Clip at Playhead (\u{2318}B)"))
+    let deleteButton = IconButton(symbol: "trash", label: tr("Delete Clip (\u{232B})"))
+    let muteButton = IconButton(symbol: "speaker.wave.2.fill", label: tr("Mute"))
+    let unmuteButton = IconButton(symbol: "speaker.slash.fill", label: tr("Unmute"))
     let volume = Slider()
-    let fullButton = IconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Full Screen Preview")
-    let exitFullButton = IconButton(symbol: "arrow.down.right.and.arrow.up.left", label: "Exit Full Screen Preview (Esc)")
-    let time = NSTextField.label("0:00.00 / 0:00.00", style: DS.Text.readout, color: DS.Color.textPrimary)
+    let fullButton = IconButton(symbol: "arrow.up.left.and.arrow.down.right", label: tr("Full Screen Preview"))
+    let exitFullButton = IconButton(symbol: "arrow.down.right.and.arrow.up.left", label: tr("Exit Full Screen Preview (Esc)"))
+    let time = NSTextField.label(tr("{current} / {duration}", ["current": Timecode.text(0), "duration": Timecode.text(0)]), style: DS.Text.readout, color: DS.Color.textPrimary)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -41,14 +42,16 @@ final class TransportBar: NSView {
         volume.doubleValue = 1
         volume.isContinuous = true
         volume.style = .field
-        volume.format = { "\(Int(($0 * 100).rounded()))%" }
+        volume.format = { Digits.percent($0) }
         volume.setAccessibilityIdentifier("video.volume")
-        volume.setAccessibilityLabel("Volume")
+        volume.setAccessibilityLabel(tr("Volume"))
         volume.target = self
         volume.action = #selector(volumeChanged)
         volume.widthAnchor.constraint(equalToConstant: 80).isActive = true
         time.setAccessibilityIdentifier("video.time")
-        time.alignment = .left
+        // A time code keeps its shape in every language, so it reads left to right wherever the bar puts it.
+        time.alignment = .natural
+        time.baseWritingDirection = .leftToRight
 
         // Play sits under the picture it plays; the edits and the view tools are the right group, a hairline between them.
         playback.setViews([startButton, playButton, pauseButton, endButton], in: .leading)
@@ -78,7 +81,7 @@ final class TransportBar: NSView {
 
     required init?(coder: NSCoder) { fatalError("TransportBar is created in code") }
 
-    private let playback = NSStackView()
+    private let playback = MediaControlStack()
     private var playbackLeading: NSLayoutConstraint!
 
     /// Centres the playback group on a whole point, so the buttons stay sharp whatever the bar's width.
@@ -98,8 +101,9 @@ final class TransportBar: NSView {
 
     func update(time current: Double, duration: Double, playing: Bool, hasAudio: Bool, muted: Bool, volume level: Float, previewOnly: Bool,
                 canSplit: Bool, canDelete: Bool) {
-        time.stringValue = "\(Timecode.text(current)) / \(Timecode.text(duration))"
-        time.setAccessibilityLabel("\(Timecode.text(current)) of \(Timecode.text(duration))")
+        let now = Timecode.text(current), total = Timecode.text(duration)
+        time.stringValue = tr("{current} / {duration}", ["current": now, "duration": total])
+        time.setAccessibilityLabel(tr("{current} of {duration}", ["current": now, "duration": total]))
         let look = Look(playing: playing, atStart: current <= 0, atEnd: current >= duration, playable: duration > 0, hasAudio: hasAudio,
                         muted: muted, previewOnly: previewOnly, canSplit: canSplit, canDelete: canDelete, level: level)
         guard look != shown else { return }
@@ -111,8 +115,8 @@ final class TransportBar: NSView {
         playButton.isEnabled = look.playable
         splitButton.isEnabled = canSplit
         deleteButton.isEnabled = canDelete
-        deleteButton.toolTip = canDelete ? "Delete Clip (\u{232B})" : "A video keeps at least one clip"
-        deleteButton.setAccessibilityHelp(canDelete ? nil : "A video keeps at least one clip")
+        deleteButton.toolTip = canDelete ? tr("Delete Clip (\u{232B})") : tr("A video keeps at least one clip")
+        deleteButton.setAccessibilityHelp(canDelete ? nil : tr("A video keeps at least one clip"))
         muteButton.isHidden = muted
         unmuteButton.isHidden = !muted
         // A recording without sound has nothing to turn up: the speaker stays, off and saying why, and the slider steps aside
@@ -120,9 +124,9 @@ final class TransportBar: NSView {
         muteButton.isEnabled = hasAudio
         unmuteButton.isEnabled = hasAudio
         volume.isHidden = !hasAudio
-        let reason = hasAudio ? nil : "This recording has no sound"
-        muteButton.toolTip = reason ?? "Mute"
-        unmuteButton.toolTip = reason ?? "Unmute"
+        let reason = hasAudio ? nil : tr("This recording has no sound")
+        muteButton.toolTip = reason ?? tr("Mute")
+        unmuteButton.toolTip = reason ?? tr("Unmute")
         muteButton.setAccessibilityHelp(reason)
         volume.doubleValue = Double(muted ? 0 : level)
         fullButton.isHidden = previewOnly

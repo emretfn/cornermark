@@ -65,18 +65,18 @@ public struct Transport: Equatable, Sendable {
     private func clamp(_ t: Double) -> Double { min(max(t, 0), duration) }
 }
 
-/// `0:01.25`: minutes, seconds and hundredths, the readout under the preview.
+/// `0:01.25`: minutes, seconds and hundredths, the readout under the preview. The shape stays; the digits are the language's.
 public enum Timecode {
     public static func text(_ seconds: Double) -> String {
         let hundredths = Int((max(seconds, 0) * 100).rounded(.down))
-        return String(format: "%d:%02d.%02d", hundredths / 6000, hundredths / 100 % 60, hundredths % 100)
+        return Digits.localize(String(format: "%d:%02d.%02d", hundredths / 6000, hundredths / 100 % 60, hundredths % 100))
     }
 
     /// `0:05`, a ruler label. A ruler whose ticks are under a second apart needs the hundredths too.
     public static func label(_ seconds: Double, step: Double) -> String {
         guard step >= 1 else { return text(seconds + 0.0001) }
         let s = Int(max(seconds, 0).rounded())
-        return String(format: "%d:%02d", s / 60, s % 60)
+        return Digits.localize(String(format: "%d:%02d", s / 60, s % 60))
     }
 }
 

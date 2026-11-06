@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The settings column on the left: a rail of section buttons and the panel of the chosen section.
 final class InspectorView: NSView {
@@ -26,12 +27,12 @@ final class InspectorView: NSView {
     let clicksPanel = ClicksPanel()
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     private let body = NSStackView()
-    private let showCursor = Checkbox(title: "Show cursor")
+    private let showCursor = Checkbox(title: tr("Show cursor"))
     private let cursorSize = TrackingSlider()
     private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth, style: .track)
     private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth, style: .track)
-    private let hideIdle = Checkbox(title: "Hide when not moving")
-    private let hideTyping = Checkbox(title: "Hide when typing")
+    private let hideIdle = Checkbox(title: tr("Hide when not moving"))
+    private let hideTyping = Checkbox(title: tr("Hide when typing"))
     private var rowLabels: [NSTextField] = []
     private let emptyNote = NSTextField(wrappingLabelWithString: "")
     private var cursorRows: [NSView] = []
@@ -52,7 +53,7 @@ final class InspectorView: NSView {
               origin: RecordingProject.Source.Origin = .recording, hasAudio: Bool = false) {
         self.cursor = cursor
         for (s, b) in railButtons { b.isSelected = zoom == nil && s == section }
-        title.stringValue = zoom == nil ? section.title : "Zoom"
+        title.stringValue = zoom == nil ? section.title : tr("Zoom")
         zoomPanel.isHidden = zoom == nil
         if let zoom { zoomPanel.show(zoom, count: zoomCount) }
         let panels = recordingPanels
@@ -82,16 +83,16 @@ final class InspectorView: NSView {
 
     static func title(_ style: CursorStyle) -> String {
         switch style {
-        case .white: return "White"
-        case .black: return "Black"
-        case .dot: return "Dot"
+        case .white: return tr("White")
+        case .black: return tr("Black")
+        case .dot: return tr("Dot")
         }
     }
 
     static func title(_ motion: CursorMotion) -> String {
         switch motion {
-        case .natural: return "Natural"
-        case .smooth: return "Smooth"
+        case .natural: return tr("Natural")
+        case .smooth: return tr("Smooth")
         }
     }
 
@@ -99,19 +100,19 @@ final class InspectorView: NSView {
     static func note(_ section: EditorSection, origin: RecordingProject.Source.Origin = .recording, hasAudio: Bool = false) -> String {
         if origin == .file {
             switch section {
-            case .cursor: return "This video was opened from a file, so it has no pointer track. Its pointer is part of the picture, and zooms still work. Record Project to change the pointer afterwards."
-            case .clicks: return "This video was opened from a file, so no clicks were recorded with it."
-            case .keystrokes: return "This video was opened from a file, so no keystrokes were recorded with it."
-            case .audio: return hasAudio ? "This video plays and exports with its own sound." : "This video has no sound."
-            case .camera: return "This video has no camera."
+            case .cursor: return tr("This video was opened from a file, so it has no pointer track. Its pointer is part of the picture, and zooms still work. Record Project to change the pointer afterwards.")
+            case .clicks: return tr("This video was opened from a file, so no clicks were recorded with it.")
+            case .keystrokes: return tr("This video was opened from a file, so no keystrokes were recorded with it.")
+            case .audio: return hasAudio ? tr("This video plays and exports with its own sound.") : tr("This video has no sound.")
+            case .camera: return tr("This video has no camera.")
             case .background, .motionBlur: break
             }
         }
         switch section {
         case .cursor, .clicks: return ""
-        case .keystrokes: return "This recording has no keystrokes. Turn on Show keystrokes in Recording settings before you record."
-        case .audio: return "This recording has no sound. Turn on Record microphone or Record system audio in Audio settings before you record."
-        case .camera: return "This recording has no camera. Turn on Show camera in Camera settings before you record."
+        case .keystrokes: return tr("This recording has no keystrokes. Turn on Show keystrokes in Recording settings before you record.")
+        case .audio: return tr("This recording has no sound. Turn on Record microphone or Record system audio in Audio settings before you record.")
+        case .camera: return tr("This recording has no camera. Turn on Show camera in Camera settings before you record.")
         case .background, .motionBlur: return ""
         }
     }
@@ -143,21 +144,21 @@ final class InspectorView: NSView {
         cursorSize.minValue = Self.sizeRange.lowerBound
         cursorSize.maxValue = Self.sizeRange.upperBound
         cursorSize.isContinuous = true
-        cursorSize.format = { String(format: "%.1f\u{00D7}", ($0 * 10).rounded() / 10) }
+        cursorSize.format = { tr("{value}\u{00D7}", ["value": Digits.fixed(($0 * 10).rounded() / 10, 1)]) }
         cursorSize.onTrackingEnd = { [unowned self] in onCursorSizeEnd() }
         cursorSize.setAccessibilityIdentifier("video.cursor.size")
-        cursorSize.setAccessibilityLabel("Cursor size")
+        cursorSize.setAccessibilityLabel(tr("Cursor size"))
         cursorSize.target = self
         cursorSize.action = #selector(sizeChanged)
         cursorStyle.setAccessibilityIdentifier("video.cursor.style")
-        cursorStyle.setAccessibilityLabel("Cursor style")
-        for (i, tip) in ["White arrow", "Black arrow", "Translucent dot"].enumerated() { cursorStyle.setToolTip(tip, forSegment: i) }
+        cursorStyle.setAccessibilityLabel(tr("Cursor style"))
+        for (i, tip) in [tr("White arrow"), tr("Black arrow"), tr("Translucent dot")].enumerated() { cursorStyle.setToolTip(tip, forSegment: i) }
         cursorStyle.target = self
         cursorStyle.action = #selector(styleChanged)
         cursorMotion.setAccessibilityIdentifier("video.cursor.motion")
-        cursorMotion.setAccessibilityLabel("Cursor motion")
-        cursorMotion.setToolTip("The path as it was recorded", forSegment: 0)
-        cursorMotion.setToolTip("A steadier path that settles at each stop", forSegment: 1)
+        cursorMotion.setAccessibilityLabel(tr("Cursor motion"))
+        cursorMotion.setToolTip(tr("The path as it was recorded"), forSegment: 0)
+        cursorMotion.setToolTip(tr("A steadier path that settles at each stop"), forSegment: 1)
         cursorMotion.target = self
         cursorMotion.action = #selector(motionChanged)
         for (box, id) in [(hideIdle, "video.cursor.hideIdle"), (hideTyping, "video.cursor.hideTyping")] {
@@ -174,9 +175,9 @@ final class InspectorView: NSView {
             row.alignment = .centerY
             return row
         }
-        let sizeRow = row("Size", [cursorSize])
-        let styleRow = row("Style", [cursorStyle])
-        let motionRow = row("Motion", [cursorMotion])
+        let sizeRow = row(tr("Size"), [cursorSize])
+        let styleRow = row(tr("Style"), [cursorStyle])
+        let motionRow = row(tr("Motion"), [cursorMotion])
         // The stack insets its rows, so the line between the look and the hiding options is laid over a spacer of its height.
         let ruleSlot = NSView()
         ruleSlot.heightAnchor.constraint(equalToConstant: 1).isActive = true
