@@ -725,6 +725,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func save() -> SaveResult {
         let result = writeIfChanged()
         refresh()
+        // The header's word changes without moving focus, so VoiceOver hears the outcome too.
+        if case .failed = result { announce("Could not save the edits") } else { announce("Saved") }
         onSave(result)
         return result
     }

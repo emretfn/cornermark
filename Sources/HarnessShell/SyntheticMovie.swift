@@ -38,44 +38,51 @@ enum SyntheticMovie {
         guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         writer.startSession(atSourceTime: .zero)
 
-        for i in 0..<spec.frames {
-            while !video.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            guard let pool = adaptor.pixelBufferPool else { throw CocoaError(.fileWriteUnknown) }
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-            guard let buffer else { throw CocoaError(.fileWriteUnknown) }
-            draw(frame: i, of: spec, into: buffer)
-            adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(spec.fps)))
-        }
-        video.markAsFinished()
+        var format: CMAudioFormatDescription?
+        var asbd = AudioStreamBasicDescription(mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
+                                               mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+                                               mBytesPerPacket: 2, mFramesPerPacket: 1, mBytesPerFrame: 2, mChannelsPerFrame: 1, mBitsPerChannel: 16, mReserved: 0)
+        CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+        let total = Int(Double(spec.frames) / Double(spec.fps) * rate)
 
-        if let audio {
-            let seconds = Double(spec.frames) / Double(spec.fps)
-            let total = Int(seconds * rate), chunk = 4800
-            var asbd = AudioStreamBasicDescription(mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
-                                                   mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
-                                                   mBytesPerPacket: 2, mFramesPerPacket: 1, mBytesPerFrame: 2, mChannelsPerFrame: 1, mBitsPerChannel: 16, mReserved: 0)
-            var format: CMAudioFormatDescription?
-            CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
-            var start = 0
-            while start < total, let format {
-                while !audio.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-                let count = min(chunk, total - start)
-                var samples = (0..<count).map { Int16(sin(2 * .pi * 440 * Double(start + $0) / rate) * 3000) }
-                var block: CMBlockBuffer?
-                CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: count * 2, blockAllocator: nil, customBlockSource: nil,
-                                                   offsetToData: 0, dataLength: count * 2, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block)
-                guard let block else { break }
-                samples.withUnsafeMutableBytes { _ = CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: count * 2) }
-                var sample: CMSampleBuffer?
-                CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: block, formatDescription: format, sampleCount: count,
-                                                                     presentationTimeStamp: CMTime(value: CMTimeValue(start), timescale: CMTimeScale(rate)),
-                                                                     packetDescriptions: nil, sampleBufferOut: &sample)
-                if let sample { audio.append(sample) }
-                start += count
+        // The writer interleaves its tracks, so each input is fed from its own queue whenever the writer asks for more.
+        let group = DispatchGroup()
+        group.enter()
+        var frame = 0
+        video.requestMediaDataWhenReady(on: DispatchQueue(label: "synthetic.video")) {
+            while video.isReadyForMoreMediaData && frame < spec.frames {
+                var buffer: CVPixelBuffer?
+                if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) }
+                guard let buffer else { break }
+                draw(frame: frame, of: spec, into: buffer)
+                adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(spec.fps)))
+                frame += 1
             }
-            audio.markAsFinished()
+            if frame >= spec.frames { video.markAsFinished(); group.leave() }
         }
+        if let audio, let format {
+            group.enter()
+            var fed = 0
+            audio.requestMediaDataWhenReady(on: DispatchQueue(label: "synthetic.audio")) {
+                while audio.isReadyForMoreMediaData && fed < total {
+                    let count = min(4800, total - fed)
+                    var samples = (0..<count).map { Int16(sin(2 * .pi * 440 * Double(fed + $0) / rate) * 3000) }
+                    var block: CMBlockBuffer?
+                    CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: count * 2, blockAllocator: nil, customBlockSource: nil,
+                                                       offsetToData: 0, dataLength: count * 2, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block)
+                    guard let block else { break }
+                    samples.withUnsafeMutableBytes { _ = CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: count * 2) }
+                    var buffer: CMSampleBuffer?
+                    CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: block, formatDescription: format, sampleCount: count,
+                                                                         presentationTimeStamp: CMTime(value: CMTimeValue(fed), timescale: CMTimeScale(rate)),
+                                                                         packetDescriptions: nil, sampleBufferOut: &buffer)
+                    if let buffer { audio.append(buffer) }
+                    fed += count
+                }
+                if fed >= total { audio.markAsFinished(); group.leave() }
+            }
+        }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in group.notify(queue: .global()) { done.resume() } }
         await writer.finishWriting()
         if writer.status != .completed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
     }

@@ -100,10 +100,10 @@ extension AppCoordinator {
 
     static func importFailure(_ error: Error) -> String {
         switch error as? VideoImportError {
-        case .notAVideo?: return "Could not open the file: Cornermark opens MP4 and MOV videos."
-        case .noPicture?: return "Could not open the video: it has no picture to edit."
-        case .turned?: return "Could not open the video: it is stored turned on its side, which the editor does not show yet."
-        case nil: return "Could not open the video. Check that the save folder can be written to, then try again."
+        case .notAVideo?: return "Could not open the file. Choose an MP4 or MOV video."
+        case .noPicture?: return "Could not open the video: it has no picture. Choose a video that plays in a player."
+        case .turned?: return "Could not open the video: it is stored turned on its side. Turn it upright in another app, then open it again."
+        case nil: return "Could not open the video. Check that it plays and that the save folder can be written to, then try again."
         }
     }
 
