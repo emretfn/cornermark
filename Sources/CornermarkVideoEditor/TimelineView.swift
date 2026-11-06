@@ -11,7 +11,7 @@ final class TimelineView: NSView {
         static let top: CGFloat = DS.Space.s8
         static let ruler: CGFloat = 24
         static let gap: CGFloat = DS.Space.s6
-        static let zoomLane: CGFloat = 28
+        static let zoomLane: CGFloat = 40
         static let clipLane: CGFloat = 52
         static let bottom: CGFloat = DS.Space.s12
         static var height: CGFloat { top + ruler + gap + zoomLane + gap + clipLane + bottom }

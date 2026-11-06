@@ -1155,6 +1155,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                        zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count,
                        origin: project.source.origin, hasAudio: frames.hasAudio)
         timeline.zoomLane.zooms = zooms
+        timeline.zoomLane.animation = project.edits.zoomAnimation
         timeline.zoomLane.selection = state.selectedZoom
         animationPanel.show(project.edits.zoomAnimation)
         let picked = zooms.first { $0.id == state.selectedZoom }
