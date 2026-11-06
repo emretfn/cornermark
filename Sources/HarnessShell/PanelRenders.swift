@@ -211,8 +211,7 @@ enum PanelRenders {
             editor.closeZoomAnimation()
             editor.selectZoom(nil)
         }
-        // The whole window as the picks were judged: the Cursor section over a lane with two zooms. The fixture is two seconds
-        // long, so the moves are set to their shortest, 0.30 s, for the blocks to have room for level and mode beside the ramps.
+        // The whole window as the picks were judged: the Cursor section over a lane with two zooms.
         for zoom in editor.state.project.edits.zooms { editor.removeZoom(zoom.id) }
         editor.setZoomAnimation(ZoomAnimation(duration: 0.3))
         if let first = editor.addZoom(from: 0.1, to: 0.9), let second = editor.addZoom(from: 1.0, to: 1.9) {

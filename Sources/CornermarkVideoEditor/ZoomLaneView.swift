@@ -136,16 +136,6 @@ final class ZoomLaneView: NSView {
         }
     }
 
-    /// The project's zoom motion, which the ramps at each end of a zoom draw to scale.
-    var animation = ZoomAnimation() { didSet { if oldValue != animation { needsDisplay = true } } }
-
-    /// How wide the move in (and out) of `zoom` is on the lane: the ramp's seconds at the timeline's scale, at most half the block.
-    func rampWidth(_ zoom: Zoom) -> CGFloat {
-        let r = rect(of: zoom), s = scale
-        let seconds = animation.ramp(zoom)
-        return min((CGFloat(s.x(zoom.start + seconds)) - CGFloat(s.x(zoom.start))).rounded(), (r.width / 2).rounded(.down))
-    }
-
     private func drawBlock(_ zoom: Zoom) {
         let r = rect(of: zoom)
         let picked = zoom.id == selection
@@ -153,36 +143,13 @@ final class ZoomLaneView: NSView {
         let radius = DS.Radius.sm
         NSBezierPath.continuous(r, radius: radius).fill(with: picked ? c.accentSubtle : c.bgControlActive)
 
-        // The zoom's profile: the move in on the curve the camera follows, the hold, and the move out, so the motion reads off the lane.
-        let ramp = rampWidth(zoom)
-        if ramp >= DS.Space.s4 {
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath.continuous(r, radius: radius).addClip()
-            let low = r.maxY - DS.Space.s6, high = r.minY + DS.Space.s6
-            let profile = NSBezierPath()
-            profile.move(to: CGPoint(x: r.minX, y: low))
-            for i in 1...16 {
-                let u = Double(i) / 16
-                profile.line(to: CGPoint(x: r.minX + ramp * CGFloat(u), y: low + (high - low) * CGFloat(ZoomCurve.smootherstep(u))))
-            }
-            for i in 0...16 {
-                let u = Double(i) / 16
-                profile.line(to: CGPoint(x: r.maxX - ramp + ramp * CGFloat(u), y: high + (low - high) * CGFloat(ZoomCurve.smootherstep(u))))
-            }
-            (picked ? c.accentText : c.textSecondary).setStroke()
-            profile.lineWidth = 1.5
-            profile.lineJoinStyle = .round
-            profile.stroke()
-            NSGraphicsContext.restoreGraphicsState()
-        }
-
         // The strong border keeps 3:1 against the lane, so a zoom too short for its label still reads as one.
         (picked ? c.accentBorder : c.borderStrong).setStroke()
         let edge = NSBezierPath.continuous(r.insetBy(dx: 0.5, dy: 0.5), radius: radius - 0.5)
         edge.lineWidth = 1
         edge.stroke()
 
-        // Level and mode sit past the move in and stop before the move out; what does not fit is left out, the level last.
+        // Level and mode sit between the handles; what does not fit is left out, the level last.
         let ink = picked ? c.accentText : c.textPrimary
         let quiet = picked ? c.accentText : c.textSecondary
         let level = Zoom.percent(zoom.scale) as NSString, mode = zoom.mode.title as NSString
@@ -190,7 +157,7 @@ final class ZoomLaneView: NSView {
         let levelSize = level.size(withAttributes: levelAttrs), modeSize = mode.size(withAttributes: modeAttrs)
         let icon = DS.Size.iconSmall
         let grip = Self.edgeGrab
-        let left = r.minX + max(ramp, grip) + DS.Space.s6, right = r.maxX - max(ramp, grip) - DS.Space.s6
+        let left = r.minX + grip + DS.Space.s6, right = r.maxX - grip - DS.Space.s6
         let room = right - left
         let full = icon + DS.Space.s4 + levelSize.width
         func line(_ size: CGSize) -> CGFloat { (r.midY - size.height / 2).rounded() }
