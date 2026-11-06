@@ -251,6 +251,7 @@ func checkVideoExport() async throws {
         check(rows.count == 3 && rows.allSatisfy { $0.encoded.psnr > 35 }, "the file's frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
         try await checkTrimmedExport(editor, frames: frames, clock: clock, root: w.root)
+        try await checkCursorExport(c, folder: folder, clock: clock, root: w.root) { decoders[$0] }
     } else { check(false, "the harness decoder is known") }
     if let frames = decoders[folder.standardizedFileURL.resolvingSymlinksInPath()] ?? decoders.values.first {
         try await checkBackgroundParity(editor, frames: frames, clock: clock, root: w.root)
@@ -335,4 +336,77 @@ private func checkTrimmedExport(_ editor: VideoEditorWindowController, frames: S
     editor.undo()
     editor.undo()
     check(editor.state.project.edits.clips.count == 1, "undo puts the project back to one clip")
+}
+
+/// Every cursor choice that moves or fades the pointer, exported and compared with the preview: the state of every frame, and the pixels
+/// of moments where the spring trails the pointer, where typing fades it, and where it is gone.
+@MainActor
+private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: ScriptedClock, root: URL, decoder: (URL) -> StillFrames?) async throws {
+    section("video export: cursor style, motion and hiding match the preview")
+    let copy = try movingPointerCopy(of: folder, in: root)
+    var typed = try RecordingProjectFile.read(from: copy)
+    typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false)]
+    try RecordingProjectFile.write(typed, to: copy)
+    guard let editor = c.openVideoEditor(copy), let frames = decoder(copy) else { return check(false, "the moving-pointer copy opens in the editor") }
+    defer { editor.window?.close() }
+    editor.window?.setContentSize(NSSize(width: 1200, height: 760))
+    editor.window?.contentView?.layoutSubtreeIfNeeded()
+    await editor.ready()
+    let choices = [CursorSettings(scale: 2.4, style: .black, motion: .smooth, hidesWhenTyping: true),
+                   CursorSettings(scale: 1.6, style: .dot, motion: .smooth, hidesWhenIdle: true)]
+    for (n, cursor) in choices.enumerated() {
+        editor.setCursor(cursor)
+        let project = editor.state.project
+        let out = root.appendingPathComponent("cursor-\(n).mp4")
+        let report = try await VideoExporter.export(project: project, video: editor.videoURL, settings: ExportSettings(), to: out)
+        var mismatched: [Int] = []
+        var faded = 0, hidden = 0
+        for k in 0..<report.plan.frameCount {
+            let t = report.plan.time(ofFrame: k)
+            editor.seek(to: t)
+            let exported = frameState(project, outputTime: t)
+            if editor.previewState != exported { mismatched.append(k) }
+            if let o = exported.cursor?.opacity, o < 1 { faded += 1 }
+            if exported.cursor == nil { hidden += 1 }
+        }
+        let name = "\(cursor.style.rawValue) \(cursor.motion.rawValue) scale \(cursor.scale)"
+        print("PARITYFRAMES \(name) frames=\(report.plan.frameCount) mismatched=\(mismatched.count) faded=\(faded) hidden=\(hidden)")
+        check(mismatched.isEmpty, "\(name): the preview puts the pointer where the export does, every one of \(report.plan.frameCount) frames",
+              detail: "\(mismatched.prefix(5))")
+        let times = n == 0 ? [0.3, 0.5, 0.8, 1.25, 1.6] : [0.3, 0.5, 1.0]
+        let rows = await measureParity(editor, frames: frames, clock: clock, export: out, plan: report.plan, project: project, times: times, name: "parity-cursor-\(n)")
+        for r in rows {
+            let c = frameState(project, outputTime: r.time).cursor
+            print(String(format: "PARITY cursor %@ t=%.2f opacity=%.2f preview-vs-drawn %@ | preview-vs-file %@", name, r.time, c?.opacity ?? 0,
+                         r.drawn.description, r.encoded.description))
+        }
+        check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
+              "\(name): the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
+        check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "\(name): the file's frames match the preview within compression loss",
+              detail: rows.map { $0.encoded.description }.joined(separator: "; "))
+    }
+    editor.setCursor(choices[0])
+    var framed = editor.state.project.edits.background
+    framed.fill = .gradient(index: 6)
+    framed.padding = 48; framed.shadow = 70; framed.cornerRadius = 20
+    editor.setBackground(framed)
+    let onBackground = editor.state.project
+    let framedOut = root.appendingPathComponent("cursor-background.mp4")
+    let framedReport = try await VideoExporter.export(project: onBackground, video: editor.videoURL, settings: ExportSettings(), to: framedOut)
+    let framedTimes = [0.3, 0.5, 0.8, 1.25]
+    let framedRows = await measureParity(editor, frames: frames, clock: clock, export: framedOut, plan: framedReport.plan, project: onBackground, times: framedTimes,
+                                         name: "parity-cursor-background")
+    for r in framedRows {
+        print(String(format: "PARITY cursor on background t=%.2f opacity=%.2f preview-vs-drawn %@ | preview-vs-file %@", r.time,
+                     frameState(onBackground, outputTime: r.time).cursor?.opacity ?? 0, r.drawn.description, r.encoded.description))
+    }
+    check(framedRows.count == framedTimes.count && framedRows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
+          "the pointer on a background: the export draws it inside the rounded frame where the preview does", detail: framedRows.map { $0.drawn.description }.joined(separator: "; "))
+    check(framedRows.count == framedTimes.count && framedRows.allSatisfy { $0.encoded.psnr > 35 },
+          "the pointer on a background: the file's frames match the preview within compression loss", detail: framedRows.map { $0.encoded.description }.joined(separator: "; "))
+    editor.setBackground(VideoBackground())
+    var shown = editor.state.project
+    shown.edits.cursor = choices[0]
+    check((0.0...0.9).contains(frameState(shown, outputTime: 1.25).cursor?.opacity ?? -1) && frameState(shown, outputTime: 1.6).cursor == nil,
+          "the measured moments include a pointer mid-fade and a hidden one")
 }

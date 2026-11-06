@@ -60,8 +60,8 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         return CGRect(x: f.minX * sx, y: CGFloat(height) - f.maxY * sy, width: f.width * sx, height: f.height * sy)
     }
 
-    /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin.
-    public func draw(_ state: FrameState, source: CGImage?, in ctx: CGContext) {
+    /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin. `camera` is the camera file's picture at the same moment.
+    public func draw(_ state: FrameState, source: CGImage?, camera: CGImage? = nil, in ctx: CGContext) {
         let full = CGRect(x: 0, y: 0, width: width, height: height)
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
         ctx.fill(full)
@@ -75,18 +75,19 @@ public struct ExportFrameRenderer: @unchecked Sendable {
             ctx.clip()
         }
         if let source { ctx.draw(source, in: frame) }
-        if let cursor = state.cursor {
+        if state.cursor != nil || (state.camera != nil && camera != nil) {
             ctx.translateBy(x: frame.minX, y: frame.maxY)
             ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
-            PointerShape.draw(cursor, in: ctx)
+            if let placed = state.camera, let camera { CameraBubblePainter.draw(camera, placed, in: ctx) }
+            if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
         }
         ctx.restoreGState()
     }
 
-    public func image(_ state: FrameState, source: CGImage?) -> CGImage? {
+    public func image(_ state: FrameState, source: CGImage?, camera: CGImage? = nil) -> CGImage? {
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: Self.colorSpace,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-        draw(state, source: source, in: ctx)
+        draw(state, source: source, camera: camera, in: ctx)
         return ctx.makeImage()
     }
 }
@@ -135,6 +136,11 @@ public enum VideoExporter {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
         let timeline = project.timeline
+        // The camera file shares the video's timeline, so each clip reads the same stretch of it. A project whose camera file is gone
+        // still exports, without the camera.
+        let cameraAsset = project.source.camera.map { AVURLAsset(url: video.deletingLastPathComponent().appendingPathComponent($0)) }
+        let cameraTrack = try? await cameraAsset?.loadTracks(withMediaType: .video).first
+        var cameraReader: ClipReader?
         let renderer = ExportFrameRenderer(plan: plan, project: project, folder: video.deletingLastPathComponent())
         var reader: ClipReader?
         var reported = -1
@@ -146,8 +152,13 @@ public enum VideoExporter {
             let clip = timeline.clipIndex(at: t)
             if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
             let current = reader?.image(at: state.sourceTime)
+            var camera: CGImage?
+            if state.camera != nil, let cameraAsset, let cameraTrack {
+                if cameraReader?.clip != clip { cameraReader = try? ClipReader(asset: cameraAsset, track: cameraTrack, clip: clip, range: timeline.clips[clip]) }
+                camera = cameraReader?.image(at: state.sourceTime)
+            }
             let buffer = try encoder.makeBuffer()
-            try draw(into: buffer) { renderer.draw(state, source: current, in: $0) }
+            try draw(into: buffer) { renderer.draw(state, source: current, camera: camera, in: $0) }
             try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
             try await sink.append(encoder.take())
             let percent = (k + 1) * 100 / plan.frameCount

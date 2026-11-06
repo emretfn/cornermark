@@ -80,6 +80,7 @@ final class MenuPanelController {
             canRestoreOverlay: !c.overlay.recentlyClosed.isEmpty,
             pins: c.pins.summaries,
             recording: c.recording.phase,
+            cameraFullScreen: c.recording.cameraLook?.isFullScreen,
             microphoneSilent: c.recording.microphone?.isSilent ?? false,
             recent: c.env.store.list(filter: CaptureFilter(limit: MenuPanelModel.recentLimit)))
     }

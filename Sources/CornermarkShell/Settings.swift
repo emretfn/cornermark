@@ -100,6 +100,8 @@ struct RecordingPreferences: Codable, Equatable {
     var hideNotifications = true
     var clicks = ClickHighlight()
     var keystrokes = KeystrokeDisplay()
+    /// Off until someone turns it on, because it needs the camera.
+    var camera = CameraBubble(isVisible: false)
     var audio = AudioPreferences()
 
     init() {}
@@ -120,6 +122,8 @@ struct RecordingPreferences: Codable, Equatable {
         hideNotifications = get(.hideNotifications, d.hideNotifications)
         clicks = get(.clicks, d.clicks)
         keystrokes = get(.keystrokes, d.keystrokes)
+        camera = get(.camera, d.camera)
+        camera.fullScreen = []
         audio = get(.audio, d.audio)
     }
 

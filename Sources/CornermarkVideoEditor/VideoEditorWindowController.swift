@@ -91,6 +91,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// The added background picture as last read, keyed by its file name.
     private var backgroundPicture: (file: String?, image: CGImage?) = (nil, nil)
     private var frames: SourceFrames
+    /// The camera file's pictures, when the recording has a camera. A harness can set its own.
+    public var cameraFrames: SourceFrames?
     private let clock: () -> Double
     private let preview = PreviewView()
     private let transportBar = TransportBar()
@@ -117,7 +119,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         do { project = try RecordingProjectFile.read(from: folder) } catch { throw VideoEditorError.noProject(folder.lastPathComponent) }
         let video = folder.appendingPathComponent(project.source.video)
         guard FileManager.default.fileExists(atPath: video.path) else { throw VideoEditorError.noVideo(project.source.video) }
-        return VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video))
+        let editor = VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video))
+        if let name = project.source.camera, FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
+            let camera = PlayerFrames(url: folder.appendingPathComponent(name))
+            camera.volume = 0
+            editor.cameraFrames = camera
+        }
+        return editor
     }
 
     /// `frames` decodes the source and `clock` is the host clock in seconds; a harness passes its own of both.
@@ -289,9 +297,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         refresh()
     }
 
+    /// A run of size changes, such as one slider drag, is one undo step.
     public func setCursor(_ cursor: CursorSettings) {
         var edits = state.project.edits
-        let sizeOnly = cursor.isVisible == edits.cursor.isVisible
+        var sameButSize = cursor
+        sameButSize.scale = edits.cursor.scale
+        let sizeOnly = sameButSize == edits.cursor
         edits.cursor = cursor
         commit(edits, coalescing: sizeOnly ? "cursor.scale" : nil)
     }
@@ -646,6 +657,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         if let image = frames.frame(at: frame.sourceTime) {
             preview.image = image
             if !state.transport.isPlaying { awaitingSince = nil }
+        }
+        if let cameraFrames, frame.camera != nil {
+            cameraFrames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying)
+            if let image = cameraFrames.frame(at: frame.sourceTime) { preview.cameraImage = image }
         }
         preview.state = frame
         preview.canvas = state.project.canvas

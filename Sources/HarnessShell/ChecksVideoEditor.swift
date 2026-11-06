@@ -148,6 +148,7 @@ func checkVideoEditor() async throws {
     try await checkVideoEditorPlayback(w, folder: folder)
     try await checkVideoEditorSaving(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorClips(w, folder: folder, videoHash: videoHash)
+    try await checkVideoEditorCursor(w, folder: folder)
     try await checkVideoBackground(w, folder: folder)
     try await checkVideoAspect(w, folder: folder)
     try await checkVideoEditorPerformance(folder: folder)
@@ -582,6 +583,109 @@ private func checkVideoEditorSaving(_ w: World, folder: URL, videoHash: String) 
     check(again.state.project.edits.cursor.scale == 2.5, "reopening shows the saved edit")
     w.coordinator.closeAllEditors()
     check(try RecordingProjectFile.read(from: folder) == stored, "closing without a change leaves the file alone")
+}
+
+@MainActor
+private func checkVideoEditorCursor(_ w: World, folder: URL) async throws {
+    section("video editor: cursor size, style, motion and hiding")
+    let moving = try movingPointerCopy(of: folder, in: w.root)
+    guard let editor = w.coordinator.openVideoEditor(moving), let window = editor.window, let content = window.contentView else {
+        return check(false, "the editor opens")
+    }
+    window.setContentSize(window.minSize)
+    content.layoutSubtreeIfNeeded()
+    let before = editor.state.project.edits
+    let show = editor.view(identifier: "video.cursor.show") as? NSButton
+    let size = editor.view(identifier: "video.cursor.size") as? NSSlider
+    let style = editor.view(identifier: "video.cursor.style") as? Segments
+    let motion = editor.view(identifier: "video.cursor.motion") as? Segments
+    let idle = editor.view(identifier: "video.cursor.hideIdle") as? NSButton
+    let typing = editor.view(identifier: "video.cursor.hideTyping") as? NSButton
+    let panel = frameInWindow(editor.view(identifier: "video.panel"))
+    let controls: [NSView?] = [show, size, style, motion, idle, typing]
+    check(controls.allSatisfy { $0 != nil && panel.contains(frameInWindow($0)) },
+          "at the smallest window the panel holds Show cursor, Size, Style, Motion and both hiding options inside its edges",
+          detail: controls.map { "\(frameInWindow($0))" }.joined(separator: " "))
+    let rows = controls.map { frameInWindow($0) }
+    check(zip(rows, rows.dropFirst()).allSatisfy { $0.minY >= $1.maxY }, "the settings stack top to bottom without overlapping")
+    check((0..<3).map { style?.label(forSegment: $0) } == ["White", "Black", "Dot"] && style?.toolTip(forSegment: 2) == "Translucent dot",
+          "Style offers White, Black and Dot, each named in its tooltip")
+    check((0..<2).map { motion?.label(forSegment: $0) } == ["Natural", "Smooth"], "Motion offers Natural and Smooth")
+    check(style?.selectedSegment == 0 && motion?.selectedSegment == 0 && idle?.state == .off && typing?.state == .off,
+          "a new project draws the white arrow along the recorded path and never hides it")
+
+    func at(_ t: Double) -> FrameState? {
+        editor.seek(to: t)
+        return editor.previewState
+    }
+    style?.selectedSegment = 2
+    style.map(fire)
+    check(editor.state.project.edits.cursor.style == .dot && at(0.5)?.cursor?.style == .dot, "Dot draws the dot in the preview")
+    motion?.selectedSegment = 1
+    motion.map(fire)
+    let smooth = editor.state.project
+    check(smooth.edits.cursor.motion == .smooth && at(0.5) == frameState(smooth, outputTime: 0.5), "Smooth redraws the preview through frameState")
+    var natural = smooth
+    natural.edits.cursor.motion = .natural
+    let lag = hypot((frameState(smooth, outputTime: 0.5).cursor?.x ?? 0) - (frameState(natural, outputTime: 0.5).cursor?.x ?? 0),
+                    (frameState(smooth, outputTime: 0.5).cursor?.y ?? 0) - (frameState(natural, outputTime: 0.5).cursor?.y ?? 0))
+    check(lag > 1, "on a moving stretch the smooth pointer trails the recorded one", detail: String(format: "%.1f pt", lag))
+    idle?.performClick(nil)
+    typing?.performClick(nil)
+    check(editor.state.project.edits.cursor.hidesWhenIdle && editor.state.project.edits.cursor.hidesWhenTyping, "both hiding options are on")
+    show?.performClick(nil)
+    check(!editor.state.project.edits.cursor.isVisible && [size, style, motion, idle, typing].allSatisfy { ($0 as? NSControl)?.isEnabled == false },
+          "with Show cursor off the other settings are off too")
+    snapshotEditor(editor, name: "video-editor-cursor-off")
+    show?.performClick(nil)
+
+    let steps = editor.state.project.edits
+    for v in [1.5, 2.0, 2.5] where v != steps.cursor.scale {
+        size?.doubleValue = v
+        size.map(fire)
+    }
+    check(editor.state.project.edits.cursor.scale == 2.5 && at(0.5)?.cursor?.scale == 2.5, "the preview follows the size as it changes")
+    Synth.key(window, 6, "z", modifiers: .command)
+    check(editor.state.project.edits == steps && size?.doubleValue == steps.cursor.scale, "Command-Z takes back a run of size changes in one step")
+    Synth.key(window, 6, "z", modifiers: .command)
+    check(editor.state.project.edits.cursor.isVisible == false, "Command-Z again brings back the step before it")
+    Synth.key(window, 6, "Z", modifiers: [.command, .shift])
+    Synth.key(window, 6, "Z", modifiers: [.command, .shift])
+    check(editor.state.project.edits.cursor.scale == 2.5 && style?.selectedSegment == 2 && motion?.selectedSegment == 1,
+          "Shift-Command-Z redoes both and the panel shows them")
+    for _ in 0..<12 { Synth.key(window, 6, "z", modifiers: .command) }
+    check(editor.state.project.edits == before && !editor.canUndo && editor.canRedo, "undoing every step returns to the project as it opened")
+    let undoItem = NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    check((window as? VideoEditorWindow)?.validateMenuItem(undoItem) == false, "the Edit menu's Undo is off with nothing to undo")
+    for _ in 0..<12 { Synth.key(window, 6, "Z", modifiers: [.command, .shift]) }
+    check(editor.state.project.edits.cursor == CursorSettings(scale: 2.5, style: .dot, motion: .smooth, hidesWhenIdle: true, hidesWhenTyping: true),
+          "redoing every step returns to the last choice", detail: "\(editor.state.project.edits.cursor)")
+
+    window.setContentSize(NSSize(width: 1200, height: 760))
+    content.layoutSubtreeIfNeeded()
+    _ = await waitUntil(3) { editor.tick(); return editor.previewImage != nil }
+    snapshotEditor(editor, name: "video-editor-cursor")
+    snapshotEditor(editor, name: "video-editor-cursor-dark", dark: true)
+    window.appearance = nil
+    w.coordinator.closeAllEditors()
+    let stored = try RecordingProjectFile.read(from: moving)
+    check(stored.edits.cursor == CursorSettings(scale: 2.5, style: .dot, motion: .smooth, hidesWhenIdle: true, hidesWhenTyping: true),
+          "closing writes style, motion and both hiding options to project.json")
+}
+
+/// A copy of a fixture project whose pointer sweeps across the area in its first second and then rests, with the edits reset.
+func movingPointerCopy(of folder: URL, in root: URL) throws -> URL {
+    let copy = root.appendingPathComponent("moving-pointer-\(UUID().uuidString.prefix(6))", isDirectory: true)
+    try FileManager.default.copyItem(at: folder, to: copy)
+    var project = try RecordingProjectFile.read(from: copy)
+    let w = project.source.pointWidth, h = project.source.pointHeight
+    project.events.pointer = (0...120).map { i in
+        let t = Double(i) / 120, e = t * t * (3 - 2 * t)
+        return PointerSample(t: t, x: w * (0.15 + 0.7 * e), y: h * (0.25 + 0.5 * e) + (i % 2 == 0 ? 2 : -2))
+    }
+    project.edits = RecordingProject.Edits(clips: project.edits.clips)
+    try RecordingProjectFile.write(project, to: copy)
+    return copy
 }
 
 /// The live path: the player decodes in real time and a 60 Hz tick draws each frame into the preview.

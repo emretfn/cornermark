@@ -293,11 +293,14 @@ final class RecordingControls {
     /// Where the user last dragged the bar, kept for the next recording while the app runs.
     private(set) var rememberedOrigin: CGPoint?
     var onStatus: (RecordingStatus) -> Void = { _ in }
+    let camera: CameraBubbleWindow
 
     init(env: AppEnvironment, recording: RecordingController) {
         self.env = env
         self.recording = recording
+        camera = CameraBubbleWindow(env: env, recording: recording)
         recording.onChange = { [weak self] in self?.update() }
+        recording.onCameraChange = { [weak self] in self?.camera.update() }
         recording.onMicrophone = { [weak self] in self?.microphoneChanged() }
     }
 
@@ -344,6 +347,7 @@ final class RecordingControls {
             showDim(area: area)
             if case .countingDown(let n) = s.phase { showCountdown(n, area: area) } else { closeCountdown() }
         }
+        camera.update(animated: false)
         barView?.showsMicrophone = recording.hearsMicrophone
         barView?.apply(s)
         if s.phase.isRunning, ticker == nil {
