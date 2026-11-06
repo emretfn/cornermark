@@ -156,7 +156,7 @@ enum VideoZoomFilm {
     private static func seconds(_ t: Double) -> String { String(format: "%.2f", t) }
 
     static func z6(_ f: Film, _ s: EditorStage) async throws {
-        f.title = "Z6, Z7  The camera moves in over \(seconds(ZoomCurve.duration)) s and out over \(seconds(ZoomCurve.duration)) s on a smootherstep curve: symmetric, fastest halfway, back to exactly 100%."
+        f.title = "Z6, Z7  The camera moves in over \(seconds(ZoomAnimation().duration)) s and out over \(seconds(ZoomAnimation().duration)) s on a smootherstep curve: symmetric, fastest halfway, back to exactly 100%."
         let (editor, _, x) = try await open(f, s)
         editor.addZoom(from: 1.5, to: 4.5)
         editor.selectZoom(nil)
@@ -170,14 +170,14 @@ enum VideoZoomFilm {
         await s.settle(editor)
         f.hold(1, "Back at 100%.")
         f.status = { [unowned editor, unowned s] in s.cameraText(editor) }
-        for (from, label) in [(1.5, "in"), (4.5 - ZoomCurve.duration, "out")] {
-            let frames = Int((ZoomCurve.duration * 60).rounded(.up))
+        for (from, label) in [(1.5, "in"), (4.5 - ZoomAnimation().duration, "out")] {
+            let frames = Int((ZoomAnimation().duration * 60).rounded(.up))
             for k in 0...frames {
                 editor.seek(to: from + Double(k) / 60)
                 await s.settle(editor)
                 f.hold(0.12, "Frame by frame through the move \(label): \(k)/\(frames) frames, slowed down eight times.")
             }
-            f.hold(1, "The move \(label) took \(frames) frames at 60 fps, \(seconds(ZoomCurve.duration)) s.")
+            f.hold(1, "The move \(label) took \(frames) frames at 60 fps, \(seconds(ZoomAnimation().duration)) s.")
         }
         f.dark = true
         f.refresh()
@@ -185,7 +185,7 @@ enum VideoZoomFilm {
     }
 
     static func z14(_ f: Film, _ s: EditorStage) async throws {
-        f.title = "Z14  Two zooms less than \(seconds(ZoomCurve.joinGap)) s apart: the camera goes from the first straight to the second, without pulling back to 100%."
+        f.title = "Z14  Two zooms less than \(seconds(ZoomAnimation().joinGap)) s apart: the camera goes from the first straight to the second, without pulling back to 100%."
         let (editor, _, x) = try await open(f, s)
         editor.addZoom(from: 1, to: 3)
         if let b = editor.addZoom(from: 3.8, to: 6.2) {
@@ -211,7 +211,7 @@ enum VideoZoomFilm {
         editor.selectZoom(nil)
         editor.seek(to: 0.5)
         await s.settle(editor)
-        f.hold(2, "Moved the second zoom to 5.0 s: now 2.0 s apart, more than \(seconds(ZoomCurve.joinGap)) s.")
+        f.hold(2, "Moved the second zoom to 5.0 s: now 2.0 s apart, more than \(seconds(ZoomAnimation().joinGap)) s.")
         editor.togglePlayback()
         await s.play(editor, seconds: 7.1, note: "Playing: each zoom now returns to 100% on its own.")
         editor.togglePlayback()
@@ -396,12 +396,14 @@ enum ZoomCurveExport {
         }
         let source = RecordingProject.Source(pixelWidth: Int(size.width), pixelHeight: Int(size.height), pointWidth: size.width, pointHeight: size.height,
                                              fps: Int(rate.rounded()), duration: duration)
-        let project = RecordingProject(source: source, edits: .init(zooms: zooms))
+        // CORNERMARK_ZOOM_DURATION measures a move length other than the default.
+        let seconds = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_DURATION"].flatMap(Double.init) ?? ZoomAnimation().duration
+        let project = RecordingProject(source: source, edits: .init(zooms: zooms, zoomAnimation: ZoomAnimation(duration: seconds)))
         let out = folder.appendingPathComponent("zoomed.mp4")
         try? FileManager.default.removeItem(at: out)
         do {
             let report = try await VideoExporter.export(project: project, video: video, settings: ExportSettings(), to: out)
-            print(String(format: "ZOOM CURVE %@ frames=%d seconds=%.3f hardware=%@ zooms=%@", out.path, report.framesWritten, report.duration,
+            print(String(format: "ZOOM CURVE %@ frames=%d seconds=%.3f move=%.2f hardware=%@ zooms=%@", out.path, report.framesWritten, report.duration, seconds,
                          report.usesHardware ? "true" : "false", zooms.map { String(format: "%.2f-%.2f@%.2f", $0.start, $0.end, $0.scale) }.joined(separator: ",")))
             return true
         } catch {

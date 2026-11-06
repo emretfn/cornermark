@@ -142,7 +142,7 @@ enum VideoFollowFilm {
     static func z10(_ f: Film, _ s: EditorStage, _ editor: VideoEditorWindowController) async throws {
         park(f)
         f.title = String(format: "Z10  Cornermark's own choice: the box is the middle %d%% of the view, the drift settles 95%% of a move in 0.68 s, and a new target mid-drift bends the move.",
-                         Int(ZoomFollow.deadZone * 100))
+                         Int(editor.state.project.edits.zoomAnimation.deadZone * 100))
         let x = Extras()
         x.box = true
         x.chart = true
@@ -200,7 +200,7 @@ enum VideoFollowFilm {
         guard let p = state.cursor, project.source.pointWidth > 0 else { return nil }
         let r = state.crop, fx = p.x / project.source.pointWidth, fy = p.y / project.source.pointHeight
         // A settled camera leaves the pointer exactly on the edge, so a hair's tolerance keeps rounding from calling that outside.
-        let half = ZoomFollow.deadZone / 2 + 0.005
+        let half = project.edits.zoomAnimation.deadZone / 2 + 0.005
         return abs(fx - (r.x + r.width / 2)) <= r.width * half && abs(fy - (r.y + r.height / 2)) <= r.height * half
     }
 
@@ -224,7 +224,7 @@ enum VideoFollowFilm {
         guard let zoom = project.edits.zooms.first, zoom.mode == .followCursor, crop.width < 1, abs(crop.scale - zoom.scale) < 0.01,
               let preview = editor.view(identifier: "video.preview") as? PreviewView else { return nil }
         let r = preview.convert(preview.pictureRect, to: nil)
-        let k = ZoomFollow.deadZone
+        let k = project.edits.zoomAnimation.deadZone
         let size = CGSize(width: r.width * k, height: r.height * k)
         let out = inside(project, at: t) == false
         let ctx = Pix.context(Int(size.width * 2), Int(size.height * 2))
@@ -235,7 +235,8 @@ enum VideoFollowFilm {
         ctx.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 1.5, dy: 1.5))
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-        let label = out ? "Harness: pointer outside the middle half, the camera drifts" : "Harness: middle half of the view, the camera holds"
+        let area = k == 0.5 ? "the middle half" : "the hold area (\(Int((k * 100).rounded()))%)"
+        let label = out ? "Harness: pointer outside \(area), the camera drifts" : "Harness: \(area) of the view, the camera holds"
         (label as NSString).draw(at: CGPoint(x: 6, y: size.height - 18), withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .semibold),
                                                                                             .foregroundColor: NSColor(srgbRed: 1, green: 0.55, blue: 0.1, alpha: 1)])
         NSGraphicsContext.restoreGraphicsState()
