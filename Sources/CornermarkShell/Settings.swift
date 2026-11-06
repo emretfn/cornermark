@@ -83,7 +83,7 @@ struct AudioPreferences: Codable, Equatable {
 
 /// How recordings are made and what happens when one finishes.
 struct RecordingPreferences: Codable, Equatable {
-    static let fpsChoices = [30, 60]
+    static let fpsChoices = RecordingQuickOptions.fpsChoices
     var fps = 60
     var quality: VideoQuality = .high
     var density: PixelDensity = .retina
@@ -91,7 +91,7 @@ struct RecordingPreferences: Codable, Equatable {
     /// Record MP4 draws the pointer into its picture. Record Project keeps it as a track either way, and this is whether it starts shown.
     var showCursor = true
     var showQuickAccess = true
-    static let countdownChoices = [0, 3, 5, 10]
+    static let countdownChoices = RecordingQuickOptions.countdownChoices
     /// Seconds counted down before the first frame. 0 starts at once, because recording is a frequent task.
     var countdown = 0
     /// Darkens everything outside an area while it records. The darkening is never in the video.
@@ -153,6 +153,30 @@ struct RecordingPreferences: Codable, Equatable {
     }
 
     var showsInput: Bool { clicks.isVisible || keystrokes.isVisible }
+
+    /// The part of these settings the recording panel's options menu reads and writes.
+    var quick: RecordingQuickOptions {
+        get {
+            var o = RecordingQuickOptions()
+            o.quality = quality
+            o.fps = fps
+            o.countdown = countdown
+            o.showCursor = showCursor
+            o.dimOutside = dimOutside
+            o.hideNotifications = hideNotifications
+            o.hideDesktopIcons = hideDesktopIcons
+            return o
+        }
+        set {
+            quality = newValue.quality
+            fps = newValue.fps
+            countdown = newValue.countdown
+            showCursor = newValue.showCursor
+            dimOutside = newValue.dimOutside
+            hideNotifications = newValue.hideNotifications
+            hideDesktopIcons = newValue.hideDesktopIcons
+        }
+    }
 }
 
 /// Everything the user can configure, persisted as one JSON value.

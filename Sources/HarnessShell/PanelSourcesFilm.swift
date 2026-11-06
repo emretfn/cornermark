@@ -26,28 +26,29 @@ enum PanelSourcesFilm {
         defer { w.cleanup() }
         let c = w.coordinator
         var mic = MicrophoneAccess.notAsked, camera = CameraAccess.notAsked, input = false
-        var requests: [RecordingSource: Int] = [:]
+        var requests: [String: Int] = [:]
         w.env.microphoneAccess = { mic }
         w.env.requestMicrophoneAccess = { done in
-            requests[.microphone, default: 0] += 1
-            DispatchQueue.main.async { mic = .allowed; done(true) }
+            requests["microphone", default: 0] += 1
+            // The answer takes a second, so the film shows the toggle and the note waiting while the prompt is open.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { mic = .allowed; done(true) }
         }
         w.env.cameraAccess = { camera }
         w.env.requestCameraAccess = { done in
-            requests[.camera, default: 0] += 1
+            requests["camera", default: 0] += 1
             DispatchQueue.main.async { camera = .denied; done(false) }
         }
         w.env.hasInputPermission = { input }
         w.env.requestInputPermission = {
-            requests[.input, default: 0] += 1
+            requests["inputMonitoring", default: 0] += 1
             return input
         }
         let mode = f.dark ? "dark" : "light"
         f.title = "Recording panel sources, system appearance \(mode): real overlay and panel rendered offscreen, synthetic desktop, permission answers from the harness"
         c.capture.lastSelection = PreviousSelection(rect: CGRect(x: 200, y: 180, width: 880, height: 420))
         c.perform(.capture(.recording))
-        guard await waitUntil(5, { !c.capture.overlayWindows.isEmpty }), let window = c.capture.overlayWindows.first else { throw FilmError.missing("the overlay") }
-        guard let panel = findView("cornermark.record.source.microphone", in: window.contentView)?.superview else { throw FilmError.missing("the panel") }
+        guard await waitUntil(5, { !c.capture.overlayWindows.isEmpty }), var window = c.capture.overlayWindows.first else { throw FilmError.missing("the overlay") }
+        guard var panel = findView("cornermark.record.source.microphone", in: window.contentView)?.superview else { throw FilmError.missing("the panel") }
         // The system appearance changes; the overlay keeps its own dark appearance over any screen content, so both passes look alike.
         NSApp.appearance = NSAppearance(named: f.dark ? .darkAqua : .aqua)
         defer { NSApp.appearance = nil }
@@ -71,7 +72,7 @@ enum PanelSourcesFilm {
         }
         f.status = {
             let r = w.settings.value.recording
-            let asked = requests.map { "\($0.key.rawValue)=\($0.value)" }.sorted().joined(separator: " ")
+            let asked = requests.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
             return "settings: microphone=\(r.audio.microphone) systemAudio=\(r.audio.systemAudio) camera=\(r.camera.isVisible) clicks=\(r.clicks.isVisible) keys=\(r.keystrokes.isVisible)  requests: \(asked.isEmpty ? "none" : asked)  real: mic=\(MicrophoneAccess.requests) camera=\(CameraAccess.requests) input=\(LiveInputSource.requests)"
         }
         func toggle(_ s: RecordingSource) -> IconButton? { findView("cornermark.record.source.\(s.rawValue)", in: window.contentView) as? IconButton }
@@ -92,27 +93,40 @@ enum PanelSourcesFilm {
             _ = await waitUntil(0.2) { false }
             f.refresh()
             f.hold(1.4, note)
+            guard c.capture.isOverlayYielding else { return }
+            _ = await waitUntil(3) { !c.capture.isOverlayYielding }
+            f.refresh()
+            f.hold(1.0, note)
         }
 
         f.refresh()
-        f.hold(1.6, "Every source is off: four toggles with slashed glyphs, between the size row and the start buttons")
+        f.hold(1.6, "Every source is off: five toggles with slashed or outlined glyphs and no check, between the size row and the start buttons")
         snap("all-off")
-        await click(.microphone, "Microphone: macOS has not asked yet, so it asks now. Allowed, the toggle turns on")
+        await click(.microphone, "Microphone: macOS asks now. The overlay steps aside for the prompt and the toggle waits; allowed, it turns on")
         await click(.systemAudio, "System audio needs no extra permission and turns on. The note says Record GIF never records sound")
         await click(.camera, "Camera: macOS asks now. Refused, it stays off and the note says where to allow it")
         snap("camera-refused")
-        await click(.input, "Clicks and keys: Input Monitoring is asked for once. Refused, it stays off with a note")
+        await click(.clicks, "Click highlights: the overlay closes, then Input Monitoring is asked for once. It applies only after Cornermark reopens")
+        c.perform(.capture(.recording))
+        guard await waitUntil(5, { !c.capture.overlayWindows.isEmpty }), let again = c.capture.overlayWindows.first,
+              let reopened = findView("cornermark.record.source.microphone", in: again.contentView)?.superview else { throw FilmError.missing("the reopened overlay") }
+        window = again
+        panel = reopened
+        f.refresh()
+        f.hold(1.2, "Record Screen again: the panel keeps every choice, and click highlights stay off")
+        await click(.keystrokes, "Keystrokes share that one request: nothing is asked again, it stays off with the same note")
         snap("input-refused")
         input = true
         camera = .allowed
         f.hold(0.8, "In System Settings the person allows Input Monitoring and the camera (set by the harness)")
-        await click(.input, "Clicks and keys: allowed now, one click turns it on and asks nothing")
+        await click(.clicks, "Click highlights: allowed now, one click turns it on and asks nothing")
+        await click(.keystrokes, "Keystrokes: its own setting, on with one more click, still no request")
         await click(.camera, "Camera: allowed now, one click turns it on and asks nothing")
         snap("all-on")
         f.hold(1.0, "Everything on. Settings > Audio, Camera and Recording show the same choices")
         for s in RecordingSource.allCases { await click(s, "\(s.name) off") }
         snap("all-off-again")
-        if requests != [.microphone: 1, .camera: 1, .input: 1] { f.failures.append("requests \(requests)") }
+        if requests != ["microphone": 1, "camera": 1, "inputMonitoring": 1] { f.failures.append("requests \(requests)") }
         if MicrophoneAccess.requests + CameraAccess.requests + LiveInputSource.requests != 0 { f.failures.append("a real prompt was asked for") }
         c.capture.cancel()
         _ = await waitUntil { c.capture.overlayWindows.isEmpty }

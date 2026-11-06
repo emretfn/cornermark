@@ -101,14 +101,16 @@ func checkVideoZoom() async throws {
     let title = editor.view(identifier: "video.panel.title") as? NSTextField
     let panel = editor.view(identifier: "video.zoom.panel")
 
-    check(editor.state.project.edits.zooms.isEmpty && !lane.showsHint, "the lane starts empty and quiet")
+    check(editor.state.project.edits.zooms.isEmpty && !lane.showsHint && lane.showsEmptyHint,
+          "the lane starts empty, with \"\(ZoomLaneView.hint)\" across its width and no ghost")
     hand.hover(x: hand.x(1))
-    check(lane.showsHint && lane.accessibilityHelp() == ZoomLaneView.hint, "hovering empty lane shows where a zoom would go and says \"\(ZoomLaneView.hint)\"")
+    check(lane.showsHint && !lane.showsEmptyHint && lane.accessibilityHelp() == ZoomLaneView.hint,
+          "hovering empty lane swaps that line for a ghost where a zoom would go")
 
     hand.click(x: hand.x(1))
     let first = editor.state.project.edits.zooms.first
     check(zooms() == [[1, 3]] && first?.scale == 2 && editor.state.selectedZoom == first?.id, "a click adds a 2 s zoom at 200% there and picks it", detail: "\(zooms())")
-    check(!lane.showsHint, "the hint gives way over a zoom")
+    check(!lane.showsHint && !lane.showsEmptyHint, "the hint gives way over a zoom, and the lane-wide line is gone once a zoom exists")
     check(title?.stringValue == "Zoom" && panel?.isHidden == false && editor.view(identifier: "video.cursor.show")?.isHidden == true,
           "picking a zoom switches the panel to the zoom's settings", detail: title?.stringValue ?? "nil")
     let rail = EditorSection.allCases.compactMap { editor.view(identifier: "video.rail.\($0.rawValue)") as? IconButton }

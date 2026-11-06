@@ -250,10 +250,6 @@ final class CapturePane: SettingsPane {
     }
 }
 
-extension VideoQuality {
-    var title: String { rawValue.capitalized }
-}
-
 extension PixelDensity {
     var title: String { self == .retina ? "Retina" : "Standard" }
 }

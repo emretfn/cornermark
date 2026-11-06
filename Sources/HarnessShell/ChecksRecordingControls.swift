@@ -80,7 +80,16 @@ func checkRecordingControls() async throws {
     try m.source?.advance(90)
     c.controls.update()
     check(view.time.stringValue == "0:01" && view.look == RecordingBarLook.of(.recording), "after 90 frames at 60 fps the bar reads 0:01", detail: view.time.stringValue)
-    check(view.look.indicator == "record.circle.fill" && view.look.indicatorIsDanger && view.stop.title == "Stop", "the indicator is the danger-coloured record symbol")
+    check(view.look.stopSymbol == "stop.circle" && view.look.stopIsDanger && view.stop.accessibilityLabel() == "Stop recording. Recording, 0:01"
+          && view.stop.toolTip == "Stop recording", "the time sits on the stop button, behind a red stop mark, and VoiceOver hears both",
+          detail: view.stop.accessibilityLabel() ?? "nil")
+    check(view.time.superview === view && view.stop.frame.contains(view.time.frame) && view.stop.frame.contains(CGPoint(x: view.time.frame.midX, y: view.time.frame.midY))
+          && view.hitTest(view.convert(CGPoint(x: view.time.frame.midX, y: view.time.frame.midY), to: view.superview)) === view.stop,
+          "a click on the time lands on the stop button", detail: "\(view.stop.frame) \(view.time.frame)")
+    let order = [view.stop, view.pause, view.restart, view.delete].map(\.frame.minX) + [view.grip.frame.minX]
+    check(order == order.sorted() && view.grip.frame.maxX <= view.bounds.maxX, "then pause, restart, delete and the grip, in that order", detail: "\(order)")
+    check([view.pause, view.resume, view.restart, view.delete, view.confirmRestart, view.confirmDelete, view.stop].allSatisfy { $0.toolTip?.isEmpty == false }
+          && view.grip.toolTip == "Drag to move" && view.grip.mouseDownCanMoveWindow, "every control has a tooltip, and the grip drags the bar")
     let item = NSStatusBarButton()
     applyStatusLabel(c.updates.state, recording: c.controls.status, to: item)
     check(item.title.hasSuffix("0:01") && item.imagePosition == .imageLeading && item.accessibilityLabel()?.contains("Recording, 0:01") == true,
@@ -96,8 +105,9 @@ func checkRecordingControls() async throws {
     try m.source?.advance(30)
     check(m.link("record/pause") && m.phase == .paused && m.link("record/resume") && m.phase == .recording, "the pause link pauses")
     try m.source?.advance(30)
-    view.stop.performClick(nil)
-    check(await waitUntil { m.phase == .idle && w.store.list().count == 1 }, "Stop finishes the recording")
+    let stopPoint = view.convert(CGPoint(x: view.time.frame.midX, y: view.time.frame.midY), to: view.superview)
+    (view.hitTest(stopPoint) as? NSButton)?.performClick(nil)
+    check(await waitUntil { m.phase == .idle && w.store.list().count == 1 }, "a click on the time stops and finishes the recording")
     if let record = w.store.list().first, let video = record.video, let facts = await fileFacts(video.file) {
         check(facts.frames == 150, "the file holds the 150 recorded frames and none from the pause", detail: "\(facts)")
         check(abs(video.duration - 2.5) < 0.02, "and lasts 2.5 s", detail: "\(video.duration)")
@@ -129,12 +139,48 @@ func checkRecordingControls() async throws {
     } else { check(false, "the restarted take is listed") }
     check(c.controls.rememberedOrigin == dragged, "the place the bar was dragged to is kept for the next recording", detail: "\(String(describing: c.controls.rememberedOrigin))")
 
+    section("delete")
+    let listed = w.store.list().count
+    let savedBefore = Set((try? FileManager.default.contentsOfDirectory(atPath: w.saveDir.path)) ?? [])
+    for style in ["video", "editing", "gif"] {
+        check(m.link("record?display=1&x=0&y=0&width=320&height=180&style=\(style)"), "a \(style) recording starts")
+        check(await waitUntil { m.phase == .recording }, "and runs")
+        try m.source?.advance(30)
+        guard let bar = c.controls.barView else { check(false, "the bar is there"); continue }
+        let inProgress = Set((try? FileManager.default.contentsOfDirectory(atPath: w.saveDir.path)) ?? []).subtracting(savedBefore)
+        check(!inProgress.isEmpty, "while it records, its file is being written", detail: "\(inProgress)")
+        bar.delete.performClick(nil)
+        check(bar.isDeleteArmed && !bar.confirmDelete.isHidden && bar.delete.isHidden && m.phase == .recording,
+              "a first click on Delete only asks: Delete recording takes its place and the recording goes on")
+        bar.confirmDelete.performClick(nil)
+        check(await waitUntil { m.phase == .idle }, "the second click ends the recording")
+        _ = await waitUntil(0.5) { false }
+        let left = Set((try? FileManager.default.contentsOfDirectory(atPath: w.saveDir.path)) ?? []).subtracting(savedBefore)
+        check(left.isEmpty && w.store.list().count == listed, "and leaves no file, no folder and no History entry", detail: "\(left) \(w.store.list().count)")
+        check(journal.entries().isEmpty && c.controls.bar == nil, "the journal is empty and the bar is gone")
+    }
+    check(m.link("record?display=1&x=0&y=0&width=320&height=180"), "another recording starts")
+    check(await waitUntil { m.phase == .recording }, "and runs")
+    try m.source?.advance(10)
+    c.controls.barView?.delete.performClick(nil)
+    _ = await waitUntil(3.5) { c.controls.barView?.isDeleteArmed == false }
+    check(c.controls.barView?.isDeleteArmed == false && c.controls.barView?.delete.isHidden == false && m.phase == .recording,
+          "an unanswered Delete puts itself back after 3 s and nothing is lost")
+    c.controls.barView?.restart.performClick(nil)
+    c.controls.barView?.delete.performClick(nil)
+    check(c.controls.barView?.isDeleteArmed == true && c.controls.barView?.isRestartArmed == false && c.controls.barView?.restart.isHidden == false,
+          "only one confirmation waits at a time")
+    check(m.link("record/discard"), "the discard link is accepted")
+    check(await waitUntil { m.phase == .idle } && w.store.list().count == listed
+          && Set((try? FileManager.default.contentsOfDirectory(atPath: w.saveDir.path)) ?? []) == savedBefore, "and deletes the recording the same way")
+
     section("countdown")
     w.settings.update { $0.recording.countdown = 3 }
     check(m.link("record?display=1"), "a link with a 3 second countdown is accepted")
     check(await waitUntil { m.phase == .countingDown(3) }, "the countdown starts at 3")
     check(c.controls.countdownView?.remaining == 3 && c.controls.countdown?.sharingType == RecordingPanel.SharingType.none, "the countdown panel shows 3 and is never shared")
-    check(c.controls.barView?.stop.title == "Cancel" && c.controls.barView?.restart.isEnabled == false, "during the countdown the bar offers Cancel only")
+    check(c.controls.barView?.stop.toolTip == "Cancel recording" && c.controls.barView?.restart.isEnabled == false && c.controls.barView?.delete.isEnabled == false,
+          "during the countdown the bar offers Cancel only")
     check(c.controls.dim == nil, "a whole display is not dimmed")
     let one = await waitUntil { m.phase == .countingDown(1) }
     check(one && c.controls.countdownView?.remaining == 1, "it counts down to 1")
@@ -176,9 +222,11 @@ func checkRecordingControls() async throws {
 
     section("bar looks")
     let phases: [RecordingController.Phase] = [.idle, .starting, .countingDown(2), .recording, .paused, .stopping]
-    check(phases.filter { RecordingBarLook.of($0).indicatorIsDanger } == [.recording], "only a running recording is shown in the danger colour")
-    check(phases.filter { RecordingBarLook.of($0).canRestart } == [.recording, .paused], "restart is offered only once frames are being kept")
-    check(RecordingBarLook.of(.paused).indicator == "pause.fill" && RecordingBarLook.of(.paused).timeIsMuted, "a pause changes the symbol and mutes the time, not only the colour")
+    check(phases.filter { RecordingBarLook.of($0).stopIsDanger } == [.recording], "only a running recording is shown in the danger colour")
+    check(phases.filter { RecordingBarLook.of($0).canDiscard } == [.recording, .paused], "restart and delete are offered only once frames are being kept")
+    check(!RecordingBarLook.of(.paused).stopIsDanger && RecordingBarLook.of(.paused).showsResume && RecordingBarLook.of(.paused).timeIsMuted,
+          "a pause greys the stop mark, mutes the time and puts Resume where Pause was, not only a colour change")
+    check(RecordingBarLook.of(.countingDown(2)).stopTitle == "Cancel" && RecordingBarLook.of(.countingDown(2)).stopSymbol == "xmark.circle", "a countdown turns stop into cancel")
 }
 
 @MainActor

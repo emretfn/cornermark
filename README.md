@@ -74,7 +74,7 @@ Press `Ctrl+Shift+7` and select an area. Vision recognizes the text on your devi
 
 ### Record the screen
 
-Press `Ctrl+Shift+9` and select an area, a window, or a whole display. **Record MP4** writes one MP4 file with the pointer in the picture, **Record GIF** writes an animated GIF, and **Record Project** keeps the video, the pointer, the clicks, and the keys apart so you can change how they look afterwards. An optional countdown runs first, and a small bar lets you pause, restart, or stop. Toggles in the same panel choose whether a recording takes the microphone, the sound your Mac plays, your camera in a bubble, and clicks and keystrokes. Turning one on asks macOS for its permission right then, the first time only. Notifications stay out of the recording.
+Press `Ctrl+Shift+9` and select an area, a window, or a whole display. **Record MP4** writes one MP4 file with the pointer in the picture, **Record GIF** writes an animated GIF, and **Record Project** keeps the video, the pointer, the clicks, and the keys apart so you can change how they look afterwards. An optional countdown runs first, and a small bar lets you pause, restart, delete, or stop. Toggles in the same panel choose whether a recording takes the microphone, the sound your Mac plays, your camera in a bubble, click highlights, and keystrokes. A button at the start of the panel changes quality, frame rate, countdown, and what the recording shows or leaves out. Turning one on asks macOS for its permission right then, the first time only. Notifications stay out of the recording.
 
 ### Edit recordings in the video editor
 
