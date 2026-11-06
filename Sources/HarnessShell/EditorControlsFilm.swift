@@ -5,7 +5,7 @@ import CornermarkCore
 @testable import CornermarkShell
 
 /// The editor's own controls in one film, each driven by scripted pointer and key events on the real views: the zoom level field
-/// dragged across its detents, the zoom lane's end dragged while its ramps follow the move duration, the mode select opened and
+/// dragged across its detents, the zoom lane's end dragged, the mode select opened and
 /// picked from the keyboard, and the cursor style thumb sliding between choices. Offscreen frames of a harness instance, so nothing
 /// reaches the screen. Run with `CORNERMARK_EDITOR_CONTROLS_FILM=<folder>`.
 @MainActor
@@ -42,7 +42,7 @@ enum EditorControlsFilm {
         guard let zoom = editor.addZoom(from: 0.4, to: 1.2) else { throw FilmError.missing("a zoom") }
         editor.selectZoom(zoom.id)
         await s.settle(editor)
-        f.hold(1.2, "A zoom picked: the panel shows its level field, mode select and the lane block with its ramps.")
+        f.hold(1.2, "A zoom picked: the panel shows its level field, mode select and the lane block.")
 
         // 1. The level field: press anywhere, drag across the detents, let go on one.
         guard let level = editor.view(identifier: "video.zoom.level") as? Slider else { throw FilmError.missing("the level field") }
@@ -64,17 +64,16 @@ enum EditorControlsFilm {
         f.hold(1.4, "Let go near the 150% tick: the level lands on the detent, \(level.valueText ?? "").")
         if level.valueText != "150%" { f.failures.append("the level did not land on 150%: \(level.valueText ?? "nil")") }
 
-        // 2. The zoom lane: drag the block's end; the ramps keep the move's length at the timeline's scale.
+        // 2. The zoom lane: drag the block's end.
         guard let lane = editor.view(identifier: "video.zoomLane") as? ZoomLaneView, let block = lane.zooms.first.map(lane.rect(of:)) else { throw FilmError.missing("the zoom lane") }
         let ly = block.midY
-        f.glide(to: spot(CGPoint(x: block.maxX - 2, y: ly), in: lane, s), "The 40 pt zoom lane: level, mode, handles, and ramps as long as the zoom's move in and out.")
-        f.hold(1.6, "The ramps draw the move on its smootherstep curve, \(String(format: "%.2f", editor.state.project.edits.zoomAnimation.duration)) s each way.")
+        f.glide(to: spot(CGPoint(x: block.maxX - 2, y: ly), in: lane, s), "The 40 pt zoom lane: level, mode and handles.")
         lane.mouseDown(with: event(.leftMouseDown, at: CGPoint(x: block.maxX - 2, y: ly), in: lane))
         for i in 1...30 {
             let x = block.maxX - 2 + CGFloat(i) * 8
             lane.mouseDragged(with: event(.leftMouseDragged, at: CGPoint(x: x, y: ly), in: lane))
             await s.settle(editor)
-            f.glide(to: spot(CGPoint(x: x, y: ly), in: lane, s), "Dragging the zoom's end handle: the ramps keep their length.", frames: 2)
+            f.glide(to: spot(CGPoint(x: x, y: ly), in: lane, s), "Dragging the zoom's end handle.", frames: 2)
         }
         lane.mouseUp(with: event(.leftMouseUp, at: CGPoint(x: block.maxX + 238, y: ly), in: lane))
         await s.settle(editor)
@@ -89,11 +88,11 @@ enum EditorControlsFilm {
                 let x = duration.bounds.width * (0.4 + 0.5 * CGFloat(i) / 24)
                 duration.mouseDragged(with: event(.leftMouseDragged, at: CGPoint(x: x, y: dy), in: duration))
                 await s.settle(editor)
-                f.glide(to: spot(CGPoint(x: x, y: dy), in: duration, s), "A longer move, \(duration.valueText ?? ""): the lane's ramps grow with it.", frames: 2)
+                f.glide(to: spot(CGPoint(x: x, y: dy), in: duration, s), "A longer move, \(duration.valueText ?? "").", frames: 2)
             }
             duration.mouseUp(with: event(.leftMouseUp, at: CGPoint(x: duration.bounds.width * 0.9, y: dy), in: duration))
             await s.settle(editor)
-            f.hold(1.6, "A longer move, \(duration.valueText ?? ""): the lane's ramps grow with it.")
+            f.hold(1.6, "A longer move, \(duration.valueText ?? "").")
         } else {
             f.failures.append("no duration field")
         }
