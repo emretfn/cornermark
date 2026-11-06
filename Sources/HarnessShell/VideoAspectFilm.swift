@@ -69,7 +69,7 @@ enum VideoAspectFilm {
     }
 
     static func b4(_ f: Film, _ s: EditorStage) async throws {
-        f.title = "B4  On a tall ratio the recording keeps its place in the frame and shrinks with the video; the pointer and playback keep working."
+        f.title = "B4  On a tall ratio the recording shrinks inside the frame, and zoom, the pointer and playback keep working."
         guard let editor = try await s.openProject() else { throw FilmError.missing("the editor") }
         status(f, s, editor)
         await s.press(editor.view(identifier: "video.rail.background") as! NSButton, in: editor, note: "Background in the settings rail")
@@ -81,13 +81,20 @@ enum VideoAspectFilm {
         f.refresh()
         await playing(f, s, editor, seconds: 2.4, note: "Playing at 9:16: the picture and the pointer stay inside the recording's rounded frame.")
         await slide("video.background.padding", through: [64, 0, 140, 64], f, s, editor, "Padding")
+        editor.seek(to: 0)
+        guard let zoom = editor.addZoom(from: 1, to: 3.2) else { throw FilmError.missing("a zoom") }
+        editor.setZoomScale(2, of: zoom.id)
+        editor.selectZoom(nil)
+        await s.settle(editor)
+        f.hold(2, "A 200% zoom from 1.0 s to 3.2 s on the zoom lane, added by the harness as the lane's + would.")
+        await playing(f, s, editor, seconds: 3.4, note: "Playing at 9:16 through the zoom: the camera moves inside the recording's frame, which stays put.")
         await s.press(editor.view(identifier: "video.export") as! NSButton, in: editor, note: "Export")
         await chooseResolution(.shortSide(1080), f, s, editor)
         f.hold(2.4, "At 1080 the video is 1080 x 1920: the recording is drawn smaller to fit the tall frame.")
         let file = try await export(f, s, editor)
         let facts = await fileFacts(file)
         f.status = { "export: \(facts?.width ?? 0) x \(facts?.height ?? 0), \(facts?.frames ?? 0) frames" }
-        for t in [0.5, 2.0] {
+        for t in [0.5, 2.2] {
             editor.seek(to: t)
             await s.settle(editor)
             let plan = ExportPlan(project: editor.state.project, settings: ExportSettings(resolution: .shortSide(1080)))
@@ -98,9 +105,10 @@ enum VideoAspectFilm {
             f.results.append(("file at \(t) s", frame, diff.map { "\(facts?.width ?? 0) x \(facts?.height ?? 0) vs preview: \($0)" } ?? "unreadable"))
             f.layers = { [unowned s, unowned editor] in s.layers(editor) + f.resultLayers() }
             f.refresh()
-            f.hold(3.2, String(format: "At %.1f s: the preview and the exported frame, pointer included. %@", t, diff.map { String(format: "PSNR %.1f dB.", $0.psnr) } ?? ""))
+            let zoomed = frameState(editor.state.project, outputTime: t).crop.scale
+            f.hold(3.2, String(format: "At %.1f s, zoom %.0f%%: the preview and the exported frame, pointer included. %@", t, zoomed * 100,
+                               diff.map { String(format: "PSNR %.1f dB.", $0.psnr) } ?? ""))
         }
-        f.hold(2.4, "Zoom is not on this branch yet. Its camera crops the picture inside this same frame, so a tall video keeps zooms.")
         f.dark = true
         f.refresh()
         f.hold(2, "The same in Dark appearance.")

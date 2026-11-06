@@ -176,12 +176,17 @@ func checkVideoAspect(_ w: World, folder: URL) async throws {
 func checkAspectParity(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, root: URL) async throws {
     let cases: [(String, VideoBackground)] = [
         ("1:1 gradient", VideoBackground(fill: .gradient(index: 6), padding: 48, shadow: 70, cornerRadius: 20, aspect: .ratio(width: 1, height: 1))),
-        ("9:16 gradient", VideoBackground(fill: .gradient(index: 6), padding: 48, shadow: 70, cornerRadius: 20, aspect: .ratio(width: 9, height: 16))),
         ("9:16 none", VideoBackground(fill: .none, aspect: .ratio(width: 9, height: 16))),
+        ("9:16 zoomed", VideoBackground(fill: .gradient(index: 6), padding: 48, shadow: 70, cornerRadius: 20, aspect: .ratio(width: 9, height: 16))),
     ]
     for (name, bg) in cases {
         section("video export: the file matches the preview at \(name)")
         editor.setBackground(bg)
+        if name.hasSuffix("zoomed"), let zoom = editor.addZoom(from: 0.5, to: 1.9) {
+            editor.setZoomScale(2, of: zoom.id)
+            check(frameState(editor.state.project, outputTime: 1.0).crop.scale > 1.5, "a 200% zoom is under way at 1.0 s on a tall video",
+                  detail: "\(frameState(editor.state.project, outputTime: 1.0).crop)")
+        }
         let project = editor.state.project
         let out = root.appendingPathComponent("aspect-\(name.replacingOccurrences(of: ":", with: "x").replacingOccurrences(of: " ", with: "-")).mp4")
         let report = try await VideoExporter.export(project: project, video: editor.videoURL, settings: ExportSettings(), to: out)
@@ -196,6 +201,7 @@ func checkAspectParity(_ editor: VideoEditorWindowController, frames: StillFrame
         check(rows.count == 3 && rows.allSatisfy { $0.encoded.psnr > 35 }, "the file's frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     }
+    editor.removeAllZooms()
     editor.setBackground(VideoBackground())
 }
 

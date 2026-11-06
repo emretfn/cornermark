@@ -24,7 +24,7 @@ let cursorFilming = ProcessInfo.processInfo.environment["CORNERMARK_CURSOR_FILM"
 let cameraFilming = ProcessInfo.processInfo.environment["CORNERMARK_CAMERA_FILM"]
 let backgroundFilming = ProcessInfo.processInfo.environment["CORNERMARK_BACKGROUND_FILM"]
 let aspectFilming = ProcessInfo.processInfo.environment["CORNERMARK_ASPECT_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, aspectFilming].allSatisfy { $0 == nil } ? 180 : 900)) {
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, aspectFilming].allSatisfy { $0 == nil } ? 300 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
