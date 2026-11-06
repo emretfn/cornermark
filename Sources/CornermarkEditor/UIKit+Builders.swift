@@ -47,10 +47,7 @@ extension NSControl {
 final class TrackingSlider: Slider {
     var onTrackingEnd: (() -> Void)?
 
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        onTrackingEnd?()
-    }
+    override func trackingDidEnd() { onTrackingEnd?() }
 }
 
 /// A bar background that follows light and dark mode.

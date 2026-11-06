@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 import CornermarkCore
-import CornermarkDesign
+@testable import CornermarkDesign
 @testable import CornermarkVideoEditor
 import CryptoKit
 @testable import CornermarkShell
@@ -73,7 +73,29 @@ func editorImage(_ editor: VideoEditorWindowController, dark: Bool = false) -> C
         let f = panel.convert(panel.bounds, to: nil)
         if let image = rep.cgImage { ctx.draw(image, in: CGRect(x: f.minX - r.minX, y: f.minY - r.minY, width: f.width, height: f.height)) }
     }
+    // An open select's menu is its own window; it is drawn where it sits over the editor.
+    for select in openSelects(in: window.contentView) {
+        guard let menu = select.menuWindow, let image = viewImage(menu.list, appearance: window.appearance) else { continue }
+        let at = CGPoint(x: menu.frame.minX - window.frame.minX, y: menu.frame.minY - window.frame.minY)
+        ctx.draw(image, in: CGRect(x: at.x - r.minX, y: at.y - r.minY, width: menu.frame.width, height: menu.frame.height))
+    }
     return ctx.makeImage()
+}
+
+func openSelects(in view: NSView?) -> [Select] {
+    guard let view else { return [] }
+    return ((view as? Select).flatMap { $0.isMenuOpen ? [$0] : nil } ?? []) + view.subviews.flatMap(openSelects)
+}
+
+/// A view at 2x through cacheDisplay, under `appearance`.
+func viewImage(_ view: NSView, appearance: NSAppearance?) -> CGImage? {
+    view.appearance = appearance
+    view.layoutSubtreeIfNeeded()
+    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2), bitsPerSample: 8,
+                                     samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+    rep.size = view.bounds.size
+    view.cacheDisplay(in: view.bounds, to: rep)
+    return rep.cgImage
 }
 
 @MainActor
@@ -410,7 +432,8 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
     check(railButtons.count == 7 && railButtons.map { $0.accessibilityLabel() ?? "" } == ["Cursor", "Clicks", "Keystrokes", "Audio", "Camera", "Background", "Motion Blur"],
           "the rail holds Cursor, Clicks, Keystrokes, Audio, Camera, Background and Motion Blur in that order")
     check(railButtons.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil }, "every rail symbol exists")
-    check(railButtons.allSatisfy { $0.selection == .neutral } && railButtons.first?.isSelected == true, "the rail is navigation: neutral selection, Cursor chosen first")
+    check(railButtons.allSatisfy { $0.selection == .inverse } && railButtons.first?.isSelected == true,
+          "the rail is navigation: the open section is a neutral inverse tile, never the accent, Cursor chosen first")
 
     let title = editor.view(identifier: "video.panel.title") as? NSTextField
     let note = editor.view(identifier: "video.panel.note") as? NSTextField
@@ -428,11 +451,15 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
 
     window.setContentSize(window.minSize)
     content.layoutSubtreeIfNeeded()
-    let parts = ["video.start", "video.end", "video.split", "video.deleteClip", "video.time", "video.mute", "video.fullscreen"]
+    // Left to right: the time, the playback group centred under the preview, then the edits and the view tools.
+    let parts = ["video.time", "video.start", "video.play", "video.end", "video.split", "video.deleteClip", "video.mute", "video.fullscreen"]
         .map { frameInWindow(editor.view(identifier: $0)) }
     let row = frameInWindow(bar)
     let apart = zip(parts.dropFirst(), parts.dropFirst(2)).allSatisfy { $0.maxX <= $1.minX } && parts.allSatisfy { row.contains($0) }
     check(apart && frameInWindow(preview).height > 200, "at the smallest window size the playback row neither overlaps nor clips", detail: "\(parts)")
+    let play = frameInWindow(editor.view(identifier: "video.play"))
+    check(abs(play.midX - row.midX) <= 1 && play.width == DS.Size.controlLarge && play.minX == play.minX.rounded(),
+          "Play is the 36 pt round button centred under the preview, on a whole point", detail: "\(play) in \(row)")
     _ = await waitUntil(3) { editor.tick(); return editor.previewImage != nil }
     snapshotEditor(editor, name: "video-editor-min")
     window.setContentSize(NSSize(width: 1200, height: 760))

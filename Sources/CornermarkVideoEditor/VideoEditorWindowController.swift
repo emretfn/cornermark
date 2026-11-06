@@ -815,6 +815,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     func handleKey(_ event: NSEvent) -> Bool {
         // A field being typed in keeps Space, Delete and Esc, so Delete takes back a digit instead of a clip.
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty, window?.firstResponder is NSText { return false }
+        // A focused Select opens with Space, the way a field takes its own keys.
+        if event.keyCode == 49, window?.firstResponder is Select { return false }
         guard let press = EditorShortcuts.match(event, in: .window) else { return false }
         return perform(press.command)
     }
@@ -1153,6 +1155,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                        zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count,
                        origin: project.source.origin, hasAudio: frames.hasAudio)
         timeline.zoomLane.zooms = zooms
+        timeline.zoomLane.animation = project.edits.zoomAnimation
         timeline.zoomLane.selection = state.selectedZoom
         animationPanel.show(project.edits.zoomAnimation)
         let picked = zooms.first { $0.id == state.selectedZoom }

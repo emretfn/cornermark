@@ -8,8 +8,8 @@ final class CameraPanel: SettingsPanel {
     private(set) var bubble = CameraBubble()
     private let show = Checkbox(title: "Show camera")
     private let shape = Segments(symbols: CameraBubble.Shape.allCases.map(CameraPanel.symbol), labels: CameraBubble.Shape.allCases.map(\.rawValue.capitalized),
-                                 size: .small, tileWidth: DS.Size.control)
-    private let size = Segments(labels: CameraBubble.Size.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth)
+                                 width: SettingsPanel.controlWidth)
+    private let size = Segments(labels: CameraBubble.Size.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth, style: .track)
     private let position = PositionGrid(identifier: "video.camera.position")
     private let mirror = Checkbox(title: "Mirror camera")
 

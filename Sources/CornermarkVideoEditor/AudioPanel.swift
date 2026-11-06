@@ -10,7 +10,6 @@ final class AudioPanel: SettingsPanel {
     private struct TrackRows {
         let toggle: Checkbox
         let level: TrackingSlider
-        let value: NSTextField
         let levelRow: NSStackView
     }
     private var rows: [AudioTrack: TrackRows] = [:]
@@ -26,14 +25,14 @@ final class AudioPanel: SettingsPanel {
             toggle.identifier = NSUserInterfaceItemIdentifier(track.rawValue)
             let level = slider(id: "video.audio.\(track.rawValue).level", label: "\(track.title) level", range: AudioTrackLevel.range, action: #selector(slid(_:)))
             level.identifier = NSUserInterfaceItemIdentifier(track.rawValue)
-            let value = readout()
-            let levelRow = row("Level", [level, value])
+            level.format = { "\(Int(($0 * 100).rounded()))%" }
+            let levelRow = row("Level", [level])
             levelRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-            rows[track] = TrackRows(toggle: toggle, level: level, value: value, levelRow: levelRow)
+            rows[track] = TrackRows(toggle: toggle, level: level, levelRow: levelRow)
             views += [toggle, levelRow]
         }
         add(views)
-        if let mic = rows[.microphone] { stack.setCustomSpacing(DS.Space.s24, after: mic.levelRow) }
+        if let mic = rows[.microphone] { stack.setCustomSpacing(DS.Space.s16, after: mic.levelRow) }
         setAccessibilityIdentifier("video.audio")
     }
 
@@ -50,8 +49,6 @@ final class AudioPanel: SettingsPanel {
             r.toggle.state = level.isOn ? .on : .off
             r.level.doubleValue = level.level
             r.level.isEnabled = level.isOn
-            r.value.stringValue = "\(Int((level.level * 100).rounded()))%"
-            r.value.textColor = level.isOn ? DS.Color.textSecondary : DS.Color.textDisabled
             (r.levelRow.arrangedSubviews.first as? NSTextField)?.textColor = level.isOn ? DS.Color.textSecondary : DS.Color.textDisabled
         }
     }
@@ -72,7 +69,6 @@ final class AudioPanel: SettingsPanel {
         next[track].level = (sender.doubleValue * 100).rounded() / 100
         guard next != audio else { return }
         audio = next
-        rows[track]?.value.stringValue = "\(Int((next[track].level * 100).rounded()))%"
         onChange(next, CoalescingKey("audio.\(track.rawValue).level"))
     }
 }

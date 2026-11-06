@@ -12,6 +12,7 @@ checkContrast()
 checkStructure()
 checkElevation()
 checkComponents()
+checkEditorControls()
 renderSpecimens()
 
 if SilentNoResponder.isSilent {

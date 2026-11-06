@@ -79,7 +79,9 @@ func checkVideoManualZoom() async throws {
     content.layoutSubtreeIfNeeded()
     let note = (editor.view(identifier: "video.zoom.modeNote") as? NSTextField)?.stringValue
     check(picked()?.mode == .manual && !target.isHiddenOrHasHiddenAncestor, "choosing Manual shows the target")
-    check(note == ZoomPanel.modeNote(.manual) && note?.contains("Drag the frame") == true, "the note says how to pick the spot", detail: note ?? "nil")
+    let help = (editor.view(identifier: "video.zoom.mode") as? NSControl)?.accessibilityHelp()
+    check(note == ZoomPanel.modeNote(.manual) && help?.contains("Drag the frame") == true, "the note says what Manual does; its help says how to pick the spot",
+          detail: "\(note ?? "nil") | \(help ?? "nil")")
     await editor.zoomTargetSettled()
     let mid = frameState(editor.state.project, outputTime: 2.5).sourceTime
     check(target.picture != nil && (target.picture?.width ?? 0) >= 400, "the target shows the recording at the zoom's middle, sharp enough for the panel",
@@ -144,7 +146,7 @@ func checkVideoManualZoom() async throws {
     let hold = editor.view(identifier: "video.zoomAnimation.holdArea") as? TrackingSlider
     let catchUp = editor.view(identifier: "video.zoomAnimation.catchUp") as? TrackingSlider
     let reset = editor.view(identifier: "video.zoomAnimation.reset") as? NSButton
-    func readout(_ slider: NSSlider?) -> String? { (slider?.superview as? NSStackView)?.arrangedSubviews.compactMap { $0 as? NSTextField }.last?.stringValue }
+    func readout(_ slider: NSSlider?) -> String? { (slider as? Slider)?.valueText }
     check(editor.state.showsZoomAnimation && panel?.isHidden == false && window.firstResponder === duration, "the button opens the panel with focus on its first slider")
     check(readout(duration) == "0.78 s" && readout(hold) == "50%" && readout(catchUp) == "0.68 s" && reset?.isEnabled == false,
           "the panel opens on the defaults: 0.78 s moves, a 50% hold area and a 0.68 s catch-up", detail: [duration, hold, catchUp].map { readout($0) ?? "nil" }.joined(separator: " "))

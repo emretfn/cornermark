@@ -131,16 +131,14 @@ enum VideoZoomFilm {
             f.hold(2.6, "The menu's Level lists 100%, 150%, 200%, 300% and 400%, with the zoom's own checked.")
             x.overlay = nil
         }
-        guard let presets = editor.view(identifier: "video.zoom.presets") as? NSSegmentedControl,
-              let slider = editor.view(identifier: "video.zoom.level") as? NSSlider else { throw FilmError.missing("the zoom panel") }
-        for (i, level) in Zoom.levels.enumerated() {
-            f.glide(to: f.center(of: presets, in: editor.window!, at: s.origin, segment: i), "Preset \(Zoom.percent(level))", frames: 10)
-            presets.selectedSegment = i
-            fire(presets)
+        guard let slider = editor.view(identifier: "video.zoom.level") as? NSSlider else { throw FilmError.missing("the zoom panel") }
+        f.glide(to: s.point(of: slider, in: editor), "The level field")
+        for level in Zoom.levels {
+            slider.doubleValue = level
+            fire(slider)
             await s.settle(editor)
-            f.hold(1.4, "Preset \(Zoom.percent(level)): the zoom and the preview follow.")
+            f.hold(1.4, "Detent \(Zoom.percent(level)): the zoom and the preview follow.")
         }
-        f.glide(to: s.point(of: slider, in: editor), "The slider")
         for v in stride(from: 4.0, through: 1.25, by: -0.05) {
             slider.doubleValue = v
             fire(slider)

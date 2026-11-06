@@ -34,7 +34,8 @@ let shortcutsFilming = ProcessInfo.processInfo.environment["CORNERMARK_SHORTCUTS
 let panelSourcesFilming = ProcessInfo.processInfo.environment["CORNERMARK_PANEL_SOURCES_FILM"]
 let panelRenders = ProcessInfo.processInfo.environment["CORNERMARK_PANEL_RENDERS"]
 let playbackProbe = ProcessInfo.processInfo.environment["CORNERMARK_PLAYBACK_PROBE"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming, panelSourcesFilming, panelRenders, playbackProbe].allSatisfy { $0 == nil } ? 420 : 900)) {
+let editorControlsFilming = ProcessInfo.processInfo.environment["CORNERMARK_EDITOR_CONTROLS_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming, panelSourcesFilming, panelRenders, playbackProbe, editorControlsFilming].allSatisfy { $0 == nil } ? 420 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -50,6 +51,10 @@ Task { @MainActor in
         } else {
             ok = await PlaybackProbe.run(inputs: URL(fileURLWithPath: playbackProbe, isDirectory: true))
         }
+        filmDone(ok)
+    }
+    if let editorControlsFilming {
+        let ok = await EditorControlsFilm.run(out: URL(fileURLWithPath: editorControlsFilming, isDirectory: true))
         filmDone(ok)
     }
     if let panelRenders {

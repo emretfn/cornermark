@@ -7,9 +7,9 @@ final class KeystrokesPanel: SettingsPanel {
     var onChange: (KeystrokeDisplay) -> Void = { _ in }
     private(set) var display = KeystrokeDisplay()
     private let show = Checkbox(title: "Show keystrokes")
-    private let keys = Segments(labels: ["Shortcuts", "All keys"], width: SettingsPanel.controlWidth)
-    private let size = Segments(labels: KeystrokeDisplay.Size.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth)
-    private let style = Segments(labels: KeystrokeDisplay.Theme.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth)
+    private let keys = Segments(labels: ["Shortcuts", "All keys"], width: SettingsPanel.controlWidth, style: .track)
+    private let size = Segments(labels: KeystrokeDisplay.Size.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth, style: .track)
+    private let style = Segments(labels: KeystrokeDisplay.Theme.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth, style: .track)
     private let position = PositionGrid(identifier: "video.keys.position")
 
     override init(frame frameRect: NSRect) {

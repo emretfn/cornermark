@@ -1,8 +1,8 @@
 import AppKit
 import CornermarkDesign
 
-/// The row under the preview: go to start, play or pause, go to end, the clip edits at the playhead, the time, the volume,
-/// and the preview-only switch.
+/// The row under the preview: the time on the left; go to start, a round play or pause and go to end centred under the picture;
+/// the clip edits at the playhead, the volume and the preview-only switch on the right.
 final class TransportBar: NSView {
     enum Command { case start, toggle, end, split, delete, mute, previewOnly }
 
@@ -12,8 +12,8 @@ final class TransportBar: NSView {
     var onVolume: (Float) -> Void = { _ in }
 
     let startButton = IconButton(symbol: "backward.end.fill", label: "Go to Start")
-    let playButton = IconButton(symbol: "play.fill", label: "Play (Space)")
-    let pauseButton = IconButton(symbol: "pause.fill", label: "Pause (Space)")
+    let playButton = IconButton(symbol: "play.fill", label: "Play (Space)", size: .large, tone: .round)
+    let pauseButton = IconButton(symbol: "pause.fill", label: "Pause (Space)", size: .large, tone: .round)
     let endButton = IconButton(symbol: "forward.end.fill", label: "Go to End")
     let splitButton = IconButton(symbol: "scissors", label: "Split Clip at Playhead (\u{2318}B)")
     let deleteButton = IconButton(symbol: "trash", label: "Delete Clip (\u{232B})")
@@ -40,38 +40,53 @@ final class TransportBar: NSView {
         volume.maxValue = 1
         volume.doubleValue = 1
         volume.isContinuous = true
-        volume.controlSize = .small
+        volume.style = .field
+        volume.format = { "\(Int(($0 * 100).rounded()))%" }
         volume.setAccessibilityIdentifier("video.volume")
         volume.setAccessibilityLabel("Volume")
         volume.target = self
         volume.action = #selector(volumeChanged)
         volume.widthAnchor.constraint(equalToConstant: 80).isActive = true
         time.setAccessibilityIdentifier("video.time")
-        time.alignment = .center
+        time.alignment = .left
 
-        let left = NSStackView(views: [startButton, playButton, pauseButton, endButton, splitButton, deleteButton])
-        left.spacing = DS.Space.s4
-        // Playback and the clip edits are two groups; space alone sets them apart.
-        left.setCustomSpacing(DS.Space.s16, after: endButton)
-        let right = NSStackView(views: [muteButton, unmuteButton, volume, fullButton, exitFullButton])
+        // Play sits under the picture it plays; the edits and the view tools are the right group, a hairline between them.
+        playback.setViews([startButton, playButton, pauseButton, endButton], in: .leading)
+        playback.spacing = DS.Space.s8
+        playbackLeading = playback.leadingAnchor.constraint(equalTo: leadingAnchor)
+        let divider = Separator(axis: .vertical)
+        divider.heightAnchor.constraint(equalToConstant: DS.Space.s16).isActive = true
+        let right = NSStackView(views: [splitButton, deleteButton, divider, muteButton, unmuteButton, volume, fullButton, exitFullButton])
         right.spacing = DS.Space.s4
+        right.setCustomSpacing(DS.Space.s8, after: deleteButton)
+        right.setCustomSpacing(DS.Space.s8, after: divider)
         right.setCustomSpacing(DS.Space.s12, after: volume)
-        for v in [left, time, right] as [NSView] {
+        for v in [time, playback, right] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.height),
-            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DS.Space.s12),
-            left.centerYAnchor.constraint(equalTo: centerYAnchor),
-            time.centerXAnchor.constraint(equalTo: centerXAnchor),
+            time.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DS.Space.s12),
             time.centerYAnchor.constraint(equalTo: centerYAnchor),
+            playbackLeading,
+            playback.centerYAnchor.constraint(equalTo: centerYAnchor),
             right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DS.Space.s12),
             right.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("TransportBar is created in code") }
+
+    private let playback = NSStackView()
+    private var playbackLeading: NSLayoutConstraint!
+
+    /// Centres the playback group on a whole point, so the buttons stay sharp whatever the bar's width.
+    override func layout() {
+        let centred = ((bounds.width - playback.fittingSize.width) / 2).rounded(.down)
+        if playbackLeading.constant != centred { playbackLeading.constant = centred }
+        super.layout()
+    }
 
     /// Everything the row shows except the time, so a playing frame that changes only the time touches only the time.
     struct Look: Equatable {

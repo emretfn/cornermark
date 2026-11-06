@@ -1,7 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
-import CornermarkDesign
+@testable import CornermarkDesign
 @testable import CornermarkVideoEditor
 @testable import CornermarkShell
 
@@ -96,6 +96,21 @@ enum PanelRenders {
                 try write(image(host, scale: 3), out.appendingPathComponent("toggles-\(name)-\(dark ? "dark" : "light").png"))
             }
         }
+        if let aspect = findView("cornermark.record.aspect", in: content) as? Select {
+            aspect.performClick(nil)
+            if let menu = aspect.menuWindow, let base = image(panel, scale: 3), let list = image(menu.list, scale: 3) {
+                // The panel and its menu in one picture: the menu window drawn where it opened under the field.
+                let origin = panel.convert(panel.bounds, to: nil).origin
+                let at = CGPoint(x: menu.frame.minX - window.frame.minX - origin.x, y: menu.frame.minY - window.frame.minY - origin.y)
+                let height = max(panel.bounds.height, panel.bounds.height - at.y)
+                let ctx = Pix.context(base.width, Int(height * 3))
+                ctx.draw(base, in: CGRect(x: 0, y: (height - panel.bounds.height) * 3, width: CGFloat(base.width), height: CGFloat(base.height)))
+                ctx.draw(list, in: CGRect(x: at.x * 3, y: (at.y + height - panel.bounds.height) * 3, width: menu.frame.width * 3, height: menu.frame.height * 3))
+                try write(ctx.makeImage(), out.appendingPathComponent("panel-aspect-open.png"))
+                notes.append("aspect menu: \(menu.list.rows.map(\.title)) appearance \(menu.appearance?.name.rawValue ?? "?") at \(Int(at.x)), \(Int(at.y)) from the panel")
+            }
+            aspect.close()
+        }
         let pill = panel.bounds.insetBy(dx: 32, dy: 32)
         notes.append("panel pill size: \(Int(pill.width)) x \(Int(pill.height)) pt; selection 480 x 270 pt; fits with 12 pt margins: \(pill.width <= 456 && pill.height <= 246)")
 
@@ -186,10 +201,34 @@ enum PanelRenders {
             editor.selectZoom(zoom.id)
             await editor.zoomTargetSettled()
             try await shot("zoom")
+            if let mode = editor.view(identifier: "video.zoom.mode") as? Select {
+                mode.performClick(nil)
+                try await shot("zoom-mode-open")
+                mode.close()
+            }
             editor.openZoomAnimation()
             try await shot("zoom-animation")
             editor.closeZoomAnimation()
             editor.selectZoom(nil)
+        }
+        // The whole window as the picks were judged: the Cursor section over a lane with two zooms. The fixture is two seconds
+        // long, so the moves are set to their shortest, 0.30 s, for the blocks to have room for level and mode beside the ramps.
+        for zoom in editor.state.project.edits.zooms { editor.removeZoom(zoom.id) }
+        editor.setZoomAnimation(ZoomAnimation(duration: 0.3))
+        if let first = editor.addZoom(from: 0.1, to: 0.9), let second = editor.addZoom(from: 1.0, to: 1.9) {
+            editor.setZoomMode(.manual, of: second.id)
+            editor.selectZoom(first.id)
+            try await shot("zoom-lane")
+            editor.selectZoom(nil)
+        }
+        editor.select(.cursor)
+        try await shot("window-picks")
+        editor.setZoomAnimation(ZoomAnimation())
+        editor.select(.clicks)
+        if let color = editor.view(identifier: "video.clicks.color") as? Select, color.isEnabled {
+            color.performClick(nil)
+            try await shot("clicks-color-open")
+            color.close()
         }
         editor.openExport()
         try await shot("export")

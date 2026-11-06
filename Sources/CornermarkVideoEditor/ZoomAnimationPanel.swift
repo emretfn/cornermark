@@ -21,9 +21,6 @@ final class ZoomAnimationPanel: Surface {
     private let duration = TrackingSlider()
     private let deadZone = TrackingSlider()
     private let settle = TrackingSlider()
-    private let durationValue = ZoomAnimationPanel.readout()
-    private let deadZoneValue = ZoomAnimationPanel.readout()
-    private let settleValue = ZoomAnimationPanel.readout()
     private let moveNote = ZoomAnimationPanel.note("How long the camera takes to zoom in or out.")
     private let followNote = ZoomAnimationPanel.note("The pointer moves freely inside the hold area. Once it leaves, the camera catches up in about this time.")
     private let reset = Button(title: "Reset to Defaults", variant: .ghost, size: .small)
@@ -45,14 +42,11 @@ final class ZoomAnimationPanel: Surface {
     func show(_ animation: ZoomAnimation) {
         self.animation = animation
         duration.doubleValue = animation.duration
-        durationValue.stringValue = Self.seconds(animation.duration)
         duration.setAccessibilityValueDescription(Self.spoken(animation.duration))
         deadZone.doubleValue = animation.deadZone
-        deadZoneValue.stringValue = Self.percent(animation.deadZone)
         deadZone.setAccessibilityValueDescription("\(Self.percent(animation.deadZone)) of the view")
         let settling = min(max(animation.settleTime, Self.settleRange.lowerBound), Self.settleRange.upperBound)
         settle.doubleValue = settling
-        settleValue.stringValue = Self.seconds(animation.settleTime)
         settle.setAccessibilityValueDescription(Self.spoken(animation.settleTime))
         reset.isEnabled = animation != ZoomAnimation()
     }
@@ -60,15 +54,6 @@ final class ZoomAnimationPanel: Surface {
     static func seconds(_ s: Double) -> String { String(format: "%.2f s", s) }
     static func percent(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
     static func spoken(_ s: Double) -> String { String(format: "%.2f seconds", s) }
-
-    private static func readout() -> NSTextField {
-        let field = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-        field.alignment = .right
-        field.setContentHuggingPriority(.required, for: .horizontal)
-        // Wide enough for 1.50 s, so the slider keeps its length as the number changes.
-        field.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        return field
-    }
 
     private static func note(_ text: String) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: text)
@@ -83,7 +68,6 @@ final class ZoomAnimationPanel: Surface {
             s.minValue = range.lowerBound
             s.maxValue = range.upperBound
             s.isContinuous = true
-            s.controlSize = .small
             s.setAccessibilityIdentifier(id)
             s.setAccessibilityLabel(label)
             s.target = self
@@ -107,9 +91,12 @@ final class ZoomAnimationPanel: Surface {
         done.setAccessibilityIdentifier("video.zoomAnimation.done")
         done.onPress { [unowned self] in onClose() }
 
-        let durationRow = row("Duration", [duration, durationValue])
-        let holdRow = row("Hold area", [deadZone, deadZoneValue])
-        let catchUpRow = row("Catch-up", [settle, settleValue])
+        duration.format = { Self.seconds(($0 * 100).rounded() / 100) }
+        deadZone.format = { Self.percent($0) }
+        settle.format = { Self.seconds(($0 * 100).rounded() / 100) }
+        let durationRow = row("Duration", [duration])
+        let holdRow = row("Hold area", [deadZone])
+        let catchUpRow = row("Catch-up", [settle])
         let rule = Separator(axis: .horizontal)
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)

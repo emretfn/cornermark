@@ -27,8 +27,8 @@ final class RecordingPanel: Surface {
         .gif: "Saves one animated GIF, without sound",
     ]
 
-    /// A source's toggle: the filled glyph and a check while it is on, the slashed or outlined one while it is off, so the state never
-    /// rests on colour alone. `action` names what turning it on does, for the tooltip.
+    /// A source's toggle: the filled glyph and a check while it is on, the slashed one while it is off, so the state never rests on
+    /// colour alone. The keyboard has no slashed symbol, so the toggle draws the slash over the outlined one. `action` names what turning it on does, for the tooltip.
     static func look(_ source: RecordingSource) -> (on: String, off: String, action: String, help: String) {
         switch source {
         case .microphone: return ("mic.fill", "mic.slash", "Record microphone", "Records your voice. Record GIF never records sound.")
@@ -43,7 +43,7 @@ final class RecordingPanel: Surface {
     private var options: RecordingQuickOptions?
     private let help = IconButton(symbol: "questionmark.circle", label: RecordingHelpWindow.title, size: .large)
     private let targets: [(mode: ToolbarMode, button: IconButton)]
-    private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let aspect = Select()
     private let widthField = TextInput(placeholder: "W", monospaced: true, centered: true)
     private let heightField = TextInput(placeholder: "H", monospaced: true, centered: true)
     private let starts: [(style: RecordingStyle, button: Button)]
@@ -130,9 +130,6 @@ final class RecordingPanel: Surface {
         divider()
 
         for lock in AspectLock.presets { aspect.addItem(withTitle: lock.title) }
-        aspect.controlSize = .small
-        aspect.font = DS.Text.label.font
-        aspect.isBordered = false
         aspect.toolTip = "Aspect ratio"
         aspect.setAccessibilityLabel("Aspect ratio")
         aspect.setAccessibilityIdentifier("cornermark.record.aspect")
@@ -184,7 +181,9 @@ final class RecordingPanel: Surface {
         var sx = left
         for item in sources {
             item.button.frame.origin = CGPoint(x: sx, y: middle)
-            item.button.selection = .neutral
+            // Both states keep the tile, so off reads as the same control: plain with a slashed glyph, and on a step lighter,
+            // bordered, with the filled glyph and the check.
+            item.button.selection = .tile
             item.button.marksSelection = true
             item.button.markBackdrop = DS.Color.bgHud.withAlphaComponent(1)
             item.button.target = self
@@ -240,6 +239,7 @@ final class RecordingPanel: Surface {
             item.button.isSelected = on
             item.button.isEnabled = !waiting
             item.button.symbol = on ? look.on : look.off
+            item.button.slashesGlyph = !on && !look.off.contains("slash")
             item.button.toolTip = "\(look.action) (\(waiting ? "waiting for permission" : on ? "on" : "off"))"
             item.button.setAccessibilityValue(on ? 1 : 0)
             item.button.setAccessibilityHelp(waiting ? "Waiting for permission. \(look.help)" : look.help)

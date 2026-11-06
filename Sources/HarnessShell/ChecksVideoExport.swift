@@ -125,7 +125,9 @@ func checkVideoExport() async throws {
         return check(false, "a project is recorded and opens in the editor")
     }
     defer { c.closeAllEditors() }
-    window.setContentSize(NSSize(width: 1200, height: 760))
+    // 12 pt taller than the other suites, the height the 40 pt zoom lane added, so the preview keeps the size the parity limits were
+    // measured at: an image background is resampled to the preview's own pixels, and a smaller preview loses more of it.
+    window.setContentSize(NSSize(width: 1200, height: 772))
     content.layoutSubtreeIfNeeded()
     await editor.ready()
 

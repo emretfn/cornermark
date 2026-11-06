@@ -20,9 +20,8 @@ final class ExportPanel: Surface {
     var onCancel: () -> Void = {}
 
     private let title = NSTextField.label("Export", style: DS.Text.heading, color: DS.Color.textPrimary)
-    private let resolution = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let resolution = Select()
     private let quality = Slider()
-    private let qualityValue = NSTextField.label("", style: DS.Text.label, color: DS.Color.textSecondary)
     private let estimate = NSTextField.label("", style: DS.Text.body, color: DS.Color.textPrimary)
     private let details = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
     private let bar = ProgressBar()
@@ -63,7 +62,6 @@ final class ExportPanel: Surface {
         resolution.selectItem(at: options.firstIndex(of: settings.resolution) ?? 0)
         quality.doubleValue = Double(settings.quality.rawValue)
         quality.setAccessibilityValueDescription(settings.quality.title)
-        qualityValue.stringValue = settings.quality.title
 
         let plan = ExportPlan(project: project, settings: settings, sourceBytes: sourceBytes)
         let size = Self.bytes(plan.estimatedBytes)
@@ -85,7 +83,6 @@ final class ExportPanel: Surface {
     }
 
     private func build() {
-        resolution.controlSize = .regular
         resolution.setAccessibilityIdentifier("video.export.resolution")
         resolution.setAccessibilityLabel("Resolution")
         resolution.target = self
@@ -95,15 +92,13 @@ final class ExportPanel: Surface {
         quality.maxValue = Double(ExportQuality.allCases.count - 1)
         quality.numberOfTickMarks = ExportQuality.allCases.count
         quality.allowsTickMarkValuesOnly = true
-        quality.controlSize = .small
+        quality.style = .field
+        quality.format = { ExportQuality.allCases[min(max(Int($0.rounded()), 0), ExportQuality.allCases.count - 1)].title }
         quality.isContinuous = true
         quality.setAccessibilityIdentifier("video.export.quality")
         quality.setAccessibilityLabel("Quality")
         quality.target = self
         quality.action = #selector(qualityChanged)
-        qualityValue.alignment = .right
-        qualityValue.widthAnchor.constraint(equalToConstant: 52).isActive = true
-        qualityValue.setContentHuggingPriority(.required, for: .horizontal)
 
         estimate.setAccessibilityIdentifier("video.export.estimate")
         details.setAccessibilityIdentifier("video.export.details")
@@ -125,7 +120,7 @@ final class ExportPanel: Surface {
         cancel.onPress { [unowned self] in onCancel() }
 
         let resolutionRow = row("Resolution", [resolution])
-        let qualityRow = row("Quality", [quality, qualityValue])
+        let qualityRow = row("Quality", [quality])
         let estimateRow = row("Size", [estimate])
         let progressRow = NSStackView(views: [bar, percent])
         progressRow.spacing = DS.Space.s12

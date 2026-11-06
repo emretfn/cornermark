@@ -28,9 +28,8 @@ final class InspectorView: NSView {
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
     private let cursorSize = TrackingSlider()
-    private let cursorSizeValue = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
-    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
+    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth, style: .track)
+    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth, style: .track)
     private let hideIdle = Checkbox(title: "Hide when not moving")
     private let hideTyping = Checkbox(title: "Hide when typing")
     private var rowLabels: [NSTextField] = []
@@ -71,7 +70,6 @@ final class InspectorView: NSView {
         clicksPanel.show(cursor: cursor, clicks: clicks, hasClicks: hasClicks)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
-        cursorSizeValue.stringValue = String(format: "%.1f\u{00D7}", cursor.scale)
         cursorStyle.selectedSegment = CursorStyle.allCases.firstIndex(of: cursor.style) ?? 0
         cursorMotion.selectedSegment = CursorMotion.allCases.firstIndex(of: cursor.motion) ?? 0
         hideIdle.state = cursor.hidesWhenIdle ? .on : .off
@@ -79,7 +77,6 @@ final class InspectorView: NSView {
         // Every other setting shapes a pointer that is not drawn while Show cursor is off.
         let on = cursor.isVisible
         for control in [cursorSize, cursorStyle, cursorMotion, hideIdle, hideTyping] as [NSControl] { control.isEnabled = on }
-        cursorSizeValue.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled
         for label in rowLabels { label.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled }
     }
 
@@ -128,7 +125,8 @@ final class InspectorView: NSView {
         rail.setAccessibilityIdentifier("video.rail")
         for section in EditorSection.allCases {
             let b = IconButton(symbol: section.symbol, label: section.title, size: .regular)
-            b.selection = .neutral
+            // The open section is a graphite tile: unmistakable at a glance, and still neutral, since the rail is navigation.
+            b.selection = .inverse
             b.setAccessibilityIdentifier("video.rail.\(section.rawValue)")
             b.target = self
             b.action = #selector(railPressed(_:))
@@ -145,14 +143,12 @@ final class InspectorView: NSView {
         cursorSize.minValue = Self.sizeRange.lowerBound
         cursorSize.maxValue = Self.sizeRange.upperBound
         cursorSize.isContinuous = true
-        cursorSize.controlSize = .small
+        cursorSize.format = { String(format: "%.1f\u{00D7}", ($0 * 10).rounded() / 10) }
         cursorSize.onTrackingEnd = { [unowned self] in onCursorSizeEnd() }
         cursorSize.setAccessibilityIdentifier("video.cursor.size")
         cursorSize.setAccessibilityLabel("Cursor size")
         cursorSize.target = self
         cursorSize.action = #selector(sizeChanged)
-        cursorSizeValue.alignment = .right
-        cursorSizeValue.setContentHuggingPriority(.required, for: .horizontal)
         cursorStyle.setAccessibilityIdentifier("video.cursor.style")
         cursorStyle.setAccessibilityLabel("Cursor style")
         for (i, tip) in ["White arrow", "Black arrow", "Translucent dot"].enumerated() { cursorStyle.setToolTip(tip, forSegment: i) }
@@ -178,7 +174,7 @@ final class InspectorView: NSView {
             row.alignment = .centerY
             return row
         }
-        let sizeRow = row("Size", [cursorSize, cursorSizeValue])
+        let sizeRow = row("Size", [cursorSize])
         let styleRow = row("Style", [cursorStyle])
         let motionRow = row("Motion", [cursorMotion])
         // The stack insets its rows, so the line between the look and the hiding options is laid over a spacer of its height.
@@ -195,15 +191,15 @@ final class InspectorView: NSView {
         title.setAccessibilityRole(.staticText)
         body.orientation = .vertical
         body.alignment = .leading
-        body.spacing = DS.Space.s12
+        body.spacing = DS.Space.s8
         body.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
         for v in [title, showCursor, sizeRow, styleRow, motionRow, ruleSlot, hideIdle, hideTyping, emptyNote, zoomPanel] as [NSView] { body.addArrangedSubview(v) }
         for v in [sizeRow, styleRow, motionRow, ruleSlot, emptyNote, zoomPanel] {
             v.widthAnchor.constraint(equalTo: body.widthAnchor, constant: -2 * DS.Space.s16).isActive = true
         }
-        body.setCustomSpacing(DS.Space.s16, after: title)
-        body.setCustomSpacing(DS.Space.s16, after: motionRow)
-        body.setCustomSpacing(DS.Space.s16, after: ruleSlot)
+        body.setCustomSpacing(DS.Space.s12, after: title)
+        body.setCustomSpacing(DS.Space.s12, after: motionRow)
+        body.setCustomSpacing(DS.Space.s12, after: ruleSlot)
         let filler = NSView()
         filler.setContentHuggingPriority(.defaultLow, for: .vertical)
         body.addArrangedSubview(filler)
@@ -295,12 +291,16 @@ final class InspectorView: NSView {
     }
 }
 
-/// A slider that says when a drag ends: `mouseDown` returns only once the pointer lets go.
+/// A field slider that says when a drag or a key step ends, which closes its undo step.
 final class TrackingSlider: Slider {
     var onTrackingEnd: () -> Void = {}
 
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        onTrackingEnd()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        style = .field
     }
+
+    required init?(coder: NSCoder) { fatalError("TrackingSlider is created in code") }
+
+    override func trackingDidEnd() { onTrackingEnd() }
 }

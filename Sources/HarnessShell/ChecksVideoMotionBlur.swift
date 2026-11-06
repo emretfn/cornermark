@@ -122,14 +122,13 @@ func checkVideoMotionBlur() async throws {
     content.layoutSubtreeIfNeeded()
     let scope = editor.view(identifier: "video.blur.scope") as? Segments
     let slider = editor.view(identifier: "video.blur.intensity") as? TrackingSlider
-    let readout = slider?.superview?.subviews.compactMap { $0 as? NSTextField }.last
     let note = editor.view(identifier: "video.blur.note") as? NSTextField
     check(editor.view(identifier: "video.blur")?.isHiddenOrHasHiddenAncestor == false && scope != nil && slider != nil, "Motion Blur in the rail opens its panel")
     check((0..<(scope?.segmentCount ?? 0)).compactMap { scope?.label(forSegment: $0) } == ["Off", "Zooms", "Zooms + cursor"] && scope?.selectedSegment == 2,
           "the scope offers Off, Zooms and Zooms + cursor, with Zooms + cursor picked", detail: "\(scope?.selectedSegment ?? -1)")
-    check(slider?.doubleValue == 180 && slider?.minValue == 30 && slider?.maxValue == 360 && readout?.stringValue == "180°"
+    check(slider?.doubleValue == 180 && slider?.minValue == 30 && slider?.maxValue == 360 && slider?.valueText == "180°"
           && slider?.accessibilityValueDescription() == "180 degrees", "Intensity is the shutter angle, 30° to 360°, at 180°, read out in degrees",
-          detail: readout?.stringValue ?? "no readout")
+          detail: slider?.valueText ?? "no value")
     check(note?.stringValue == MotionBlurPanel.explanation(.zoomsAndCursor), "the note says what blurs")
     let fast = BlurScene.fastestCrop(editor.state.project, in: 1.0...1.8)
     await show(fast)
@@ -149,7 +148,7 @@ func checkVideoMotionBlur() async throws {
         if let slider { fire(slider) }
     }
     slider?.onTrackingEnd()
-    check(editor.state.project.edits.motionBlur.shutterAngle == 270 && readout?.stringValue == "270°", "a slider drag sets the angle in steps of 5°",
+    check(editor.state.project.edits.motionBlur.shutterAngle == 270 && slider?.valueText == "270°", "a slider drag sets the angle in steps of 5°",
           detail: "\(editor.state.project.edits.motionBlur.shutterAngle)")
     editor.undo()
     check(editor.state.project.edits.motionBlur.shutterAngle == 180, "the whole drag undoes in one step")

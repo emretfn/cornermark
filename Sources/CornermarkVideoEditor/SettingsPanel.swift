@@ -17,7 +17,7 @@ class SettingsPanel: NSView {
         super.init(frame: frameRect)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = DS.Space.s12
+        stack.spacing = DS.Space.s8
         stack.edgeInsets = NSEdgeInsets(top: 0, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -45,11 +45,10 @@ class SettingsPanel: NSView {
         for v in fullWidth { v.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true }
     }
 
+    /// One line of `caption` under a control. The full explanation goes in the control's help, so the panel stays compact.
     func caption(_ text: String, id: String) -> NSTextField {
-        let field = NSTextField(wrappingLabelWithString: text)
-        field.font = DS.Text.caption.font
-        field.textColor = DS.Color.textSecondary
-        field.preferredMaxLayoutWidth = Self.inner
+        let field = NSTextField.label(text, style: DS.Text.caption, color: DS.Color.textSecondary)
+        field.lineBreakMode = .byTruncatingTail
         field.setAccessibilityIdentifier(id)
         return field
     }
@@ -59,22 +58,12 @@ class SettingsPanel: NSView {
         s.minValue = range.lowerBound
         s.maxValue = range.upperBound
         s.isContinuous = true
-        s.controlSize = .small
         s.setAccessibilityIdentifier(id)
         s.setAccessibilityLabel(label)
         s.target = self
         s.action = action
         s.onTrackingEnd = { [unowned self] in onSliderEnd() }
         return s
-    }
-
-    func readout() -> NSTextField {
-        let field = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-        field.alignment = .right
-        field.setContentHuggingPriority(.required, for: .horizontal)
-        // Wide enough for 100%, so the slider keeps its length as the number changes.
-        field.widthAnchor.constraint(equalToConstant: 34).isActive = true
-        return field
     }
 
     /// Greys the label column for settings that only matter while the section's switch is on.
