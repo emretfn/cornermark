@@ -149,7 +149,6 @@ func checkLanguageSwitch() {
         defaults.removePersistentDomain(forName: "cornermark.harness.editor")
     }
 
-    // Drawing tool, an annotation, a zoomed and scrolled canvas, a saved colour with its context menu.
     let drawing = makeRig(zoom: 0.6)
     drawing.driver.tapKey("a")
     drawing.driver.drag(source: CGPoint(x: 200, y: 200), to: CGPoint(x: 600, y: 420))
@@ -171,7 +170,6 @@ func checkLanguageSwitch() {
     }
     closeRig(drawing)
 
-    // Select tool with a selected annotation.
     let selecting = makeRig(zoom: 0.6)
     selecting.driver.tapKey("r")
     selecting.driver.drag(source: CGPoint(x: 200, y: 200), to: CGPoint(x: 500, y: 400))
@@ -182,7 +180,6 @@ func checkLanguageSwitch() {
     languageRoundTrip("the editor with an annotation selected", selecting, minimumStrings: 30)
     closeRig(selecting)
 
-    // Crop tool.
     let cropping = makeRig(zoom: 0.6)
     cropping.driver.tapKey("c")
     relayout(cropping)
@@ -190,7 +187,6 @@ func checkLanguageSwitch() {
     languageRoundTrip("the editor while cropping", cropping, minimumStrings: 30)
     closeRig(cropping)
 
-    // Background tool: the panel keeps the fill, the slider values and the name being typed.
     let framing = makeRig(zoom: 0.6)
     framing.driver.tapKey("g")
     relayout(framing)
@@ -214,7 +210,6 @@ func checkLanguageSwitch() {
           (framing.controller.view(identifier: "bg.presetName") as? NSTextField)?.stringValue == "Draft name")
     closeRig(framing)
 
-    // The resize panel is loaded but not presented; its text still follows the language.
     let resizing = makeRig(zoom: 0.6)
     let panel = resizing.controller.loadResizePanelView()
     (panel.subviews.compactMap { $0 as? NSStackView }.first ?? panel).layoutSubtreeIfNeeded()
