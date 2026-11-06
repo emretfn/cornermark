@@ -64,4 +64,23 @@ final class AfterRecordingEditsTests: XCTestCase {
         XCTAssertNil(frameState(project, outputTime: 1.2).input.badge, "typing is left out with shortcuts only")
         XCTAssertEqual(frameState(project, outputTime: 4.2).input.badge?.text, "⌘S")
     }
+
+    func testAZoomMovesTheBadgeWithTheRecordingAndLeavesTheCameraInTheFrame() {
+        var project = RecordingProject(source: RecordingProject.Source(pointWidth: 1280, pointHeight: 720, duration: 10))
+        project.source.camera = "camera.mov"
+        project.events = RecordingProject.Events(keys: [KeyEvent(t: 4, label: "⌘S", isCommand: true)])
+        project.edits.keystrokes = KeystrokeDisplay(isVisible: true, keys: .shortcuts, position: .bottomRight)
+        let plain = frameState(project, outputTime: 4.2)
+        XCTAssertEqual(plain.crop, .full)
+        project.edits.zooms = [Zoom(start: 3, end: 6, scale: 2, mode: .manual, center: ZoomPoint(x: 0.25, y: 0.25))]
+        let zoomed = frameState(project, outputTime: 4.2)
+        XCTAssertLessThan(zoomed.crop.width, 1, "the zoom crops the recording")
+        XCTAssertEqual(zoomed.input, plain.input, "the badge is in the recording's points, so the renderers apply the crop to it as they do to the pointer")
+        XCTAssertEqual(zoomed.camera, plain.camera, "the bubble is an overlay on the frame and ignores the crop")
+        let badge = InputOverlayPainter.badgeFrame(text: "⌘S", area: area, project.edits.keystrokes)
+        let (fx, fy) = (badge.midX / area.width, badge.midY / area.height)
+        let crop = zoomed.crop
+        XCTAssertFalse(fx >= crop.x && fx <= crop.x + crop.width && fy >= crop.y && fy <= crop.y + crop.height,
+                       "a badge in the corner the crop leaves out is out of the zoomed picture")
+    }
 }

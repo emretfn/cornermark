@@ -74,10 +74,19 @@ func checkVideoZoom() async throws {
         decoder = d
         return VideoEditorWindowController(folder: folder, project: project, frames: d, clock: { clock.now })
     }
-    guard let recorded = await recordOnce(w, "display=1&x=0&y=0&width=640&height=360"), let folder = recorded.video?.location,
-          let editor = w.coordinator.openVideoEditor(folder), let window = editor.window, let content = window.contentView,
+    guard let recorded = await recordOnce(w, "display=1&x=0&y=0&width=640&height=360"), let folder = recorded.video?.location else {
+        return check(false, "a project is recorded")
+    }
+    // The recording has no typing of its own. Command keys at known moments give the combined case a badge to place; they stay hidden
+    // (Show keystrokes is off) until that case turns them on.
+    var typed = try RecordingProjectFile.read(from: folder)
+    typed.events.keys = [KeyEvent(t: 0.3, label: "\u{2318}K", isCommand: true), KeyEvent(t: 1.2, label: "\u{2318}J", isCommand: true),
+                         KeyEvent(t: 1.9, label: "\u{2318}H", isCommand: true), KeyEvent(t: 5.5, label: "\u{2318}G", isCommand: true)]
+    typed.edits.keystrokes.isVisible = false
+    try RecordingProjectFile.write(typed, to: folder)
+    guard let editor = w.coordinator.openVideoEditor(folder), let window = editor.window, let content = window.contentView,
           let lane = editor.view(identifier: "video.zoomLane") as? ZoomLaneView else {
-        return check(false, "a project is recorded and opens with a zoom lane")
+        return check(false, "the project opens with a zoom lane")
     }
     defer { w.coordinator.closeAllEditors() }
     window.setContentSize(NSSize(width: 1200, height: 760))
@@ -270,13 +279,14 @@ func checkVideoZoom() async throws {
         check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoomed file frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     } else { check(false, "the harness decoder is known") }
-    section("video editor: zoom, background and pointer together match the preview")
+    section("video editor: zoom, background, pointer and keystroke badge together match the preview")
     let plainCursor = editor.state.project.edits.cursor
     editor.setCursor(CursorSettings(scale: 2.4, style: .black, motion: .smooth))
     var framed = editor.state.project.edits.background
     framed.fill = .gradient(index: 6)
     framed.padding = 48; framed.shadow = 70; framed.cornerRadius = 20
     editor.setBackground(framed)
+    editor.setKeystrokes(KeystrokeDisplay(isVisible: true, keys: .shortcuts, position: .center, size: .large, theme: .light))
     let combined = editor.state.project
     let combinedOut = w.root.appendingPathComponent("zoomed-framed.mp4")
     let combinedReport = try await VideoExporter.export(project: combined, video: editor.videoURL, settings: ExportSettings(), to: combinedOut)
@@ -287,9 +297,49 @@ func checkVideoZoom() async throws {
                                        name: "parity-zoom-framed")
         for r in rows {
             let state = frameState(combined, outputTime: r.time)
-            print(String(format: "PARITY zoom+background+cursor t=%.2f scale=%.3f pointer=%@ preview-vs-drawn %@ | preview-vs-file %@", r.time, state.crop.scale,
-                         state.cursor == nil ? "hidden" : "shown", r.drawn.description, r.encoded.description))
+            print(String(format: "PARITY zoom+background+cursor+badge t=%.2f scale=%.3f pointer=%@ badge=%@ preview-vs-drawn %@ | preview-vs-file %@", r.time, state.crop.scale,
+                         state.cursor == nil ? "hidden" : "shown", state.input.badge?.text ?? "none", r.drawn.description, r.encoded.description))
         }
+        // The badge sits in recording points, so a zoom that leaves its cell out leaves the badge out, as it does the pointer.
+        let area = CGSize(width: combined.source.pointWidth, height: combined.source.pointHeight)
+        func badgeInView(_ t: Double) -> Bool {
+            let state = frameState(combined, outputTime: t)
+            guard let badge = state.input.badge else { return false }
+            let frame = InputOverlayPainter.badgeFrame(text: badge.text, area: area, combined.edits.keystrokes)
+            let fx = frame.midX / area.width, fy = frame.midY / area.height
+            return fx >= state.crop.x && fx <= state.crop.x + state.crop.width && fy >= state.crop.y && fy <= state.crop.y + state.crop.height
+        }
+        check(times.allSatisfy { frameState(combined, outputTime: $0).input.badge != nil }, "a badge is showing at each measured moment",
+              detail: times.map { frameState(combined, outputTime: $0).input.badge?.text ?? "none" }.joined(separator: " "))
+        let inView = times.map(badgeInView)
+        print("BADGE in zoomed view per measured moment: \(inView)")
+        check(inView.contains(true) && inView.contains(false), "the measured moments include a zoom that keeps the badge's cell in view and one that leaves it out", detail: "\(inView)")
+        // Against the same frame drawn without the badge, the file differs inside the cell the crop maps the badge to, and only there.
+        let renderer = ExportFrameRenderer(plan: combinedReport.plan, project: combined, folder: editor.folder)
+        let canvas = combined.canvas, plan = combinedReport.plan
+        let kx = Double(plan.width) / canvas.size.width, ky = Double(plan.height) / canvas.size.height
+        func cell(_ badge: CGRect, crop: ZoomRect) -> CGRect {
+            let f = canvas.frame
+            let x = f.minX + (badge.minX / area.width - crop.x) / crop.width * f.width, y = f.minY + (badge.minY / area.height - crop.y) / crop.height * f.height
+            return CGRect(x: x * kx, y: y * ky, width: badge.width / (area.width * crop.width) * f.width * kx, height: badge.height / (area.height * crop.height) * f.height * ky)
+        }
+        var landed: [String] = [], moved = true
+        for (t, visible) in zip(times, inView) {
+            var state = frameState(combined, outputTime: t)
+            guard let badge = state.input.badge, let file = await decodedFrame(combinedOut, at: t), let picture = await decodedFrame(editor.videoURL, at: state.sourceTime) else {
+                moved = false
+                continue
+            }
+            state.input = InputOverlayState()
+            guard let without = renderer.image(state, source: picture) else { moved = false; continue }
+            let frame = InputOverlayPainter.badgeFrame(text: badge.text, area: area, combined.edits.keystrokes)
+            let mapped = changedShare(file, without, in: cell(frame, crop: state.crop).insetBy(dx: 6, dy: 6))
+            let pinned = changedShare(file, without, in: cell(frame, crop: .full).insetBy(dx: 6, dy: 6))
+            landed.append(String(format: "t=%.2f scale=%.2f mapped=%.3f pinned=%.3f", t, state.crop.scale, mapped, pinned))
+            if visible { moved = moved && mapped > 0.3 && (state.crop.scale < 1.01 || pinned < 0.05) } else { moved = moved && mapped < 0.05 }
+        }
+        print("PLACEMENT badge under zoom: " + landed.joined(separator: " | "))
+        check(moved && landed.count == times.count, "in the file the badge is where the crop maps its cell, not pinned to the frame, and absent where the crop leaves it out", detail: landed.joined(separator: "; "))
         let source = combined.source
         check(rows.count == times.count && times.allSatisfy { t in
             let state = frameState(combined, outputTime: t)
@@ -298,9 +348,10 @@ func checkVideoZoom() async throws {
             return fx >= state.crop.x && fx <= state.crop.x + state.crop.width && fy >= state.crop.y && fy <= state.crop.y + state.crop.height
         }, "the pointer is inside the zoomed view at each measured moment")
         check(times.contains { (1.01...1.99).contains(frameState(combined, outputTime: $0).crop.scale) }, "one measured moment is partway through a zoom")
-        check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
-              "zoom, background and pointer: the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
-        check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoom, background and pointer: the file's frames match the preview within compression loss",
+        // The preview lays the badge's glyphs with a layer and export with a bitmap, so their edges differ a little more than the picture's.
+        check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.005 && $0.drawn.psnr > 34 },
+              "zoom, background, pointer and badge: the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
+        check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 34 }, "zoom, background, pointer and badge: the file's frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     } else { check(false, "the harness decoder is known") }
     editor.setBackground(VideoBackground())

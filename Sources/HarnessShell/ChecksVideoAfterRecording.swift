@@ -344,5 +344,34 @@ func checkVideoAfterRecording() async throws {
         check(abs(b.rms - sum) / sum < 0.1, "both tracks on sum in the mix", detail: "\(b.rms) vs \(sum)")
     }
     check(none.0 == nil && !none.1.hasAudio && micFull.1.hasAudio, "with both tracks off the export has no sound track at all")
+
+    // A video opened from a file keeps its own sound, and the editor's microphone level joins it in the mix.
+    let own = w.root.appendingPathComponent("own-sound", isDirectory: true)
+    try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+    try await SyntheticMovie.write(to: own.appendingPathComponent("clip.mov"), SyntheticMovie.Spec(frames: 60))
+    try FileManager.default.copyItem(at: folder.appendingPathComponent("mic.m4a"), to: own.appendingPathComponent("mic.m4a"))
+    var imported = RecordingProject(source: .init(video: "clip.mov", pixelWidth: 640, pixelHeight: 360, pointWidth: 640, pointHeight: 360, fps: 30, duration: 2, origin: .file))
+    imported.source.microphone = "mic.m4a"
+    func exportOwn(_ name: String, mic: AudioTrackLevel) async throws -> SoundLevel? {
+        var p = imported
+        p.edits.audio.microphone = mic
+        let file = w.root.appendingPathComponent("own-sound-\(name).mp4")
+        _ = try await VideoExporter.export(project: p, video: own.appendingPathComponent("clip.mov"), settings: ExportSettings(), to: file)
+        let level = await SoundLevel.read(file)
+        print("RMS own-sound export \(name) mic=\(mic.isOn ? String(format: "%.2f", mic.level) : "off") \(level.map { "\($0)" } ?? "no sound track")")
+        return level
+    }
+    let ownSource = await SoundLevel.read(own.appendingPathComponent("clip.mov"))
+    let micSlice = await SoundLevel.read(own.appendingPathComponent("mic.m4a"), to: 2)
+    let ownOnly = try await exportOwn("own-only", mic: AudioTrackLevel(isOn: false))
+    let ownAndMic = try await exportOwn("own-and-mic", mic: AudioTrackLevel())
+    let ownAndHalfMic = try await exportOwn("own-and-mic-50", mic: AudioTrackLevel(level: 0.5))
+    print("RMS own-sound source clip.mov \(ownSource.map { "\($0)" } ?? "none") mic.m4a first 2 s \(micSlice.map { "\($0)" } ?? "none")")
+    if let source = ownSource, let mic = micSlice, let only = ownOnly, let both = ownAndMic, let half = ownAndHalfMic {
+        let sum = (source.rms * source.rms + mic.rms * mic.rms).squareRoot()
+        check(abs(only.rms - source.rms) / source.rms < 0.1, "with the microphone off the export carries the video's own sound as it was", detail: "\(only.rms) vs \(source.rms)")
+        check(abs(both.rms - sum) / sum < 0.15 && both.rms > only.rms, "with the microphone on the video's own sound and the microphone sum in the mix", detail: "\(both.rms) vs \(sum)")
+        check(half.rms < both.rms && half.rms > only.rms, "the microphone's level sets how much of it joins the video's own sound", detail: "\(only.rms) < \(half.rms) < \(both.rms)")
+    } else { check(false, "the imported video's sound exports and reads back") }
     check(sha256OrUnreadable(folder.appendingPathComponent("screen.mp4")) == screenHash, "screen.mp4 is never rewritten")
 }
