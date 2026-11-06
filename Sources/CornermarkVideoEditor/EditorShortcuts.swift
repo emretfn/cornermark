@@ -72,7 +72,7 @@ public struct EditorShortcut: Equatable, Sendable {
         case .zoomLane: "With the zoom lane focused."
         case .app: nil
         }
-        let shift = shiftForSecond ? "Add Shift to move a second." : nil
+        let shift = shiftForSecond ? (place == .zoomLane ? "0.1 s a press, a second with Shift." : "A frame a press, a second with Shift.") : nil
         let parts = [whereText, shift].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
@@ -108,20 +108,20 @@ public enum EditorCommand: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .playPause: "Play or pause"
-        case .step: "Step a frame back or forward"
-        case .jump: "Go to the start or the end"
+        case .playPause: "Play or Pause"
+        case .step: "Step One Frame"
+        case .jump: "Go to Start or End"
         case .fullScreen: "Full Screen Preview"
-        case .escape: "Leave full screen or let go of a pick"
-        case .split: "Split the clip at the playhead"
-        case .delete: "Delete the picked clip or zoom"
-        case .trimStart: "Trim the clip's start by a frame"
-        case .trimEnd: "Trim the clip's end by a frame"
-        case .addZoom: "Add a zoom at the playhead"
-        case .duplicateZoom: "Duplicate the picked zoom"
-        case .pickZoom: "Pick the previous or next zoom"
-        case .moveZoom: "Move the picked zoom by 0.1 s"
-        case .resizeZoom: "Move the picked zoom's end by 0.1 s"
+        case .escape: "Exit Full Screen or Deselect"
+        case .split: "Split at Playhead"
+        case .delete: "Delete Clip or Zoom"
+        case .trimStart: "Trim Clip Start"
+        case .trimEnd: "Trim Clip End"
+        case .addZoom: "Add Zoom at Playhead"
+        case .duplicateZoom: "Duplicate Zoom"
+        case .pickZoom: "Select Previous or Next Zoom"
+        case .moveZoom: "Move Zoom"
+        case .resizeZoom: "Move Zoom End"
         case .undo: "Undo"
         case .redo: "Redo"
         case .save: "Save"
@@ -212,6 +212,27 @@ public struct EditorChord: Hashable, Sendable {
         case .letter(let c): s += c.uppercased()
         }
         return s
+    }
+
+    /// The keys in words, for VoiceOver, such as "Option Command Left Arrow".
+    public var spoken: String {
+        var words: [String] = []
+        if modifiers.contains(.control) { words.append("Control") }
+        if modifiers.contains(.option) { words.append("Option") }
+        if modifiers.contains(.shift) { words.append("Shift") }
+        if modifiers.contains(.command) { words.append("Command") }
+        switch key {
+        case .space: words.append("Space")
+        case .escape: words.append("Escape")
+        case .delete: words.append("Delete")
+        case .forwardDelete: words.append("Forward Delete")
+        case .left: words.append("Left Arrow")
+        case .right: words.append("Right Arrow")
+        case .home: words.append("Home")
+        case .end: words.append("End")
+        case .letter(let c): words.append(c.uppercased())
+        }
+        return words.joined(separator: " ")
     }
 
     private static let keys: [(key: Key, value: UInt16)] = [

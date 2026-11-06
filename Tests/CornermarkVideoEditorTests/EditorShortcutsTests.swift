@@ -51,8 +51,9 @@ final class EditorShortcutsTests: XCTestCase {
         XCTAssertEqual(EditorShortcuts.shortcut(for: .exportFrame).keyText, "\u{21E7}\u{2318}E")
         XCTAssertEqual(EditorShortcuts.shortcut(for: .fullScreen).keyText, "\u{2303}\u{2318}F")
         XCTAssertEqual(EditorShortcuts.shortcut(for: .trimEnd).keyText, "\u{2325}\u{2318}\u{2190}  \u{2325}\u{2318}\u{2192}")
-        XCTAssertEqual(EditorShortcuts.shortcut(for: .trimStart).note, "With the timeline focused. Add Shift to move a second.")
+        XCTAssertEqual(EditorShortcuts.shortcut(for: .trimStart).note, "With the timeline focused. A frame a press, a second with Shift.")
         XCTAssertNil(EditorShortcuts.shortcut(for: .playPause).note)
+        XCTAssertEqual(EditorShortcuts.shortcut(for: .trimEnd).keys[0].spoken, "Option Command Left Arrow")
     }
 
     func testOnlyLetterKeysBecomeMenuKeys() {

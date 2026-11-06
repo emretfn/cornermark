@@ -242,6 +242,7 @@ private func geometry() {
           })
     check("each segment's width includes its gap and divider room, so slots tile the control exactly",
           (0..<15).allSatisfy { tiles[$0].minX + tools.slotWidth($0) == tiles[$0 + 1].minX } && tiles[15].maxX == tools.intrinsicContentSize.width)
+    check("KeyCaps is controlSmall tall, one cap per key", KeyCaps(["\u{2318}B", "\u{21E7}\u{2318}E"]).intrinsicContentSize.height == DS.Size.controlSmall)
     check("Badge height is controlSmall", Badge(text: "Seçili", symbol: "checkmark", tone: .accent).intrinsicContentSize.height == DS.Size.controlSmall)
 
     func textWidth(_ s: String, _ style: TextStyle) -> CGFloat { ceil(NSAttributedString(string: s, attributes: style.attributes(color: DS.Color.textPrimary)).size().width) }
@@ -326,6 +327,10 @@ private func componentContrast() {
             let r = ratio(text, on: DS.Color.bgControl, appearance, over: white)
             check(String(format: "[%@] TextInput %@ on bgControl >= 4.5 : %.2f", label, name, r), r >= 4.5)
         }
+        let caps = ratio(DS.Color.textPrimary, on: DS.Color.bgControl, appearance, over: white)
+        check(String(format: "[%@] KeyCaps textPrimary on bgControl >= 4.5 : %.2f", label, caps), caps >= 4.5)
+        let edge = ratio(DS.Color.border, on: DS.Color.bgSurface, appearance, over: white)
+        print(String(format: "[%@] KeyCaps border on bgSurface : %.2f (a read-only label, so 1.4.11 does not apply)", label, edge))
     }
     // Overlay buttons are always dark and translucent, so they are measured over both ends of the range.
     for (backdropName, backdrop) in [("white", white), ("black", black)] {

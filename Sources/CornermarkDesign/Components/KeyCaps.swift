@@ -5,12 +5,13 @@ import AppKit
 public final class KeyCaps: NSView {
     public let keys: [String]
 
-    public init(_ keys: [String]) {
+    /// `spoken` names the keys in words for VoiceOver, which reads symbols such as ⌥ unevenly.
+    public init(_ keys: [String], spoken: [String]? = nil) {
         self.keys = keys
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
-        setAccessibilityLabel(keys.joined(separator: ", "))
+        setAccessibilityLabel((spoken ?? keys).joined(separator: ", "))
         frame.size = intrinsicContentSize
     }
 

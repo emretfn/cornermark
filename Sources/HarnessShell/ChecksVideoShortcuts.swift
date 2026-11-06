@@ -30,6 +30,9 @@ func checkVideoShortcuts() async throws {
     let expected = Dictionary(uniqueKeysWithValues: EditorShortcuts.all.map { ($0.command.rawValue, $0.keys.map(\.display)) })
     check(listed == expected && listed.count == EditorCommand.allCases.count, "every editor command is listed once, with the keys the editor answers",
           detail: "\(listed.count) of \(EditorCommand.allCases.count)")
+    let trim = findView("editorShortcut.trimEnd", in: pane.view)
+    check(trim?.accessibilityLabel() == "Option Command Left Arrow, Option Command Right Arrow" && trim?.accessibilityRole() == .staticText,
+          "VoiceOver hears each key in words", detail: trim?.accessibilityLabel() ?? "nil")
     let text = collectText(pane.view)
     check(EditorCommand.allCases.allSatisfy { text.contains($0.title) } && EditorCommand.Group.allCases.allSatisfy { text.contains($0.title) },
           "each command's name and each group's heading are on the pane")

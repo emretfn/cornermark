@@ -167,7 +167,7 @@ final class ShortcutsPane: SettingsPane {
     static func editorGroups() -> [Form.Group] {
         EditorCommand.Group.allCases.map { group in
             let rows = EditorShortcuts.all.filter { $0.command.group == group }.map { shortcut in
-                let caps = KeyCaps(shortcut.keys.map(\.display))
+                let caps = KeyCaps(shortcut.keys.map(\.display), spoken: shortcut.keys.map(\.spoken))
                 caps.setAccessibilityIdentifier("editorShortcut.\(shortcut.command.rawValue)")
                 return Form.row(title: shortcut.command.title, caption: shortcut.note.map { Form.caption($0) }, control: caps)
             }
