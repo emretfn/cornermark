@@ -29,8 +29,8 @@ final class InspectorView: NSView {
     private let showCursor = Checkbox(title: "Show cursor")
     private let cursorSize = TrackingSlider()
     private let cursorSizeValue = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), tilePadding: DS.Space.s8)
-    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), tilePadding: DS.Space.s8)
+    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
+    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
     private let hideIdle = Checkbox(title: "Hide when not moving")
     private let hideTyping = Checkbox(title: "Hide when typing")
     private var rowLabels: [NSTextField] = []

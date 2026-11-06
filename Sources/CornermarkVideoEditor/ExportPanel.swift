@@ -167,9 +167,12 @@ final class ExportPanel: Surface {
     private func row(_ label: String, _ views: [NSView]) -> NSStackView {
         let name = NSTextField.label(label, style: DS.Text.label, color: DS.Color.textSecondary)
         name.widthAnchor.constraint(equalToConstant: InspectorView.labelColumn + DS.Space.s8).isActive = true
+        // A menu fills the rest of its row, so it ends on the same edge as the slider's value and the buttons.
+        resolution.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let row = NSStackView(views: [name] + views)
         row.spacing = DS.Space.s8
         row.alignment = .centerY
+        row.distribution = .fill
         return row
     }
 

@@ -39,7 +39,7 @@ final class RecordingPanel: Surface {
 
     private let optionsButton = IconButton(symbol: "slider.horizontal.3", label: "Recording options", size: .large)
     private var options: RecordingQuickOptions?
-    private let help = IconButton(symbol: "questionmark.circle", label: "What is Record Project?", size: .large)
+    private let help = IconButton(symbol: "questionmark.circle", label: RecordingHelpWindow.title, size: .large)
     private let targets: [(mode: ToolbarMode, button: IconButton)]
     private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
     private let widthField = TextInput(placeholder: "W", monospaced: true, centered: true)

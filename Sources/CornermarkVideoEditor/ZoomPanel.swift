@@ -17,7 +17,7 @@ final class ZoomPanel: NSStackView {
 
     var onChange: (Change) -> Void = { _ in }
 
-    private let presets = Segments(labels: Zoom.levels.map(Zoom.percent), size: .small, tilePadding: DS.Space.s4)
+    private let presets = Segments(labels: Zoom.levels.map(Zoom.percent), width: SettingsPanel.inner)
     private let slider = Slider()
     private let value = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let mode = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -115,15 +115,17 @@ final class ZoomPanel: NSStackView {
         setCustomSpacing(DS.Space.s16, after: animationSettings)
         for v in [levelRow, modeRow, modeNote, target] { v.widthAnchor.constraint(equalTo: widthAnchor).isActive = true }
         // Five presets need the panel's whole width, so they sit under the level's row rather than in its control column.
-        presets.setContentCompressionResistancePriority(.required, for: .horizontal)
     }
 
     private func row(_ label: String, _ views: [NSView]) -> NSStackView {
         let name = NSTextField.label(label, style: DS.Text.label, color: DS.Color.textSecondary)
         name.widthAnchor.constraint(equalToConstant: InspectorView.labelColumn).isActive = true
+        // The last stretchable control fills the row, so a menu ends on the panel's right edge like the slider above it.
+        mode.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let row = NSStackView(views: [name] + views)
         row.spacing = DS.Space.s8
         row.alignment = .centerY
+        row.distribution = .fill
         return row
     }
 

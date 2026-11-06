@@ -181,7 +181,7 @@ final class RecordingBarView: NSView {
         resume.toolTip = "Resume recording"
         restart.toolTip = "Restart: discard this take and start again"
         confirmRestart.setAccessibilityIdentifier("recording.confirmRestart")
-        confirmRestart.toolTip = "Click again to discard this take and start over"
+        confirmRestart.toolTip = "Click again to discard this take and start again"
         delete.toolTip = "Delete: stop and keep nothing"
         delete.setAccessibilityHelp("Stops the recording and deletes it. Asks once more first.")
         confirmDelete.setAccessibilityIdentifier("recording.confirmDelete")

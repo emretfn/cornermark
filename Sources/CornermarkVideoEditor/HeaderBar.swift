@@ -46,7 +46,8 @@ final class HeaderBar: NSView {
             exportButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DS.Space.s12),
             exportButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             status.trailingAnchor.constraint(equalTo: exportButton.leadingAnchor, constant: -DS.Space.s12),
-            status.firstBaselineAnchor.constraint(equalTo: exportButton.firstBaselineAnchor),
+            // The button draws its own title, so its baseline anchor is not where the text is; centring lines the two up.
+            status.centerYAnchor.constraint(equalTo: exportButton.centerYAnchor),
             rule.leadingAnchor.constraint(equalTo: leadingAnchor),
             rule.trailingAnchor.constraint(equalTo: trailingAnchor),
             rule.bottomAnchor.constraint(equalTo: bottomAnchor),
