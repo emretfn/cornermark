@@ -1,6 +1,6 @@
 #!/bin/bash
 # link.sh <path> | link.sh open <image-path> | link.sh edit-recording <project-folder> [export] | link.sh unknown-link
-# link.sh record/test-window [editor <project-folder> <scene>] | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | link.sh record/stop
+# link.sh record/test-window [editor <project-folder> <scene>] | link.sh record window=<test window id> | link.sh record/pause | record/resume | record/restart | record/camera [query] | link.sh record/stop
 # Sends one link to the recorded instance only, watches focus while it lands, and prints what the app logged.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -94,6 +94,14 @@ elif in_list "$path" "$RECORDING_LINKS"; then
         record/restart)
             [ $# -eq 1 ] || die "usage: link.sh record/restart"
             want="recording restarted" ;;
+        record/camera)
+            # Alone it toggles full screen, as a click on the bubble does.
+            [ $# -le 2 ] || die "usage: link.sh record/camera [shape=circle|square|rectangle&size=small|medium|large&corner=..&mirror=0|1&full-screen=on|off|toggle]"
+            if [ $# -eq 2 ]; then
+                [[ "$2" =~ ^(shape|size|corner|mirror|full-screen)=[A-Za-z0-9]+(&(shape|size|corner|mirror|full-screen)=[A-Za-z0-9]+)*$ ]] || die "refused: record/camera takes shape, size, corner, mirror and full-screen only."
+                url="$url?$2"
+            fi
+            want="camera changed" ;;
     esac
 fi
 

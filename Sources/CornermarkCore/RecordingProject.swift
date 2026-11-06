@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Where the pointer was, in points of the recorded area with the origin at its top-left corner.
@@ -60,13 +61,15 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// File names inside the project folder of the sound tracks, each as long as the video and on its timeline. Nil when not recorded.
         public var microphone: String?
         public var systemAudio: String?
+        /// The camera's file inside the project folder, on the same timeline as `video`. Nil when the camera was off.
+        public var camera: String?
 
         public init(video: String = RecordingProjectFile.videoName, pixelWidth: Int = 0, pixelHeight: Int = 0,
                     pointWidth: Double = 0, pointHeight: Double = 0, fps: Int = 60, duration: Double = 0,
-                    microphone: String? = nil, systemAudio: String? = nil) {
+                    microphone: String? = nil, systemAudio: String? = nil, camera: String? = nil) {
             self.video = video; self.pixelWidth = pixelWidth; self.pixelHeight = pixelHeight
             self.pointWidth = pointWidth; self.pointHeight = pointHeight; self.fps = fps; self.duration = duration
-            self.microphone = microphone; self.systemAudio = systemAudio
+            self.microphone = microphone; self.systemAudio = systemAudio; self.camera = camera
         }
 
         /// The sound tracks there are, microphone first.
@@ -83,8 +86,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? 0
             microphone = try? c.decodeIfPresent(String.self, forKey: .microphone)
             systemAudio = try? c.decodeIfPresent(String.self, forKey: .systemAudio)
+            camera = (try? c.decodeIfPresent(String.self, forKey: .camera)) ?? nil
         }
-        private enum Keys: String, CodingKey { case video, pixelWidth, pixelHeight, pointWidth, pointHeight, fps, duration, microphone, systemAudio }
+        private enum Keys: String, CodingKey { case video, pixelWidth, pixelHeight, pointWidth, pointHeight, fps, duration, microphone, systemAudio, camera }
     }
 
     /// What happened while recording, on the video's timeline.
@@ -119,10 +123,11 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// one written before clips existed keeps the whole recording.
         public var clips: [Clip]
         public var background: VideoBackground
+        public var camera: CameraBubble
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = [], background: VideoBackground = VideoBackground()) {
-            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.background = background
+                    clips: [Clip] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble()) {
+            self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.background = background; self.camera = camera
         }
 
         public init(from decoder: Decoder) throws {
@@ -130,10 +135,11 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             cursor = try c.decodeIfPresent(CursorSettings.self, forKey: .cursor) ?? CursorSettings()
             clicks = (try? c.decodeIfPresent(ClickHighlight.self, forKey: .clicks)) ?? ClickHighlight()
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
+            camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
             background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background, camera }
     }
 
     public var version: Int
@@ -169,6 +175,7 @@ public enum RecordingProjectFile {
     public static let microphoneName = "mic.m4a"
     public static let systemAudioName = "system.m4a"
     public static let projectName = "project.json"
+    public static let cameraName = "camera.mp4"
 
     public static func write(_ project: RecordingProject, to folder: URL) throws {
         let encoder = JSONEncoder()
@@ -201,12 +208,20 @@ public struct FrameState: Equatable, Sendable {
     public var sourceTime: Double
     /// Nil when the viewer hid the pointer or the recording has none.
     public var cursor: CursorFrame?
+    /// Where the camera goes. Its picture is the camera file at `sourceTime`. Nil when the recording has no camera or the viewer hid it.
+    public var camera: CameraFrame?
+
+    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil) {
+        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera
+    }
 }
 
 /// The frame at `outputTime` seconds of the finished video. Pure: the same project and time always give the same answer.
 public func frameState(_ project: RecordingProject, outputTime: Double) -> FrameState {
     let sourceTime = project.timeline.sourceTime(at: outputTime)
-    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime))
+    let area = CGSize(width: project.source.pointWidth, height: project.source.pointHeight)
+    let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
+    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera)
 }
 
 public enum PointerTrack {

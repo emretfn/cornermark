@@ -537,7 +537,7 @@ final class SettingsWindowController: NSWindowController {
     private let scroll = NSScrollView()
 
     init(ctx: SettingsContext) {
-        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), AudioPane(ctx), PermissionsPane(ctx)]
+        let panes = [GeneralPane(ctx), ShortcutsPane(ctx), QuickAccessPane(ctx), CapturePane(ctx), RecordingPane(ctx), AudioPane(ctx), CameraPane(ctx), PermissionsPane(ctx)]
         self.panes = panes
         selectedPane = panes[0]
         items = panes.map { SidebarItem(symbol: $0.symbol, title: $0.paneTitle) }
