@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkDesign
 
 public enum OverlayPresentation {
     case onscreen
@@ -10,6 +11,10 @@ struct SessionOptions {
     var presentation = OverlayPresentation.onscreen
     var tickInterval: TimeInterval = 1
     var scrollInterval: TimeInterval = 0.15
+    var sources: () -> RecordingSources = { RecordingSources() }
+    var toggleSource: (RecordingSource) -> Void = { _ in }
+    var quickOptions: () -> RecordingQuickOptions = { RecordingQuickOptions() }
+    var changeOptions: (RecordingQuickOptions) -> Void = { _ in }
 }
 
 enum SessionEnd {
@@ -30,6 +35,11 @@ final class CaptureSession: OverlayHost {
 
     private(set) var panels: [OverlayPanel] = []
     private var toolbar: SelectionToolbar?
+    private var recordingPanel: RecordingPanel?
+    private(set) var help: RecordingHelpWindow?
+    /// The overlay is out of the way of a macOS permission prompt. Its selection and state stay as they were.
+    private(set) var isYielding = false
+    private var keyBeforeYield: OverlayPanel?
     private(set) var toolbarPill: CGRect?
     private var countdown: CountdownPanel?
     private var scroll: ScrollCapture?
@@ -46,7 +56,7 @@ final class CaptureSession: OverlayHost {
     }
 
     var windows: [NSWindow] {
-        panels + [countdown].compactMap { $0 } + (scroll?.windows ?? [])
+        panels + [countdown, help].compactMap { $0 } + (scroll?.windows ?? [])
     }
 
     func start(cursor: CGPoint) {
@@ -128,7 +138,7 @@ final class CaptureSession: OverlayHost {
             case .cancelled:
                 previousApp?.activate()
                 end(.finish(finish))
-            case .capture: end(.finish(finish))
+            case .capture, .record: end(.finish(finish))
             }
         case .countdown(let remaining, _):
             if case .countdown = before {} else { enterCountdown() }
@@ -141,13 +151,50 @@ final class CaptureSession: OverlayHost {
         }
     }
 
-    private func refreshOverlay() {
+    func refreshOverlay() {
         for p in panels { p.chrome.needsDisplay = true }
         updateToolbar()
     }
 
+    /// Opens above the overlay and takes the keyboard, so Return and Escape close it instead of reaching the selection. Closing gives the
+    /// keyboard back to the overlay window that had it.
+    private func showHelp() {
+        let window = help ?? RecordingHelpWindow(level: panels.first?.level ?? .screenSaver)
+        help = window
+        let previous = panels.first { $0.isKeyWindow }
+        window.onClose = { [weak self, weak previous] in
+            guard let self, self.options.presentation == .onscreen else { return }
+            (previous ?? self.panels.first)?.makeKey()
+        }
+        guard options.presentation == .onscreen else { return }
+        if let screen = (previous ?? panels.first)?.screen {
+            let f = screen.visibleFrame
+            window.setFrameOrigin(CGPoint(x: f.midX - window.frame.width / 2, y: f.midY - window.frame.height / 2))
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// A macOS permission prompt opens below a screen-saver-level overlay, where nobody can answer it, so the overlay leaves the screen
+    /// while one is open and comes back, with the keyboard, once the answer arrives.
+    func yield(_ on: Bool) {
+        guard on != isYielding else { return }
+        isYielding = on
+        guard options.presentation == .onscreen else { return }
+        if on {
+            keyBeforeYield = panels.first { $0.isKeyWindow }
+            for p in panels { p.orderOut(nil) }
+        } else {
+            NSApp.activate()
+            for p in panels { p.orderFrontRegardless() }
+            (keyBeforeYield ?? panels.first)?.makeKeyAndOrderFront(nil)
+            keyBeforeYield = nil
+        }
+    }
+
     private func closePanels() {
+        help?.orderOut(nil); help?.close(); help = nil
         toolbar?.removeFromSuperview()
+        recordingPanel?.removeFromSuperview()
         for p in panels { p.keyHost = nil; p.orderOut(nil); p.close() }
         panels = []
     }
@@ -170,33 +217,67 @@ final class CaptureSession: OverlayHost {
         capture.start(interval: options.scrollInterval, present: options.presentation == .onscreen)
     }
 
+    /// The all-in-one toolbar, or in a recording the recording panel. One of them, never both.
     private func updateToolbar() {
         guard machine.config.flow == .adjustable else { return }
+        let recording = machine.config.intent == .record
+        var anchorRect: CGRect?
         switch machine.state {
-        case .armed, .windowHover, .adjusting: break
+        case .armed, .windowHover: break
+        case .adjusting(let sel, _): anchorRect = sel.rect
+        case .windowPicked(let w): anchorRect = w.frame
         default:
             toolbar?.removeFromSuperview()
+            recordingPanel?.removeFromSuperview()
             toolbarPill = nil
             return
         }
-        let bar: SelectionToolbar
-        if let existing = toolbar { bar = existing } else {
-            bar = SelectionToolbar(frame: .zero)
-            bar.onAction = { [weak self] in self?.send(.toolbar($0)) }
-            toolbar = bar
+        let bar: Surface
+        let pill: CGSize
+        if recording {
+            toolbar?.removeFromSuperview()
+            let panel: RecordingPanel
+            if let existing = recordingPanel { panel = existing } else {
+                panel = RecordingPanel()
+                panel.onAction = { [weak self] in self?.send(.toolbar($0)) }
+                panel.onToggle = { [weak self] in self?.options.toggleSource($0) }
+                panel.onOptions = { [weak self] in
+                    self?.options.changeOptions($0)
+                    self?.refreshOverlay()
+                }
+                panel.onHelp = { [weak self] in self?.showHelp() }
+                recordingPanel = panel
+            }
+            panel.update(machine)
+            panel.show(options.sources())
+            panel.show(options.quickOptions())
+            bar = panel
+            pill = panel.pillRect.size
+        } else {
+            recordingPanel?.removeFromSuperview()
+            let toolbar: SelectionToolbar
+            if let existing = self.toolbar { toolbar = existing } else {
+                toolbar = SelectionToolbar(frame: .zero)
+                toolbar.onAction = { [weak self] in self?.send(.toolbar($0)) }
+                self.toolbar = toolbar
+            }
+            toolbar.update(machine)
+            bar = toolbar
+            pill = toolbar.pillRect.size
         }
-        bar.update(machine)
 
         let display: DisplayGeometry
-        let pill = bar.pillRect.size
         var origin: CGPoint
-        if case .adjusting(let sel, _) = machine.state {
-            display = machine.chromeDisplay(for: sel.rect) ?? machine.config.displays[0]
+        if let anchorRect {
+            display = machine.chromeDisplay(for: anchorRect) ?? machine.config.displays[0]
             // Hug the part of the selection on this display, so the pill never straddles two.
-            let part = sel.rect.intersection(display.frame)
-            let anchor = part.isEmpty ? sel.rect : part
+            let part = anchorRect.intersection(display.frame)
+            let anchor = part.isEmpty ? anchorRect : part
             origin = CGPoint(x: anchor.midX - pill.width / 2, y: anchor.minY - 12 - pill.height)
-            if origin.y < display.frame.minY + 8 {
+            if recording, anchor.insetBy(dx: 12, dy: 12).width >= pill.width, anchor.insetBy(dx: 12, dy: 12).height >= pill.height {
+                // A recording's panel sits in the middle of what it films, once the selection has room for it.
+                origin = CGPoint(x: anchor.midX - pill.width / 2, y: anchor.midY - pill.height / 2)
+            } else if origin.y < display.frame.minY + 8 {
                 origin.y = anchor.maxY + 12
                 if origin.y + pill.height > display.frame.maxY - 8 { origin.y = anchor.minY + 12 }
             }
@@ -206,6 +287,8 @@ final class CaptureSession: OverlayHost {
             origin = CGPoint(x: display.frame.midX - pill.width / 2, y: display.frame.minY + 90)
         }
         origin.x = min(max(origin.x, display.frame.minX + 8), display.frame.maxX - pill.width - 8)
+        // Centring an odd-sized selection or pill lands on a half point, and at 1x everything in the bar would straddle two pixels.
+        origin = CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
 
         guard let panel = panels.first(where: { $0.display.displayID == display.id }) else { return }
         toolbarPill = CGRect(origin: origin, size: pill)

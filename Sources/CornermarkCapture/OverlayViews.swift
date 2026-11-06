@@ -54,6 +54,8 @@ class OverlayWindow: NSPanel {
         becomesKeyOnlyIfNeeded = false
         isMovable = false
         animationBehavior = .none
+        // The toolbar and the recording panel come and go, so Tab must find their controls whenever they are there.
+        autorecalculatesKeyViewLoop = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         setFrame(frame, display: false)
     }
@@ -87,7 +89,9 @@ class OverlayWindow: NSPanel {
         case .keyDown, .keyUp:
             let editing = firstResponder is NSText
             let isEscape = event.keyCode == 53
-            if (isEscape || !editing), !event.modifierFlags.contains(.command), keyHost?.handleKey(event) == true { return }
+            // Space presses a button that has keyboard focus, as everywhere on the Mac. Return stays the overlay's start key.
+            let pressingFocused = event.keyCode == 49 && firstResponder is NSButton
+            if (isEscape || !(editing || pressingFocused)), !event.modifierFlags.contains(.command), keyHost?.handleKey(event) == true { return }
         case .flagsChanged:
             _ = keyHost?.handleKey(event)
         default: break
@@ -227,7 +231,7 @@ final class ChromeView: NSView {
 
     private func desiredCursor(_ m: SelectionMachine) -> NSCursor {
         switch m.state {
-        case .windowHover: return .pointingHand
+        case .windowHover, .windowPicked: return .pointingHand
         case .adjusting(_, let gesture):
             if case .move? = gesture { return .closedHand }
             switch m.hitZone(at: m.cursor) {
@@ -261,24 +265,30 @@ final class ChromeView: NSView {
             drawSelectionPart(d.rect, handles: false, machine: m)
             if cursorHere { drawCrosshair(local(m.cursor)); drawLoupe(ctx, at: local(m.cursor)) }
         case .adjusting(let sel, let gesture):
-            drawSelectionPart(sel.rect, handles: true, machine: m)
+            // A recording's panel shows the size in its fields, so the badge would say it twice.
+            drawSelectionPart(sel.rect, handles: true, badge: m.config.intent != .record, machine: m)
             if case .resize? = gesture, cursorHere { drawLoupe(ctx, at: local(m.cursor)) }
         case .windowHover(let w):
             let r = w.map { local($0.frame).intersection(bounds) }
             drawDim(except: r.flatMap { $0.isNull ? nil : $0 })
             if let w, let r, !r.isNull { drawWindowHighlight(r, window: w) }
+        case .windowPicked(let w):
+            let r = local(w.frame).intersection(bounds)
+            drawDim(except: r.isNull ? nil : r)
+            // The panel in the middle shows the size, so the picked window keeps only its outline.
+            if !r.isNull { drawWindowHighlight(r, window: w, label: false) }
         default: break
         }
     }
 
     /// The selection spans panels, so each panel draws only what falls on it: its dim with a hole, the border
     /// and any handle landing here, and the one size badge if this panel carries it.
-    private func drawSelectionPart(_ r: CGRect, handles: Bool, machine m: SelectionMachine) {
+    private func drawSelectionPart(_ r: CGRect, handles: Bool, badge: Bool = true, machine m: SelectionMachine) {
         let rect = local(r)
         let visible = rect.intersection(bounds)
         drawDim(except: visible.isEmpty ? nil : visible)
         if rect.insetBy(dx: -2, dy: -2).intersects(bounds) { drawSelection(rect, handles: handles) }
-        if !visible.isEmpty, m.chromeDisplay(for: r)?.id == display.displayID {
+        if badge, !visible.isEmpty, m.chromeDisplay(for: r)?.id == display.displayID {
             drawBadge(text: "\(Int(r.width.rounded())) × \(Int(r.height.rounded()))", anchoredTo: visible)
         }
     }
@@ -341,7 +351,7 @@ final class ChromeView: NSView {
         drawPill(text, at: fits ?? candidates[2])
     }
 
-    private func drawWindowHighlight(_ r: CGRect, window w: WindowSnapshot) {
+    private func drawWindowHighlight(_ r: CGRect, window w: WindowSnapshot, label: Bool = true) {
         DS.Color.accentWash.setFill()
         r.fill()
         let halo = NSBezierPath(rect: r.insetBy(dx: -0.5, dy: -0.5))
@@ -352,6 +362,7 @@ final class ChromeView: NSView {
         border.lineWidth = 2
         DS.Color.accentSolid.setStroke()
         border.stroke()
+        guard label else { return }
         let text = [w.appName, "\(Int(w.frame.width.rounded())) × \(Int(w.frame.height.rounded()))"].filter { !$0.isEmpty }.joined(separator: "  ")
         let size = pillSize(text)
         drawPill(text, at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2))

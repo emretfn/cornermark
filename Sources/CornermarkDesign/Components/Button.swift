@@ -8,11 +8,14 @@ public final class Button: Pressable {
     }
     public let size: ComponentSize
     public let symbol: String?
+    /// The key that does the same thing, drawn after the title, such as "\u{21A9}".
+    public let shortcut: String?
 
-    public init(title: String, variant: Variant = .secondary, size: ComponentSize = .regular, symbol: String? = nil) {
+    public init(title: String, variant: Variant = .secondary, size: ComponentSize = .regular, symbol: String? = nil, shortcut: String? = nil) {
         self.variant = variant
         self.size = size
         self.symbol = symbol
+        self.shortcut = shortcut
         super.init(frame: .zero)
         self.title = title
         setAccessibilityLabel(title)
@@ -32,7 +35,9 @@ public final class Button: Pressable {
     private var padding: CGFloat { size == .small ? DS.Space.s12 : DS.Space.s16 }
     private var leadingPadding: CGFloat { symbol == nil ? padding : padding - 2 }
     private var iconGap: CGFloat { size == .small ? DS.Space.s4 : DS.Space.s6 }
-    private var contentWidth: CGFloat { Paint.width(of: title, textStyle) + (symbol == nil ? 0 : size.iconSize + iconGap) }
+    private var shortcutGap: CGFloat { DS.Space.s8 }
+    private var shortcutWidth: CGFloat { shortcut.map { shortcutGap + Paint.width(of: $0, DS.Text.readout) } ?? 0 }
+    private var contentWidth: CGFloat { Paint.width(of: title, textStyle) + (symbol == nil ? 0 : size.iconSize + iconGap) + shortcutWidth }
 
     public override var intrinsicContentSize: NSSize {
         NSSize(width: leadingPadding + contentWidth + padding, height: size.height)
@@ -52,7 +57,12 @@ public final class Button: Pressable {
             Paint.symbol(symbol, in: CGRect(x: x, y: 0, width: size.iconSize, height: bounds.height), pointSize: size.iconSize, look.text)
             x += size.iconSize + iconGap
         }
-        Paint.text(title, textStyle, look.text, in: CGRect(x: x, y: 0, width: Paint.width(of: title, textStyle), height: bounds.height))
+        let titleWidth = Paint.width(of: title, textStyle)
+        Paint.text(title, textStyle, look.text, in: CGRect(x: x, y: 0, width: titleWidth, height: bounds.height))
+        if let shortcut {
+            x += titleWidth + shortcutGap
+            Paint.text(shortcut, DS.Text.readout, look.text, in: CGRect(x: x, y: 0, width: Paint.width(of: shortcut, DS.Text.readout), height: bounds.height))
+        }
     }
 }
 

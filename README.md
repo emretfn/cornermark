@@ -5,15 +5,15 @@
 <h1 align="center">Cornermark</h1>
 
 <p align="center">
-  A local screenshot app for the macOS menu bar.<br>
-  Capture, annotate, copy. Your captures never leave your Mac.
+  A local screenshot and screen recording app for the macOS menu bar.<br>
+  Capture, record, edit. Your captures never leave your Mac.
 </p>
 
 <p align="center">
   <img src="docs/screenshots/hero.png" alt="The editor showing a sales dashboard with a highlighted card, an arrow to the chart's peak, and a pixelated email column">
 </p>
 
-Cornermark is a personal screenshot tool for the macOS menu bar. It has no Dock icon, no account, and no cloud storage, and it never uploads a capture. Its only network requests go to GitHub: the update check, which asks for the latest release, and the release notes you see when you open What's New. Neither sends personal data. You can turn the update check off in Settings > General. Cornermark requires macOS 14 or later, runs on Apple silicon and Intel Macs, and you can install a release or build it from source with Swift Package Manager.
+Cornermark is a personal screenshot and screen recording tool for the macOS menu bar. It has no Dock icon, no account, and no cloud storage, and it never uploads a capture or a recording. Its only network requests go to GitHub: the update check, which asks for the latest release, and the release notes you see when you open What's New. Neither sends personal data. You can turn the update check off in Settings > General. Cornermark requires macOS 14 or later, runs on Apple silicon and Intel Macs, and you can install a release or build it from source with Swift Package Manager.
 
 ## Install
 
@@ -72,6 +72,24 @@ Cornermark writes every capture to History. You can filter by type, bring a capt
 
 Press `Ctrl+Shift+7` and select an area. Vision recognizes the text on your device, detects the language, and Cornermark copies the result to the clipboard with the line order intact. QR code contents are copied as text too.
 
+### Record the screen
+
+Press `Ctrl+Shift+9` and select an area, a window, or a whole display. **Record MP4** writes one MP4 file with the pointer in the picture, **Record GIF** writes an animated GIF, and **Record Project** keeps the video, the pointer, the clicks, and the keys apart so you can change how they look afterwards. An optional countdown runs first, and a small bar lets you pause, restart, delete, or stop. Toggles in the same panel choose whether a recording takes the microphone, the sound your Mac plays, your camera in a bubble, click highlights, and keystrokes. A button at the start of the panel changes quality, frame rate, countdown, and what the recording shows or leaves out. Turning one on asks macOS for its permission right then, the first time only. Notifications stay out of the recording.
+
+### Edit recordings in the video editor
+
+A project from Record Project opens in the video editor: settings on the left, the preview in the middle, and the timeline at the bottom. You can:
+
+- Split, delete, and trim clips, and undo every edit.
+- Add zooms on the timeline. A zoom holds the spot where you added it or follows the pointer, the camera eases in and out, and zooms that follow each other hand over without returning to full size.
+- Resize, restyle, smooth, or hide the pointer, and show clicks with a press effect and a ripple.
+- Move or restyle the camera bubble and the keystroke badge, and set the level of each sound track.
+- Put the video on a gradient, a wallpaper, a picture, or a colour, with padding, a shadow, rounded corners, and an aspect ratio such as 16:9 or 9:16.
+- Add motion blur to zooms and the pointer.
+- Export an MP4 with the hardware H.264 encoder, or export the frame at the playhead as a PNG. Both go to Quick Access and History.
+
+The source video is written once and never changed, so every edit can be undone or changed later. Settings > Shortcuts lists every key the editor answers.
+
 ## Build
 
 ```sh
@@ -121,6 +139,24 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 | Ctrl+Shift+6 | Scrolling capture |
 | Ctrl+Shift+7 | Capture text (OCR) |
 | Ctrl+Shift+8 | Timed capture |
+| Ctrl+Shift+9 | Record the screen: an area, a window, or a whole display. Press it again to stop |
+
+The video editor has its own keys, listed under the global ones in Settings > Shortcuts. They work while an editor window is in front:
+
+| Shortcut | Action |
+| --- | --- |
+| Space | Play or pause |
+| Command-B | Split the clip at the playhead |
+| Delete | Delete the picked clip or zoom |
+| Z | Add a zoom at the playhead |
+| Command-D | Duplicate the picked zoom |
+| Control-Command-F | Full Screen Preview |
+| Command-Z, Shift-Command-Z | Undo, Redo |
+| Command-S, Shift-Command-S | Save, Save As |
+| Command-E | Export |
+| Shift-Command-E | Export Current Frame as Image |
+| Arrow keys on the timeline | Step a frame, or a second with Shift. Option trims the clip's start, Option-Command its end |
+| Arrow keys on a manual zoom's target frame | Move the spot the zoom holds, ten times as far with Shift |
 
 <p align="center">
   <img src="docs/screenshots/settings.png" width="640" alt="The Shortcuts section of the Settings window">
@@ -132,16 +168,21 @@ The defaults use `Ctrl+Shift+number` and do not conflict with system shortcuts. 
 - **After capture.** Cornermark can show a Quick Access card, copy to the clipboard, save to a folder (`Cornermark YYYY-MM-DD at HH.MM.SS.png`), or open the editor. Every capture also goes to History.
 - **Quick Access.** Swipe a card toward the screen edge with two fingers to dismiss it, or double-click it to open the editor. The auto-dismiss timer is adjustable and pauses while the pointer is over the card. You can restore the last closed card and hide all cards temporarily.
 - **Pins.** To unlock a locked pin, use the "Pinned screenshots" list in the menu bar panel. Escape or the close button removes a pin.
-- **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day.
-- **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state.
+- **History.** You can also copy a capture, reveal it in Finder, and delete it. Cornermark removes old captures at launch and once a day. Recordings are listed too, under their own filter, with their length on the picture. Deleting a recording from History keeps its video in the save folder.
+- **Finished recordings.** A recording shows a Quick Access card with its first frame, length, and size. Copy puts the video file on the clipboard, Play opens a plain video or a GIF, Edit opens a project, and Reveal in Finder shows it. Dragging the card drags the video.
+- **Video editor.** Edit on the card or in History opens a project, and File > Open Video opens an MP4 or MOV file as a new project. Settings sit in a rail on the left, the preview in the middle, and the timeline at the bottom with a ruler, a zoom lane, and a clip lane with pictures of the recording. Space plays and pauses, the timeline takes a click, a drag, or the arrow keys, and Full Screen Preview shows only the video. The Cursor section shows, hides, and resizes the pointer, draws it as a white arrow, a black arrow, or a translucent dot, smooths a shaky path, and can fade it out while it rests or while you type. Command-B splits the clip at the playhead, Delete removes a clip, and dragging a clip's edge trims it; Option with the arrow keys trims from the keyboard. Each cut is marked on the clip lane, and Command-Z undoes any edit. A project is a `.cornermarkvideo` package: Command-S saves, Save As copies it, and closing the window keeps the changes without asking. Export writes a video of only the clips that are left, and the video file itself is never rewritten.
+- **Export Current Frame as Image.** File > Export Current Frame as Image, or Shift-Command-E, draws the frame at the playhead the way the video export draws it, sharp and at the video's full size, and treats it like a screenshot: it goes to History, and then to Quick Access, the clipboard, or the save folder, as After capture says. Nothing is uploaded.
+- **GIF.** Record GIF, or Option-Return in the recording overlay, records like a video and saves an animated GIF at 15 frames a second, at most 960 pixels on its longest side, looping forever. A paused stretch is left out. Convert to GIF on a video's Quick Access card or in History makes a GIF beside an existing Record MP4 recording and keeps the video.
+- **Settings.** Launch at login, automatic update checks, save folder, PNG or JPEG, sound, shortcuts, card corner and size, window shadow, timer length, retention period, and permission state. The Recording pane sets the frame rate (30 or 60), quality, Retina or standard resolution, a largest size (4K, 1440p, 1080p, or 720p), whether the cursor shows, and whether a finished recording gets a Quick Access card.
 - **Updates.** Cornermark checks GitHub at launch and once a day, and installs a release only after you confirm. See [Update](#update).
 - **Open from Finder.** "Open With" opens PNG, JPEG, and HEIC files in the editor.
 - **URL scheme.** `cornermark://capture-area`, `capture-window`, `capture-fullscreen`, `all-in-one`, `previous-area`, `scrolling`, `ocr`, `timer?seconds=5`, `history`, `settings`, `check-for-updates`, `whats-new`, `restore-overlay`, `hide-overlays`, `open?path=/full/path/image.png`. The `open` path must be an existing image file. Cornermark logs and ignores unknown paths.
+- **Recording.** `cornermark://record?window=<id>` records one window. `cornermark://record?display=<id>&x=<x>&y=<y>&width=<w>&height=<h>` records a display or an area of it, in points from the bottom-left corner of the screen, and `display` or the area may be left out but not both. Add `&style=video` for one MP4 file or `&style=gif` for an animated GIF. `cornermark://record/stop` ends the recording. `cornermark://edit-recording?path=<folder>` opens a recording's folder in the video editor. The recording lands in the save folder as a folder named after the time, holding `screen.mp4`, an H.264 video at up to 60 frames a second without the cursor, and `project.json`, which keeps where the pointer was as its own track and how it should be drawn. The video is written once and never changed, so the pointer can be hidden or resized later without re-encoding anything. Nothing leaves your Mac.
 
 ## What it leaves out
 
 - No cloud, accounts, or share links.
-- No video or GIF recording.
+- The video editor cannot turn a project into a GIF.
 - No App Store version or notarization.
 
 ## Develop

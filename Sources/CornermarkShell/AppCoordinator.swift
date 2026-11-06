@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkEditor
+import CornermarkVideoEditor
 import ImageIO
 
 /// Wires the pieces together. Every user intent enters through `perform(_:)`.
@@ -14,6 +15,9 @@ final class AppCoordinator {
     let pins: PinManager
     let hud: HUD
     let updates: UpdateController
+    let recording: RecordingController
+    let sources: RecordingSourceToggles
+    let controls: RecordingControls
     let thumbnails = ThumbnailCache()
     private(set) var hotKeys: HotKeyManager?
     private(set) var history: HistoryWindowController?
@@ -21,8 +25,20 @@ final class AppCoordinator {
     private(set) var permissionWindow: PermissionWindowController?
     private(set) var whatsNewWindow: WhatsNewWindowController?
     private(set) var editors: [UUID: EditorWindowController] = [:]
+    var videoEditors: [URL: VideoEditorWindowController] = [:]
+    /// Builds the video editor for a project folder. A harness swaps it to decode frames on its own clock.
+    var makeVideoEditor: (URL) throws -> VideoEditorWindowController = VideoEditorWindowController.open(folder:)
+    /// Asks for a video file to open in the video editor. A harness answers it itself.
+    var chooseVideo: (@escaping (URL?) -> Void) -> Void = { done in
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = VideoImport.types
+        panel.allowsMultipleSelection = false
+        done(panel.runModal() == .OK ? panel.url : nil)
+    }
     private(set) var loginError: String?
     private var maintenanceTimer: Timer?
+    /// Recordings a GIF is being made from.
+    private(set) var makingGifs: Set<UUID> = []
 
     init(env: AppEnvironment) {
         self.env = env
@@ -33,18 +49,52 @@ final class AppCoordinator {
         pins = PinManager(env: env)
         hud = HUD(env: env)
         updates = UpdateController(env: env, hud: hud)
+        recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
+        sources = RecordingSourceToggles(env: env, settings: settings)
+        controls = RecordingControls(env: env, recording: recording)
+        // A corner the bubble was dragged to is where the next recording starts it.
+        controls.camera.onCorner = { corner in store.update { $0.recording.camera.position = corner } }
 
+        let sources = sources
+        capture.recordingSources = { sources.state }
+        capture.toggleRecordingSource = { [unowned capture] source in
+            sources.toggle(source)
+            capture.refreshOverlay()
+        }
+        sources.onChange = { [unowned capture] in capture.refreshOverlay() }
+        sources.onAsking = { [unowned capture] asking in capture.yieldOverlay(asking) }
+        sources.onInputRequest = { [unowned capture] in capture.cancel() }
+        capture.recordingOptions = { store.value.recording.quick }
+        capture.changeRecordingOptions = { options in store.update { $0.recording.quick = options } }
+        recording.onSaved = { [weak self] finished in Task { await self?.recordingFinished(finished) } }
+        recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
+        recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
         pins.onCopied = { [unowned self] in hud.show("Copied") }
         updates.closeEditors = { [unowned self] in closeAllEditors() }
         settings.observe { [unowned self] old, new in settingsChanged(from: old, to: new) }
         applyCaptureSettings()
+        #if DEBUG
+        (env.recordingTestWindow as? RecordingTestWindow)?.stage = { [weak self] in self?.testStage() }
+        #endif
     }
+
+    #if DEBUG
+    private func testStage() -> NSView? {
+        guard let root = AppEnvironment.isolatedRoot, let file = RecordingTestStageFile.read(root: root), file.stage == "audio" else { return nil }
+        let ctx = SettingsContext(env: env, store: settings, hotKeyStatus: { [:] }, loginError: { nil })
+        Log.shell.notice("test stage audio tour=\(file.tour ?? false, privacy: .public)")
+        return AudioTestStage(ctx: ctx, recording: recording, controls: controls, tour: file.tour ?? false)
+    }
+    #endif
 
     // MARK: Actions
 
     func perform(_ action: AppAction) {
         switch action {
+        case .capture(.recording) where recording.phase != .idle:
+            // The same shortcut and tile that start a recording stop it.
+            recording.stop()
         case .capture(let mode): beginCapture(mode) { [unowned self] out in handleCaptured(out) }
         case .captureOCR: beginCapture(.area) { [unowned self] out in runOCR(on: out.image) }
         case .openHistory: showHistory()
@@ -54,6 +104,17 @@ final class AppCoordinator {
         case .restoreLastOverlay: if overlay.restoreLast() == nil { hud.show("No closed overlay to restore", symbol: "info.circle") }
         case .hideOverlays: overlay.toggleHidden()
         case .openFile(let url): importFile(url)
+        case .openRecording(let folder): openVideoEditor(folder)
+        case .exportRecording(let folder): openVideoEditor(folder).map { $0.openExport(); $0.startExport() }
+        case .startRecording(let target, let style): startRecording(target, style)
+        case .stopRecording: recording.stop()
+        case .controlRecording(.pause): recording.pause()
+        case .controlRecording(.resume): recording.resume()
+        case .controlRecording(.restart): recording.restart()
+        case .controlRecording(.discard): recording.discard()
+        case .changeCamera(let change): recording.changeCamera(change)
+        case .openRecordingTestWindow: openRecordingTestWindow()
+        case .filmVideoEditor(let folder, let scene): filmVideoEditor(folder, scene: scene)
         case .quit: env.quit()
         }
     }
@@ -67,6 +128,9 @@ final class AppCoordinator {
     func handle(url: URL) -> Bool {
         switch URLCommand.parse(url, timerSeconds: settings.value.timerSeconds) {
         case .success(let action):
+            #if DEBUG
+            Log.shell.notice("handled URL \(url.absoluteString, privacy: .public)")
+            #endif
             perform(action)
             return true
         case .failure(let error):
@@ -75,13 +139,139 @@ final class AppCoordinator {
         }
     }
 
+    // MARK: Recording
+
+    private func startRecording(_ target: RecordingTarget, _ style: RecordingStyle) {
+        guard env.hasScreenPermission() else { return showPermissionWindow() }
+        recording.start(target, style: style, preferences: settings.value.recording)
+    }
+
+    /// Finishes every recording a crash cut off, lists it, and says so. A recording already listed is not listed twice.
+    func recoverRecordings() async {
+        guard let journal = env.recordingJournal else { return }
+        for entry in journal.entries() {
+            do {
+                let finished = try await RecordingRecovery.finish(entry)
+                let listed = env.store.list().contains { $0.video?.location.standardizedFileURL.path == entry.location.standardizedFileURL.path }
+                if !listed { await recordingFinished(finished) }
+                Log.shell.notice("recording recovered location=\(entry.location.lastPathComponent, privacy: .public) format=\(entry.format.rawValue, privacy: .public) seconds=\(String(format: "%.3f", finished.video.duration), privacy: .public) size=\(Int(finished.pixelSize.width), privacy: .public)x\(Int(finished.pixelSize.height), privacy: .public) alreadyListed=\(listed, privacy: .public)")
+                hud.show("Recovered a recording that was cut off", symbol: "arrow.uturn.backward.circle.fill")
+            } catch {
+                Log.shell.error("recording not recovered location=\(entry.location.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
+            journal.close(entry)
+        }
+    }
+
+    /// Lists the recording in history and shows its card. The video stays where the recorder saved it.
+    func recordingFinished(_ finished: FinishedRecording) async {
+        let name = finished.video.format == .project ? RecordingProjectFile.displayName(of: finished.video.location) : finished.video.location.lastPathComponent
+        let poster = await VideoPoster.image(of: finished.video) ?? VideoPoster.placeholder(finished.pixelSize)
+        let record: CaptureRecord
+        do {
+            record = try env.store.addRecording(finished.video, poster: poster, kind: finished.kind, pixelSize: finished.pixelSize, now: env.clock())
+        } catch {
+            Log.shell.error("history write failed for a recording: \(error.localizedDescription, privacy: .public)")
+            return hud.show("Saved \(name)")
+        }
+        history?.reload()
+        Log.shell.notice("recording listed record=\(record.id.uuidString, privacy: .public) format=\(finished.video.format.rawValue, privacy: .public) seconds=\(String(format: "%.3f", finished.video.duration), privacy: .public) card=\(self.settings.value.recording.showQuickAccess, privacy: .public)")
+        if settings.value.recording.showQuickAccess { overlay.add(record: record, image: poster) } else { hud.show("Saved \(name)") }
+    }
+
+    /// The recording's file, or nil after saying it is gone.
+    func videoFile(_ record: CaptureRecord) -> RecordedVideo? {
+        guard let video = record.video else { return nil }
+        guard FileManager.default.fileExists(atPath: video.file.path) else {
+            hud.show("Recording not found. Look for it in the save folder.", symbol: "exclamationmark.triangle.fill")
+            return nil
+        }
+        return video
+    }
+
+    func play(_ record: CaptureRecord) { if let video = videoFile(record) { env.openURL(video.file) } }
+
+    /// A recording copies as its file. A picture copies as its pixels.
+    func copy(_ record: CaptureRecord, image: @autoclosure () -> CGImage?) {
+        if record.isRecording {
+            if let video = videoFile(record), ImageOutput.copy(file: video.file, to: env.pasteboard) { hud.show("Copied") }
+        } else if let image = image(), ImageOutput.copy(image, to: env.pasteboard) {
+            hud.show("Copied")
+        }
+    }
+
+    /// Makes a GIF beside a finished video and lists it as its own recording, with its own card. A second request for the same video
+    /// while one runs is ignored.
+    func makeGif(from record: CaptureRecord) {
+        guard record.video?.format == .video, !makingGifs.contains(record.id), let video = videoFile(record) else { return }
+        makingGifs.insert(record.id)
+        Log.shell.notice("gif requested record=\(record.id.uuidString, privacy: .public) from=\(video.location.lastPathComponent, privacy: .public)")
+        hud.show("Converting to GIF", symbol: RecordedVideo.Format.gif.symbol)
+        Task {
+            defer { makingGifs.remove(record.id) }
+            do {
+                await recordingFinished(try await RecordingOutput.makeGif(from: video.file, to: RecordingOutput.gifBeside(video.file), kind: record.kind))
+            } catch {
+                Log.shell.error("gif not written record=\(record.id.uuidString, privacy: .public): \(String(describing: error), privacy: .public)")
+                hud.show("Could not convert to GIF. Check that the video plays, then try again.", symbol: "exclamationmark.triangle.fill")
+            }
+        }
+    }
+
+    /// Finder shows a project folder itself, or the video file selected in its folder.
+    func reveal(_ record: CaptureRecord) {
+        if record.isRecording {
+            if let video = videoFile(record) { env.revealInFinder(video.location) }
+        } else {
+            env.revealInFinder(env.store.paths(for: record).image)
+        }
+    }
+
+    /// Only a scripted instance has one. Anywhere else the link is refused and nothing is drawn.
+    private func openRecordingTestWindow() {
+        guard let host = env.recordingTestWindow else {
+            return Log.shell.error("recording refused: \(String(describing: RecordingRefusal.unavailable), privacy: .public)")
+        }
+        host.show()
+    }
+
+    /// Shows the editor for `folder` as the scripted instance's test window, then plays `scene` in it once a recording of that window
+    /// runs, and stops the recording when the scene ends. Anywhere but a scripted debug instance the link is refused.
+    private func filmVideoEditor(_ folder: URL, scene name: String) {
+        #if DEBUG
+        guard let host = env.recordingTestWindow, let scene = VideoEditorWindowController.scenes[name],
+              let editor = openVideoEditor(folder), let window = editor.window else {
+            return Log.shell.error("recording refused: no film of the video editor here, scene=\(name, privacy: .public)")
+        }
+        window.setContentSize(NSSize(width: 1100, height: 690))
+        guard host.adopt(window) != nil else { return }
+        editor.showBehind(at: window.frame.origin)
+        Task { @MainActor [weak self, weak editor] in
+            for _ in 0..<1200 where self?.recording.phase != .recording { try? await Task.sleep(nanoseconds: 50_000_000) }
+            guard let self, let editor, recording.phase == .recording else {
+                return Log.shell.error("film \(name, privacy: .public) gave up: no recording of the editor started")
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            Log.shell.notice("film \(name, privacy: .public) started")
+            await editor.play(scene) { Log.shell.notice("film step \($0, privacy: .public)") }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            Log.shell.notice("film \(name, privacy: .public) done clips=\(editor.state.project.edits.clips.map { String(format: "%.3f-%.3f", $0.start, $0.end) }.joined(separator: ","), privacy: .public)")
+            recording.stop()
+        }
+        #else
+        Log.shell.error("recording refused: no film of the video editor in a release build")
+        #endif
+    }
+
     // MARK: Capture
 
     private func beginCapture(_ mode: CaptureMode, onCaptured: @escaping (CaptureOutput) -> Void) {
         guard env.hasScreenPermission() else { return showPermissionWindow() }
+        if mode == .recording { sources.reset() }
         capture.begin(mode) { [unowned self] outcome in
             switch outcome {
             case .captured(let out): onCaptured(out)
+            case .record(let target, let style): startRecording(target, style)
             case .cancelled: break
             case .failed(.permissionDenied): showPermissionWindow()
             case .failed(let failure):
@@ -153,9 +343,18 @@ final class AppCoordinator {
     private func cardAction(_ action: CardAction, _ card: QuickAccessCard) {
         switch action {
         case .copy:
-            if ImageOutput.copy(card.image, to: env.pasteboard) { hud.show("Copied") }
+            copy(card.record, image: card.image)
+        case .play:
+            play(card.record)
+        case .makeGif:
+            makeGif(from: card.record)
+        case .edit:
+            overlay.close(card)
+            openEditor(card.record)
+        case .reveal:
+            reveal(card.record)
         case .save:
-            save(card.image)
+            if card.record.ownsVideo { saveVideo(card.record) } else { save(card.image) }
         case .annotate:
             overlay.close(card)
             openEditor(card.record)
@@ -173,6 +372,11 @@ final class AppCoordinator {
 
     @discardableResult
     func openEditor(_ record: CaptureRecord) -> EditorWindowController? {
+        // The editor edits pictures. A recording for editing opens in the video editor and a plain video plays.
+        if record.isRecording {
+            if record.opensVideoEditor, let video = videoFile(record) { openVideoEditor(video.location) } else { play(record) }
+            return nil
+        }
         if let open = editors[record.id] {
             if env.isOnscreen { open.show() }
             return open
@@ -218,7 +422,10 @@ final class AppCoordinator {
             .flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
     }
 
+    /// A picture opens in the editor, a video becomes a project in the video editor, and a project opens as it is.
     func importFile(_ url: URL) {
+        if case .success(let folder) = URLCommand.validatedProjectFolder(path: url.path) { openVideoEditor(folder); return }
+        if VideoImport.canImport(url) { Task { await openVideo(url.standardizedFileURL.resolvingSymlinksInPath()) }; return }
         guard case .success(let file) = URLCommand.validatedImageURL(url) else {
             Log.shell.error("not an image file: \(url.path, privacy: .public)")
             return
@@ -248,10 +455,9 @@ final class AppCoordinator {
                     if let image = currentImage(for: r) { overlay.card(forRecord: r.id).map(overlay.close); overlay.add(record: r, image: image) }
                 },
                 edit: { [unowned self] r in openEditor(r) },
-                copy: { [unowned self] r in
-                    if let image = currentImage(for: r), ImageOutput.copy(image, to: env.pasteboard) { hud.show("Copied") }
-                },
-                reveal: { [unowned self] r in env.revealInFinder(env.store.paths(for: r).image) },
+                copy: { [unowned self] r in copy(r, image: currentImage(for: r)) },
+                reveal: { [unowned self] r in reveal(r) },
+                makeGif: { [unowned self] r in makeGif(from: r) },
                 delete: { [unowned self] r in deleteRecord(r) })
             history = h
         }
@@ -262,6 +468,7 @@ final class AppCoordinator {
     /// Each editor stores unsaved edits as it closes.
     func closeAllEditors() {
         for editor in Array(editors.values) { editor.window?.close() }
+        for editor in Array(videoEditors.values) { editor.window?.close() }
     }
 
     func deleteRecord(_ record: CaptureRecord) {
@@ -358,6 +565,7 @@ final class AppCoordinator {
     }
 
     func startMaintenance() {
+        Task { await recoverRecordings() }
         announceUpdateIfNeeded()
         prune()
         checkForUpdatesIfWanted()

@@ -35,6 +35,8 @@ extension DS {
         public static let bgControl = neutral(light: 3, dark: 5)
         public static let bgControlHover = neutral(light: 4, dark: 6)
         public static let bgControlActive = neutral(light: 5, dark: 7)
+        /// The raised thumb of a segment track: lighter than the track in light mode, and in dark mode too, where light reads as raised.
+        public static let bgControlThumb = neutral(light: 1, dark: 7)
 
         public static let bgHud = NSColor(name: nil) { _ in
             let base = n(nd, 2)

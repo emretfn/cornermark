@@ -11,6 +11,18 @@ enum ImageOutput {
         return true
     }
 
+    /// A file reference, which Finder, Mail and chat apps paste as the file itself.
+    static func copy(file: URL, to pasteboard: NSPasteboard) -> Bool {
+        pasteboard.clearContents()
+        return pasteboard.writeObjects([file as NSURL])
+    }
+
+    /// `0:07`, `12:30`, `1:02:03`. Seconds round down, so a video never reads longer than it is.
+    static func durationText(_ seconds: Double) -> String {
+        let s = max(0, Int(seconds.isFinite ? seconds : 0))
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
     static func copy(text: String, to pasteboard: NSPasteboard) {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -50,4 +62,6 @@ enum ImageOutput {
     }
 
     static func dimensionText(_ size: CGSize) -> String { "\(Int(size.width)) \u{00D7} \(Int(size.height))" }
+
+    static func byteText(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
 }

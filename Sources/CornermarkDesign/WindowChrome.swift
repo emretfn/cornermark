@@ -17,4 +17,11 @@ public enum WindowChrome {
         }
         return (2 * (buttonCentre ?? 26), leading)
     }
+
+    /// A window that draws nothing of its own, so the surface its content view paints is the whole window, rounded corners included.
+    @MainActor
+    public static func clearBackground(of window: NSWindow) {
+        window.isOpaque = false
+        window.backgroundColor = .clear
+    }
 }

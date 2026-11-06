@@ -23,6 +23,14 @@ public final class CaptureController {
     /// Time for our overlays to leave the compositor before a fresh capture.
     public var settleDelay: TimeInterval = 0.12
     public var pointerLocation: () -> CGPoint = { NSEvent.mouseLocation }
+    /// What the recording panel's toggles show. Read each time the panel redraws.
+    public var recordingSources: () -> RecordingSources = { RecordingSources() }
+    /// A click on one of the recording panel's toggles. Call `refreshOverlay` once its answer changes what the panel shows.
+    public var toggleRecordingSource: (RecordingSource) -> Void = { _ in }
+    /// What the recording panel's options menu shows. Read each time the panel redraws.
+    public var recordingOptions: () -> RecordingQuickOptions = { RecordingQuickOptions() }
+    /// The options menu changed a value. The overlay redraws from `recordingOptions` right after.
+    public var changeRecordingOptions: (RecordingQuickOptions) -> Void = { _ in }
 
     public var overlayWindows: [NSWindow] { session?.windows ?? [] }
     public var overlayState: OverlayState? { session?.machine.state }
@@ -44,6 +52,13 @@ public final class CaptureController {
     }
 
     public func cancel() { complete(.cancelled) }
+
+    /// Redraws the open overlay from its state and `recordingSources`.
+    public func refreshOverlay() { session?.refreshOverlay() }
+
+    /// Takes the open overlay off the screen while a macOS permission prompt waits for an answer, and brings it back after.
+    public func yieldOverlay(_ yield: Bool) { session?.yield(yield) }
+    public var isOverlayYielding: Bool { session?.isYielding ?? false }
 
     // MARK: Run
 
@@ -75,6 +90,8 @@ public final class CaptureController {
                 try await present(flow: .adjustable, wantsWindows: true, id: id)
             case .window:
                 try await present(flow: .window, wantsWindows: true, id: id)
+            case .recording:
+                try await present(flow: .adjustable, intent: .record, wantsWindows: true, remembered: lastSelection?.rect, id: id)
             }
         } catch {
             guard serial == id else { return }
@@ -82,7 +99,7 @@ public final class CaptureController {
         }
     }
 
-    private func present(flow: Flow, intent: Intent = .area, wantsWindows: Bool = false, id: Int) async throws {
+    private func present(flow: Flow, intent: Intent = .area, wantsWindows: Bool = false, remembered: CGRect? = nil, id: Int) async throws {
         let displays = try await source.displays()
         guard !displays.isEmpty else { throw CaptureFailure.noDisplay }
         var windows: [WindowSnapshot] = []
@@ -93,11 +110,15 @@ public final class CaptureController {
 
         frozen = Dictionary(displays.map { ($0.displayID, $0) }, uniquingKeysWith: { a, _ in a })
         let geometry = displays.map { DisplayGeometry(id: $0.displayID, frame: $0.frame, scale: $0.scale) }
-        let config = MachineConfig(flow: flow, intent: intent, timerSeconds: timerSeconds, displays: geometry, windows: windows)
+        let config = MachineConfig(flow: flow, intent: intent, timerSeconds: timerSeconds, displays: geometry, windows: windows, remembered: remembered)
         var options = SessionOptions()
         options.presentation = presentation
         options.tickInterval = countdownTickInterval
         options.scrollInterval = scrollPollInterval
+        options.sources = { [weak self] in self?.recordingSources() ?? RecordingSources() }
+        options.toggleSource = { [weak self] in self?.toggleRecordingSource($0) }
+        options.quickOptions = { [weak self] in self?.recordingOptions() ?? RecordingQuickOptions() }
+        options.changeOptions = { [weak self] in self?.changeRecordingOptions($0) }
         let session = CaptureSession(displays: displays, config: config, source: source, options: options) { [weak self] end in
             self?.sessionEnded(end, id: id)
         }
@@ -117,7 +138,29 @@ public final class CaptureController {
             complete(.captured(CaptureOutput(image: image, kind: .scrolling, pointScale: scale)))
         case .finish(.capture(let target, let kind)):
             Task { [weak self] in await self?.resolve(target, kind: kind, id: id) }
+        case .finish(.record(let target, let style)):
+            Task { [weak self] in await self?.resolveRecording(target, style: style, id: id) }
         }
+    }
+
+    /// Waits for the overlay to leave the compositor, so the recording's first frames never show it.
+    private func resolveRecording(_ target: Target, style: RecordingStyle, id: Int) async {
+        let recording: RecordingTarget
+        switch target {
+        case .area(let sel):
+            lastSelection = PreviousSelection(rect: sel.rect)
+            let display = SelectionSpace(displays: frozen.values.map { DisplayGeometry(id: $0.displayID, frame: $0.frame, scale: $0.scale) })
+                .dominant(for: sel.rect)
+            recording = .display(display?.id, area: sel.rect)
+        case .fullscreen(let display):
+            lastSelection = PreviousSelection(rect: display.frame)
+            recording = .display(display.id, area: nil)
+        case .window(let window, _):
+            recording = .window(window.id)
+        }
+        try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
+        guard serial == id else { return }
+        complete(.record(recording, style))
     }
 
     private func resolve(_ target: Target, kind: CaptureKind, id: Int) async {

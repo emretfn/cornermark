@@ -226,6 +226,18 @@ enum Pix {
     }
 }
 
+/// Keeps a run's settings in memory, because a named suite leaves a file in ~/Library/Preferences for good.
+final class MemoryDefaults: UserDefaults {
+    private var values: [String: Any] = [:]
+
+    init() { super.init(suiteName: nil)! }
+
+    override func object(forKey key: String) -> Any? { values[key] }
+    override func set(_ value: Any?, forKey key: String) { values[key] = value }
+    override func removeObject(forKey key: String) { values[key] = nil }
+    override func dictionaryRepresentation() -> [String: Any] { values }
+}
+
 @MainActor
 final class World {
     let root: URL
@@ -261,7 +273,7 @@ final class World {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         suite = "local.emretufan.cornermark.harness.\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suite)!
+        defaults = MemoryDefaults()
         pasteboard = NSPasteboard(name: NSPasteboard.Name(suite))
         display = Pix.fixtureDisplay()
         source = FixtureScreenSource(displays: [display])
@@ -303,7 +315,6 @@ final class World {
         coordinator.pins.closeAll()
         coordinator.overlay.closeAll()
         pasteboard.releaseGlobally()
-        defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
     }
 
@@ -424,6 +435,18 @@ func snapshot(_ view: NSView, name: String, dark: Bool = false, backdrop: NSColo
 @MainActor
 @discardableResult
 func snapshotWindow(_ window: NSWindow, name: String, dark: Bool = false) -> URL? {
+    let url = URL(fileURLWithPath: scratch + name + ".png")
+    guard let out = windowImage(window, dark: dark), let png = AssetStore.pngData(from: out), (try? png.write(to: url)) != nil else {
+        check(false, "snapshot \(name) could not be written")
+        return nil
+    }
+    print("SNAPSHOT \(url.path) \(out.width)x\(out.height)")
+    return url
+}
+
+/// The picture `snapshotWindow` writes, at 2 pixels per point.
+@MainActor
+func windowImage(_ window: NSWindow, dark: Bool = false) -> CGImage? {
     let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     window.appearance = appearance
     guard let content = window.contentView, let frameView = content.superview else { return nil }
@@ -475,14 +498,7 @@ func snapshotWindow(_ window: NSWindow, name: String, dark: Bool = false) -> URL
     }
     content.subviews.forEach(paint)
     place(image(of: frameView), CGRect(origin: .zero, size: size))
-
-    let url = URL(fileURLWithPath: scratch + name + ".png")
-    guard let out = ctx.makeImage(), let png = AssetStore.pngData(from: out), (try? png.write(to: url)) != nil else {
-        check(false, "snapshot \(name) could not be written")
-        return nil
-    }
-    print("SNAPSHOT \(url.path) \(out.width)x\(out.height)")
-    return url
+    return ctx.makeImage()
 }
 
 /// A view that is not in any ordered window: give it a hidden, never-shown window so it lays out and resolves appearance.

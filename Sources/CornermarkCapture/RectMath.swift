@@ -33,6 +33,37 @@ enum RectMath {
         return CGRect(x: sx > 0 ? anchor.x : anchor.x - w, y: sy > 0 ? anchor.y : anchor.y - h, width: w, height: h)
     }
 
+    /// Rect centred on `c` that reaches `point`, so it grows both ways. With `ratio` the larger demand wins, and it shrinks
+    /// until it fits `bounds` without moving its centre.
+    static func centered(on c: CGPoint, to point: CGPoint, ratio: CGFloat?, bounds: CGRect, scale: CGFloat) -> CGRect {
+        let maxW = 2 * max(0, min(c.x - bounds.minX, bounds.maxX - c.x))
+        let maxH = 2 * max(0, min(c.y - bounds.minY, bounds.maxY - c.y))
+        var w = 2 * abs(point.x - c.x), h = 2 * abs(point.y - c.y)
+        if let ratio {
+            w = max(w, h * ratio)
+            h = w / ratio
+            if w > maxW { w = maxW; h = w / ratio }
+            if h > maxH { h = maxH; w = h * ratio }
+        } else {
+            w = min(w, maxW); h = min(h, maxH)
+        }
+        w = snap(w, scale); h = snap(h, scale)
+        return fit(CGRect(x: snap(c.x - w / 2, scale), y: snap(c.y - h / 2, scale), width: w, height: h), in: bounds)
+    }
+
+    /// A handle dragged with Option: the opposite side moves the same amount, so the centre stays put.
+    static func resizeCentered(_ o: CGRect, handle: Handle, to raw: CGPoint, ratio: CGFloat?, bounds: CGRect, scale: CGFloat) -> CGRect {
+        let c = CGPoint(x: o.midX, y: o.midY)
+        let (hx, hy) = handle.axes
+        var p = clamp(raw, bounds)
+        // An edge handle drives one axis. The other keeps its size, or follows the ratio.
+        if hx == 0 { p.x = ratio.map { c.x + abs(p.y - c.y) * $0 } ?? o.maxX }
+        if hy == 0 { p.y = ratio.map { c.y + abs(p.x - c.x) / $0 } ?? o.maxY }
+        let r = centered(on: c, to: p, ratio: ratio, bounds: bounds, scale: scale)
+        let minSide = 1 / scale
+        return CGRect(x: r.minX, y: r.minY, width: max(minSide, r.width), height: max(minSide, r.height))
+    }
+
     static func resize(_ o: CGRect, handle: Handle, to raw: CGPoint, ratio: CGFloat?, bounds: CGRect, scale: CGFloat) -> CGRect {
         let p = clamp(raw, bounds)
         let (hx, hy) = handle.axes

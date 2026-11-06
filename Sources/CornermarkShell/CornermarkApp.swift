@@ -1,5 +1,7 @@
 import AppKit
 import CornermarkCapture
+import CornermarkDesign
+import CornermarkVideoEditor
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let env: AppEnvironment
         do { env = try AppEnvironment.live() } catch {
             Log.shell.fault("cannot open capture history: \(error.localizedDescription, privacy: .public)")
+            #if DEBUG
+            if AppEnvironment.isolatedRoot != nil { return NSApp.terminate(nil) }
+            #endif
             let alert = NSAlert()
             alert.messageText = "Cornermark cannot open its capture history"
             alert.informativeText = error.localizedDescription
@@ -21,9 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let coordinator = AppCoordinator(env: env)
         self.coordinator = coordinator
-        coordinator.installHotKeys(backend: CarbonHotKeyBackend())
+        #if DEBUG
+        if AppEnvironment.isolatedRoot != nil {
+            // A scripted instance runs beside the developer, so a key it is sent and nothing handles must not sound the alert.
+            SilentNoResponder.report = { Log.shell.error("no responder for \($0, privacy: .public): the key or action fell through silently") }
+            SilentNoResponder.install()
+            ShortcutRecorderView.playRefusedSound = {}
+        }
+        Log.shell.notice("launch pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public) isolated=\(!env.isOnscreen, privacy: .public) screenPermission=\(CaptureController.hasPermission, privacy: .public)")
+        #endif
+        if env.isOnscreen { coordinator.installHotKeys(backend: CarbonHotKeyBackend()) }
         coordinator.startMaintenance()
-        installStatusItem(coordinator)
+        if env.isOnscreen { installStatusItem(coordinator) }
         installMainMenu()
         pendingURLs.forEach(open)
         pendingURLs = []
@@ -50,14 +64,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseDown, .rightMouseDown])
             panel.onOpenChange = { [weak button] open in button?.highlight(open) }
             // An image-only variable-length item is 10pt wider than the square one, so the length follows the label.
-            let apply: (UpdateState) -> Void = { [weak item] state in
+            let apply: () -> Void = { [weak item, unowned coordinator] in
                 guard let item, let button = item.button else { return }
-                applyStatusLabel(state, to: button)
-                item.length = statusTitle(state) == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+                let recording = coordinator.controls.status
+                applyStatusLabel(coordinator.updates.state, recording: recording, to: button)
+                item.length = statusTitle(coordinator.updates.state, recording: recording) == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            }
+            apply()
+            coordinator.updates.onStateChange = { _ in
+                apply()
                 panel.refresh()
             }
-            apply(coordinator.updates.state)
-            coordinator.updates.onStateChange = apply
+            coordinator.controls.onStatus = { _ in apply() }
         }
         statusItem = item
         menuPanel = panel
@@ -76,32 +94,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuPanel?.toggle(anchor: anchor)
     }
 
+    @objc private func openVideo() { coordinator?.chooseAndOpenVideo() }
+
     /// Accessory apps still need an Edit menu for Cmd+C/V in text fields and Cmd+W in windows.
     private func installMainMenu() {
+        let main = MainMenu.make(openVideo: #selector(openVideo), target: self)
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = main.items.last?.submenu
+    }
+}
+
+/// The app's menu bar. The video editor's items take their keys from `EditorShortcuts`, the table Settings lists.
+@MainActor
+enum MainMenu {
+    static func make(openVideo: Selector, target: AnyObject) -> NSMenu {
         let main = NSMenu()
-        let appItem = NSMenuItem()
-        main.addItem(appItem)
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Cornermark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appItem.submenu = appMenu
-        let editItem = NSMenuItem()
-        main.addItem(editItem)
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        func submenu(_ title: String) -> NSMenu {
+            let item = NSMenuItem()
+            main.addItem(item)
+            let menu = NSMenu(title: title)
+            item.submenu = menu
+            return menu
+        }
+        func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ command: EditorCommand) -> NSMenuItem {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            if let (key, mask) = EditorShortcuts.shortcut(for: command).keys.first?.menuKey {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = mask
+            }
+            return item
+        }
+        submenu("").addItem(withTitle: "Quit Cornermark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let file = submenu("File")
+        add(file, "Open Video\u{2026}", openVideo, .openVideo).target = target
+        file.addItem(.separator())
+        _ = add(file, "Save", Selector(("saveDocument:")), .save)
+        _ = add(file, "Save As\u{2026}", Selector(("saveDocumentAs:")), .saveAs)
+        file.addItem(.separator())
+        _ = add(file, "Export\u{2026}", Selector(("exportVideo:")), .export)
+        _ = add(file, "Export Current Frame as Image", Selector(("exportCurrentFrame:")), .exportFrame)
+        let edit = submenu("Edit")
+        _ = add(edit, "Undo", Selector(("undo:")), .undo)
+        _ = add(edit, "Redo", Selector(("redo:")), .redo)
         edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editItem.submenu = edit
-        let windowItem = NSMenuItem()
-        main.addItem(windowItem)
-        let window = NSMenu(title: "Window")
-        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        windowItem.submenu = window
-        NSApp.mainMenu = main
-        NSApp.windowsMenu = window
+        submenu("Window").addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        return main
     }
 }
 
@@ -121,17 +162,32 @@ public enum CornermarkApp {
     }
 }
 
-/// The text next to the menu bar icon: the development badge and the update label, when there are any.
-func statusTitle(_ state: UpdateState) -> String? {
-    let parts = [AppVariant.current.statusBadge, state.statusLabel].compactMap { $0 }
+/// The text next to the menu bar icon: the development badge, then the length of a recording under way or the update label.
+func statusTitle(_ state: UpdateState, recording: RecordingStatus? = nil) -> String? {
+    let running = recording.map { $0.phase.isRunning } ?? false
+    let parts = [AppVariant.current.statusBadge, running ? recording?.timeText : state.statusLabel].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " ")
 }
 
-/// Shows the update label next to the icon, or the bare icon when there is none.
+/// While a recording runs, the icon is the danger-coloured record symbol, or the pause symbol, and the title is its length.
+/// Otherwise the icon is the viewfinder, with the update label when there is one.
 @MainActor
-func applyStatusLabel(_ state: UpdateState, to button: NSStatusBarButton) {
-    let label = statusTitle(state)
+func applyStatusLabel(_ state: UpdateState, recording: RecordingStatus? = nil, to button: NSStatusBarButton) {
+    let label = statusTitle(state, recording: recording)
     button.title = label ?? ""
+    button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
     button.imagePosition = label == nil ? .imageOnly : .imageLeading
-    button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : "\(AppVariant.current.name), update available")
+    switch recording?.phase {
+    case .recording?:
+        let red = NSImage.SymbolConfiguration(paletteColors: [DS.Color.dangerText])
+        button.image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(red)
+        button.setAccessibilityLabel("\(AppVariant.current.name), \(recording!.spoken)")
+    case .paused?:
+        button.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)
+        button.image?.isTemplate = true
+        button.setAccessibilityLabel("\(AppVariant.current.name), \(recording!.spoken)")
+    default:
+        button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: AppVariant.current.name)
+        button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : "\(AppVariant.current.name), update available")
+    }
 }

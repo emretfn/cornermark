@@ -4,7 +4,25 @@ import CornermarkCore
 
 enum CardState: Equatable { case visible, hovering, dragging, closing }
 
-enum CardAction: CaseIterable { case copy, save, annotate, pin, ocr, close }
+enum CardAction: CaseIterable {
+    case copy, save, annotate, pin, ocr, play, edit, makeGif, reveal, close
+
+    /// The two small buttons in the image's top corners. The rest sit in one centred row.
+    static let corners: Set<CardAction> = [.close, .pin]
+
+    /// What a card offers, in row order, for a picture (nil) or a recording's format. A recording is already saved, so it shows its
+    /// file instead of saving one. A project opens in the video editor; a plain video plays and turns into a GIF, since a project's
+    /// pointer is not in its video's picture; a GIF plays. An export lives in History until it is saved.
+    static func offered(for recording: RecordedVideo.Format?, export: Bool = false) -> [CardAction] {
+        if export { return [.copy, .save, .play, .close] }
+        switch recording {
+        case nil: return [.copy, .save, .annotate, .ocr, .pin, .close]
+        case .video: return [.copy, .play, .makeGif, .reveal, .close]
+        case .project: return [.copy, .edit, .reveal, .close]
+        case .gif: return [.copy, .play, .reveal, .close]
+        }
+    }
+}
 
 @MainActor
 final class QuickAccessCard {
@@ -15,7 +33,17 @@ final class QuickAccessCard {
     var state: CardState = .visible
     /// Seconds left before the card closes by itself; nil keeps it until dismissed.
     var remaining: TimeInterval?
-    var info: String { ImageOutput.dimensionText(CGSize(width: image.width, height: image.height)) }
+    var actions: [CardAction] { CardAction.offered(for: record.video?.format, export: record.ownsVideo) }
+    var openAction: CardAction { record.opensVideoEditor ? .edit : record.isRecording ? .play : .annotate }
+    var info: String {
+        guard let video = record.video else { return ImageOutput.dimensionText(CGSize(width: image.width, height: image.height)) }
+        let size = record.ownsVideo ? fileSize.map(ImageOutput.byteText) : nil
+        let length = "\(ImageOutput.durationText(video.duration))  \u{00B7}  \(size ?? ImageOutput.dimensionText(record.pixelSize))"
+        return video.format == .gif ? "GIF  \u{00B7}  \(length)" : length
+    }
+    private lazy var fileSize: Int64? = record.video.flatMap {
+        ((try? FileManager.default.attributesOfItem(atPath: $0.file.path))?[.size] as? NSNumber)?.int64Value
+    }
 
     init(record: CaptureRecord, image: CGImage, thumbnail: CGImage, remaining: TimeInterval?) {
         self.record = record; self.image = image; self.thumbnail = thumbnail; self.remaining = remaining
@@ -253,9 +281,10 @@ final class QuickAccessManager {
 
     // MARK: Drag file
 
-    /// A copy of the capture under a readable name, so the receiving app gets `Cornermark ... .png`.
+    /// A copy of the capture under a readable name, so the receiving app gets `Cornermark ... .png`. A recording drags its own video file.
     func dragFile(for card: QuickAccessCard) -> URL? {
         let fm = FileManager.default
+        if let video = card.record.video { return fm.fileExists(atPath: video.file.path) ? video.file : nil }
         try? fm.createDirectory(at: env.dragDirectory, withIntermediateDirectories: true)
         let url = ImageOutput.uniqueURL(in: env.dragDirectory, for: card.record.createdAt, format: .png)
         if (try? fm.copyItem(at: env.store.paths(for: card.record).image, to: url)) != nil { return url }

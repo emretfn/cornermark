@@ -11,7 +11,7 @@ enum MenuMetrics {
     static let innerWidth = width - 2 * padding
     static let bannerHeight: CGFloat = 48
     static let tileHeight: CGFloat = 64
-    static let tileGap = DS.Space.s4
+    static let tileGap = DS.Space.s6
     static let tileWidth = (innerWidth - CGFloat(MenuPanelModel.columns - 1) * tileGap) / CGFloat(MenuPanelModel.columns)
     static let headerHeight: CGFloat = 24
     static let captionHeight: CGFloat = 22
@@ -182,10 +182,11 @@ final class MenuRowView: MenuPressableView {
         case .normal, .disabled: break
         }
         let disabled = state == .disabled
+        let danger = row.isDestructive && !disabled
         Glyph.draw(row.symbol, in: CGRect(x: MenuMetrics.rowInset, y: 0, width: DS.Size.icon, height: bounds.height),
-                   pointSize: DS.Size.icon, disabled ? c.textDisabled : c.textSecondary)
+                   pointSize: DS.Size.icon, disabled ? c.textDisabled : (danger ? c.dangerText : c.textSecondary))
         let textX = MenuMetrics.rowInset + DS.Size.icon + MenuMetrics.rowGap
-        drawText(row.title, DS.Text.body, disabled ? c.textDisabled : c.textPrimary,
+        drawText(row.title, DS.Text.body, disabled ? c.textDisabled : (danger ? c.dangerText : c.textPrimary),
                  in: CGRect(x: textX, y: 0, width: bounds.width - textX - MenuMetrics.rowInset, height: bounds.height))
     }
 }

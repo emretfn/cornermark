@@ -104,7 +104,7 @@ private func checkMenuPanelModel() async throws {
     }
 
     let base = model()
-    check(base.tiles.map(\.title) == ["All-in-One", "Area", "Window", "Screen", "Previous", "Scroll", "Text", "Timer"], "the grid lists the eight captures by their short names",
+    check(base.tiles.map(\.title) == ["All-in-One", "Area", "Window", "Screen", "Previous", "Scroll", "Text", "Timer", "Record"], "the grid lists the eight captures and Record by their short names",
           detail: "\(base.tiles.map(\.title))")
     check(base.tiles.map(\.item) == ActionTable.specs.filter { $0.menuGroup == 0 }.map { .action($0.id) }, "in the action table's order")
     check(base.tiles.allSatisfy { ActionTable.spec(($0.item.actionID)!).symbol == $0.symbol }, "each tile takes its symbol from the table")
@@ -133,7 +133,24 @@ private func checkMenuPanelModel() async throws {
     check(base.tiles.first { $0.item == .action(.area) }?.shortcut == "\u{2303}\u{21E7}2", "a tile shows the shortcut in Mac order", detail: "\(String(describing: base.tiles.map(\.shortcut)))")
     check(base.tiles.first { $0.item == .action(.area) }?.accessibilityLabel == "Capture Area, Control Shift 2", "and speaks it with the long title",
           detail: base.tiles.first { $0.item == .action(.area) }?.accessibilityLabel ?? "nil")
-    check(base.tiles.compactMap(\.shortcut).count == 8, "all eight captures show one by default")
+    check(base.tiles.compactMap(\.shortcut).count == 9, "all nine tiles show one by default")
+    let recording = MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .recording, recent: [])
+    let stop = recording.tiles.last
+    check(stop?.item == .action(.recordScreen) && stop?.title == "Stop" && stop?.symbol == "stop.circle" && stop?.shortcut == "\u{2303}\u{21E7}9",
+          "while recording the Record tile turns into Stop with the same shortcut", detail: "\(String(describing: stop))")
+    check(stop?.accessibilityLabel == "Stop Recording, Control Shift 9", "and says so", detail: stop?.accessibilityLabel ?? "nil")
+    check(recording.tiles.dropLast() == base.tiles.dropLast(), "the other tiles stay as they are")
+    func controlRows(_ m: MenuPanelModel) -> [String] {
+        m.sections.flatMap { section -> [String] in
+            if case .rows(let rows) = section { return rows.filter { [.action(.pauseRecording), .action(.resumeRecording), .action(.restartRecording)].contains($0.item) }.map(\.title) }
+            return []
+        }
+    }
+    check(controlRows(recording) == ["Pause Recording", "Discard and Restart"], "while recording the panel offers Pause and Discard and Restart, a keyboard path to both", detail: "\(controlRows(recording))")
+    let paused = MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .paused, recent: [])
+    check(controlRows(paused) == ["Resume Recording", "Discard and Restart"], "while paused it offers Resume", detail: "\(controlRows(paused))")
+    check(controlRows(base).isEmpty && controlRows(MenuPanelModel.make(settings: Settings(), update: .idle, overlaysHidden: false, canRestoreOverlay: false, pins: [], recording: .countingDown(2), recent: [])).isEmpty,
+          "with nothing filming yet there are no recording rows")
     var custom = Settings()
     custom.customShortcuts["area"] = HotKey(keyCode: 40, modifiers: UInt32(controlKey | optionKey))
     custom.disabledShortcuts.insert("window")
@@ -227,7 +244,7 @@ private func checkMenuPanelFocus() async throws {
     func tile(_ id: ActionID) -> PanelItem { .action(id) }
     let all = tile(.history)
     let recent = m.recents.map(\.item)
-    check(rows.map(\.count) == [4, 4, 1, 3, 1, 1, 1, 1, 1], "the layout is two grid rows, All, the recents, then one row each; disabled Restore is skipped",
+    check(rows.map(\.count) == [3, 3, 3, 1, 3, 1, 1, 1, 1, 1], "the layout is three grid rows, All, the recents, then one row each; disabled Restore is skipped",
           detail: "\(rows.map(\.count))")
 
     var f = MenuFocus(rows: rows)
@@ -239,22 +256,24 @@ private func checkMenuPanelFocus() async throws {
         g.move(dir)
         check(g.current == tile(.allInOne), "so does the first \(dir)")
     }
-    f.move(.right); f.move(.right)
-    check(f.current == tile(.window), "right moves along the grid row")
-    f.move(.right); f.move(.right)
-    check(f.current == tile(.fullscreen), "and stops at its end")
-    f.move(.down)
-    check(f.current == tile(.timer), "down from a grid column goes to the same column of the next grid row")
     f.move(.right)
-    check(f.current == tile(.timer), "right does nothing past the last column")
+    check(f.current == tile(.area), "right moves along the grid row")
+    f.move(.right); f.move(.right)
+    check(f.current == tile(.window), "and stops at its end")
+    f.move(.down)
+    check(f.current == tile(.scrolling), "down from a grid column goes to the same column of the next grid row")
+    f.move(.right)
+    check(f.current == tile(.scrolling), "right does nothing past the last column")
+    f.move(.left)
+    check(f.current == tile(.previousArea), "left walks back along the second row", detail: "\(String(describing: f.current))")
     f.move(.left); f.move(.left)
-    check(f.current == tile(.scrolling), "left walks back along the second row", detail: "\(String(describing: f.current))")
-    f.move(.left); f.move(.left)
-    check(f.current == tile(.previousArea), "and stops at its start")
+    check(f.current == tile(.fullscreen), "and stops at its start")
     f.move(.up)
     check(f.current == tile(.allInOne), "up goes to the same column of the row above", detail: "\(String(describing: f.current))")
     f.move(.down)
-    check(f.current == tile(.previousArea), "and down comes back")
+    check(f.current == tile(.fullscreen), "and down comes back")
+    f.move(.down)
+    check(f.current == tile(.ocr), "down reaches the third grid row")
     f.move(.down)
     check(f.current == all, "down from the last grid row goes to the next section")
     f.move(.left); f.move(.right)
@@ -279,9 +298,9 @@ private func checkMenuPanelFocus() async throws {
     check(f.current == tile(.quit), "a full lap returns to the start")
 
     var h = MenuFocus(rows: rows, current: recent[1])
-    h.rebase(onto: Array(rows.dropFirst(3)))
-    check(h.current == recent[1], "a rebuilt panel keeps the focus when the item remains")
     h.rebase(onto: Array(rows.dropFirst(4)))
+    check(h.current == recent[1], "a rebuilt panel keeps the focus when the item remains")
+    h.rebase(onto: Array(rows.dropFirst(5)))
     check(h.current == nil, "and drops it when the item is gone")
     var empty = MenuFocus(rows: [])
     empty.move(.down)
@@ -296,7 +315,7 @@ private func checkMenuPanelFocus() async throws {
     check(items.contains(.unlockAllPins) && items.contains(.closeAllPins), "and the bulk rows are stops")
     let update = MenuPanelModel.make(settings: Settings(), update: .installing(AppRelease(version: AppVersion(0, 3, 0), notes: "", pageURL: URL(string: "https://example.com")!, dmgURL: nil)),
                                      overlaysHidden: false, canRestoreOverlay: false, pins: [], recent: [])
-    check(update.focusRows.first == update.tiles.prefix(4).map(\.item), "an update row without a button is not a stop")
+    check(update.focusRows.first == update.tiles.prefix(MenuPanelModel.columns).map(\.item), "an update row without a button is not a stop")
 }
 
 // MARK: Behaviour
@@ -428,13 +447,13 @@ private func checkMenuPanelViews() async throws {
     check(view.frame.width == 300 && view.frame.height > 0, "the panel is 300 wide", detail: "\(view.frame)")
 
     let tileViews = model.tiles.compactMap { view.part(for: $0.item) as? MenuTileView }
-    check(tileViews.count == 8, "eight tiles are drawn")
+    check(tileViews.count == 9, "nine tiles are drawn", detail: "\(tileViews.count)")
     let frames = tileViews.map(\.frame)
     check(Set(frames.map(\.width)).count == 1 && Set(frames.map(\.height)).count == 1, "tiles share one size")
-    check(Set(frames[0..<4].map(\.minY)).count == 1 && Set(frames[4..<8].map(\.minY)).count == 1, "each grid row shares one top")
-    check((0..<4).allSatisfy { frames[$0].minX == frames[$0 + 4].minX }, "the two rows share their columns")
-    check(zip(frames[0..<3], frames[1..<4]).allSatisfy { $1.minX - $0.maxX == MenuMetrics.tileGap }, "columns are an even gap apart")
-    check(frames[0].minX == MenuMetrics.padding && frames[3].maxX == MenuMetrics.width - MenuMetrics.padding, "the grid fills the panel's inner width")
+    check([0..<3, 3..<6, 6..<9].allSatisfy { Set(frames[$0].map(\.minY)).count == 1 } && Set(frames.map(\.minY)).count == 3, "three grid rows, each sharing one top")
+    check((0..<3).allSatisfy { frames[$0].minX == frames[$0 + 3].minX && frames[$0].minX == frames[$0 + 6].minX }, "the rows share their columns")
+    check(zip(frames[0..<2], frames[1..<3]).allSatisfy { $1.minX - $0.maxX == MenuMetrics.tileGap }, "columns are an even gap apart")
+    check(frames[0].minX == MenuMetrics.padding && frames[2].maxX == MenuMetrics.width - MenuMetrics.padding, "the grid fills the panel's inner width")
     check(frames.allSatisfy { $0.width == $0.width.rounded() }, "tiles land on whole points", detail: "\(frames[0].width)")
     check(tileViews.allSatisfy { tile in textFits(tile.tile.title, DS.Text.caption, in: tile.bounds.width - 8) && (tile.tile.shortcut.map { textFits($0, DS.Text.readout, in: tile.bounds.width - 8) } ?? true) },
           "tile titles and shortcuts fit their tile")

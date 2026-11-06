@@ -5,9 +5,12 @@ import CornermarkEditor
 
 struct HistoryActions {
     var restore: (CaptureRecord) -> Void = { _ in }
+    /// Edits a picture or a recording for editing, and plays a plain video.
     var edit: (CaptureRecord) -> Void = { _ in }
     var copy: (CaptureRecord) -> Void = { _ in }
     var reveal: (CaptureRecord) -> Void = { _ in }
+    /// Makes a GIF from a plain video recording.
+    var makeGif: (CaptureRecord) -> Void = { _ in }
     var delete: (CaptureRecord) -> Void = { _ in }
 }
 
@@ -15,6 +18,10 @@ final class HistoryItemView: NSView {
     var thumbnail: CGImage? { didSet { needsDisplay = true } }
     var title = "" { didSet { needsDisplay = true } }
     var subtitle = "" { didSet { needsDisplay = true } }
+    /// A recording's length, shown on its picture. Nil for a picture.
+    var duration: String? { didSet { needsDisplay = true } }
+    /// The glyph beside the length.
+    var durationSymbol = RecordedVideo.Format.video.symbol { didSet { needsDisplay = true } }
     var isSelected = false { didSet { needsDisplay = true } }
     var onOpen: () -> Void = {}
     private var isHovering = false { didSet { if oldValue != isHovering { needsDisplay = true } } }
@@ -53,6 +60,7 @@ final class HistoryItemView: NSView {
         let well = self.well
         ImageWell.draw(thumbnail, in: well)
         if isSelected { ring(width: 2, color: DS.Color.accentMark) } else if isHovering { ring(width: 1, color: DS.Color.borderStrong) }
+        if let duration { drawDurationBadge(duration, in: well) }
 
         let label = DS.Text.label, readout = DS.Text.readout
         let titleLine = CGRect(x: well.minX, y: well.maxY + DS.Space.s8, width: well.width, height: label.lineHeight)
@@ -70,6 +78,24 @@ final class HistoryItemView: NSView {
         super.mouseDown(with: event)
         if event.clickCount == 2 { onOpen() }
     }
+
+    /// A small HUD plate in the well's bottom-left corner: a video or GIF glyph and the length. It is dark in both appearances,
+    /// like the card's overlay buttons, so it reads on any frame.
+    private func drawDurationBadge(_ text: String, in well: CGRect) {
+        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
+            let readout = DS.Text.readout
+            let attributed = NSAttributedString(string: text, attributes: readout.attributes(color: DS.Color.textPrimary))
+            let pad = DS.Space.s6, glyph = DS.Size.iconSmall
+            let height = readout.lineHeight + DS.Space.s4
+            let width = pad + glyph + DS.Space.s4 + ceil(attributed.size().width) + pad
+            let plate = CGRect(x: well.minX + DS.Space.s6, y: well.maxY - DS.Space.s6 - height, width: width, height: height)
+            DS.Color.bgHud.setFill()
+            NSBezierPath.continuous(plate, radius: DS.Radius.xs).fill()
+            Glyph.draw(durationSymbol, in: CGRect(x: plate.minX + pad, y: plate.minY, width: glyph, height: plate.height), pointSize: glyph - 2, DS.Color.textPrimary)
+            attributed.draw(with: CGRect(x: plate.minX + pad + glyph + DS.Space.s4, y: plate.minY + DS.Space.s2, width: width, height: readout.lineHeight),
+                            options: [.usesLineFragmentOrigin])
+        }
+    }
 }
 
 final class HistoryItem: NSCollectionViewItem {
@@ -86,8 +112,13 @@ final class HistoryItem: NSCollectionViewItem {
         self.record = record
         let v = itemView
         v.thumbnail = thumbnail
-        v.title = "\(record.kind.title)  \u{00B7}  \(ImageOutput.dimensionText(record.pixelSize))"
+        v.title = "\(record.video?.format.noun ?? record.kind.title)  \u{00B7}  \(ImageOutput.dimensionText(record.pixelSize))"
         v.subtitle = Self.timeText(record.createdAt, now: now)
+        v.duration = record.video.map { ImageOutput.durationText($0.duration) }
+        v.durationSymbol = (record.video?.format ?? .video).symbol
+        v.setAccessibilityElement(true)
+        v.setAccessibilityRole(.group)
+        v.setAccessibilityLabel(record.video.map { "\($0.format.noun), \(ImageOutput.durationText($0.duration)), \(v.subtitle)" } ?? "\(record.kind.title) capture, \(v.subtitle)")
         v.onOpen = onOpen
         v.isSelected = isSelected
     }
@@ -142,7 +173,7 @@ final class HistoryTitleRow: NSView {
 }
 
 @MainActor
-final class HistoryWindowController: NSWindowController, NSCollectionViewDataSource, NSCollectionViewDelegateFlowLayout {
+final class HistoryWindowController: NSWindowController, NSCollectionViewDataSource, NSCollectionViewDelegateFlowLayout, NSMenuItemValidation {
     private let env: AppEnvironment
     let thumbnails: ThumbnailCache
     var actions = HistoryActions()
@@ -165,7 +196,8 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.backgroundColor = DS.Color.bgSurface
-        window.minSize = NSSize(width: 640, height: 420)
+        // Wide enough for the eight filters and the count beside them.
+        window.minSize = NSSize(width: 720, height: 420)
         window.isReleasedWhenClosed = false
         super.init(window: window)
         build(in: window)
@@ -241,6 +273,7 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
             ("edit", "Edit", .ghost, nil, #selector(editSelected)),
             ("restore", "Show Overlay", .ghost, nil, #selector(restoreSelected)),
             ("reveal", "Reveal in Finder", .ghost, nil, #selector(revealSelected)),
+            ("gif", "Convert to GIF", .ghost, nil, #selector(makeGifSelected)),
         ]
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
@@ -294,6 +327,7 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         menu.addItem(withTitle: "Edit", action: #selector(editSelected), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Copy", action: #selector(copySelected), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Reveal in Finder", action: #selector(revealSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Convert to GIF", action: #selector(makeGifSelected), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Delete", action: #selector(deleteSelected), keyEquivalent: "").target = self
         return menu
@@ -302,10 +336,11 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     // MARK: Data
 
     func reload() {
-        sections = HistoryGrouping.sections(env.store.list(filter: CaptureFilter(kinds: filter.kinds)), now: env.clock())
+        sections = HistoryGrouping.sections(env.store.list(filter: filter.captureFilter), now: env.clock())
         collectionView.reloadData()
         let n = records.count
-        countLabel.stringValue = n == 1 ? "1 capture" : "\(n) captures"
+        let noun = filter == .recordings ? "recording" : "capture"
+        countLabel.stringValue = n == 1 ? "1 \(noun)" : "\(n) \(noun)s"
         emptyLabel.isHidden = n > 0
         updateButtons()
     }
@@ -326,9 +361,15 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     }
 
     private func updateButtons() {
-        let has = !collectionView.selectionIndexPaths.isEmpty
-        actionButtons.values.forEach { $0.isEnabled = has }
+        let selected = selectedRecords
+        actionButtons.values.forEach { $0.isEnabled = !selected.isEmpty }
+        // Edit opens a picture or a recording for editing. A plain video has nothing to edit.
+        actionButtons["edit"]?.isEnabled = selected.contains { !$0.isRecording || $0.opensVideoEditor }
+        actionButtons["gif"]?.isEnabled = selected.contains(where: Self.makesGif)
     }
+
+    /// Only a plain video turns into a GIF: a project's pointer is not in its video's picture.
+    private static func makesGif(_ r: CaptureRecord) -> Bool { r.video?.format == .video }
 
     @objc private func filterChanged() {
         filter = HistoryFilter(rawValue: filterControl.selectedSegment) ?? .all
@@ -338,14 +379,27 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     private func perform(_ action: KeyPath<HistoryActions, (CaptureRecord) -> Void>) {
         let selected = selectedRecords
         let run = actions[keyPath: action]
-        (action == \HistoryActions.copy ? Array(selected.prefix(1)) : selected).forEach(run)
+        if action == \HistoryActions.copy { return selected.prefix(1).forEach(run) }
+        if action == \HistoryActions.edit { return selected.filter { !$0.isRecording || $0.opensVideoEditor }.forEach(run) }
+        if action == \HistoryActions.makeGif { return selected.filter(Self.makesGif).forEach(run) }
+        selected.forEach(run)
     }
 
     @objc func restoreSelected() { perform(\.restore) }
     @objc func editSelected() { perform(\.edit) }
     @objc func copySelected() { perform(\.copy) }
     @objc func revealSelected() { perform(\.reveal) }
+    @objc func makeGifSelected() { perform(\.makeGif) }
     @objc func deleteSelected() { perform(\.delete) }
+
+    /// The menu offers what the action bar offers for the same selection.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(editSelected)?: return selectedRecords.contains { !$0.isRecording }
+        case #selector(makeGifSelected)?: return selectedRecords.contains(where: Self.makesGif)
+        default: return true
+        }
+    }
 
     // MARK: Collection view
 

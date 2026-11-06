@@ -35,7 +35,7 @@ func checkHistory() async throws {
 
     for (filter, kinds) in [(HistoryFilter.area, 2), (.window, 1), (.fullscreen, 1), (.scrolling, 1), (.timed, 1), (.imported, 1), (.all, 7)] {
         h.setFilter(filter)
-        check(h.records.count == kinds && h.records.allSatisfy { filter.kinds?.contains($0.kind) ?? true }, "filter \(filter.title): \(kinds)", detail: "\(h.records.count)")
+        check(h.records.count == kinds && h.records.allSatisfy { filter.captureFilter.kinds?.contains($0.kind) ?? true }, "filter \(filter.title): \(kinds)", detail: "\(h.records.count)")
     }
     h.setFilter(.all)
 
@@ -61,7 +61,8 @@ func checkHistory() async throws {
 
     let first = h.records[0]
     h.select(recordIDs: [first.id])
-    check(h.selectedRecords.map(\.id) == [first.id] && h.actionButtons.values.allSatisfy(\.isEnabled), "selecting enables the action buttons")
+    check(h.selectedRecords.map(\.id) == [first.id] && h.actionButtons.filter { $0.key != "gif" }.values.allSatisfy(\.isEnabled)
+          && h.actionButtons["gif"]?.isEnabled == false, "selecting a picture enables the action buttons, all but Convert to GIF")
     h.select(recordIDs: [])
     check(h.actionButtons.values.allSatisfy { !$0.isEnabled }, "no selection disables them")
 
@@ -153,6 +154,16 @@ func checkHistoryChrome() async throws {
         check(zip(rects[0...2], rects[1...3]).allSatisfy { abs($1.minX - $0.maxX - DS.Space.s8) <= 0.5 } && rects.allSatisfy { abs($0.midY - rects[0].midY) <= 0.5 },
               "the bar's buttons are s8 apart on one centre line")
     }
+
+    win.setContentSize(win.contentRect(forFrameRect: NSRect(origin: .zero, size: win.minSize)).size)
+    content.layoutSubtreeIfNeeded()
+    let fitted = ["copy", "edit", "restore", "reveal", "gif", "delete"].compactMap { findView("history.\($0)", in: content) as? Button }
+    let fittedRects = fitted.map { $0.convert($0.bounds, to: content) }
+    check(win.frame.width == 720 && fitted.count == 6
+          && zip(fittedRects, fittedRects.dropFirst()).allSatisfy { $0.maxX + DS.Space.s8 - 0.5 <= $1.minX }
+          && fittedRects.last.map { $0.maxX <= content.bounds.width - DS.Space.s12 + 0.5 } == true
+          && zip(fitted, fittedRects).allSatisfy { $1.width >= $0.fittingSize.width - 0.5 },
+          "at the 720 pt minimum width the six bar buttons keep their s8 gaps and full width", detail: "\(fittedRects) in \(content.bounds.width)")
 
     win.setContentSize(NSSize(width: 920, height: 1800))
     content.layoutSubtreeIfNeeded()

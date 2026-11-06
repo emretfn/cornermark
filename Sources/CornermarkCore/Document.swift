@@ -113,7 +113,38 @@ public enum CaptureKind: String, Codable, CaseIterable, Sendable {
     case area, window, fullscreen, scrolling, timed, imported
 }
 
+/// A finished recording. The video stays where the recorder saved it, so deleting the history entry never deletes the video.
+/// An export nobody saved yet is the exception: it lives in the entry's own folder and goes with it, see `CaptureStore.addOwnedVideo`.
+public struct RecordedVideo: Codable, Hashable, Sendable {
+    public enum Format: String, Codable, Sendable {
+        /// One MP4 file with the pointer in its picture.
+        case video
+        /// A Record Project folder: the video and its project file side by side.
+        case project
+        /// One animated GIF with the pointer in its picture.
+        case gif
+    }
+
+    /// The MP4 file, the project folder, or the GIF file.
+    public var location: URL
+    public var format: Format
+    /// Seconds from the first frame to the end of the last one.
+    public var duration: Double
+
+    public init(location: URL, format: Format, duration: Double) { self.location = location; self.format = format; self.duration = duration }
+
+    /// The file a player opens. A project names its video in its project file.
+    public var file: URL { format == .project ? RecordingProjectFile.videoFile(in: location) : location }
+
+    /// The H.264 file the recorder writes. A GIF is made from a hidden video beside it once the recording ends.
+    public var film: URL {
+        format == .gif ? location.deletingLastPathComponent().appendingPathComponent(".\(location.lastPathComponent).mp4") : file
+    }
+}
+
 /// One entry in capture history. `directory` holds image.png and, once edited, project.json plus assets.
+/// A recording's image.png is its first frame, and `video` says where the recording itself is. `kind` stays what was filmed,
+/// so a version of Cornermark that does not know recordings still reads the index and shows the frame as a picture.
 public struct CaptureRecord: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var createdAt: Date
@@ -121,8 +152,18 @@ public struct CaptureRecord: Codable, Hashable, Identifiable, Sendable {
     public var pixelSize: CGSize
     public var directoryName: String
     public var pointScale: Double = 1
-    public init(id: UUID = UUID(), createdAt: Date = Date(), kind: CaptureKind, pixelSize: CGSize, directoryName: String, pointScale: Double = 1) {
+    public var video: RecordedVideo?
+    public init(id: UUID = UUID(), createdAt: Date = Date(), kind: CaptureKind, pixelSize: CGSize, directoryName: String, pointScale: Double = 1,
+                video: RecordedVideo? = nil) {
         self.id = id; self.createdAt = createdAt; self.kind = kind; self.pixelSize = pixelSize; self.directoryName = directoryName
-        self.pointScale = pointScale
+        self.pointScale = pointScale; self.video = video
+    }
+
+    public var isRecording: Bool { video != nil }
+
+    /// The video lives in this entry's own folder, as an export nobody saved yet does, and leaves with the entry.
+    public var ownsVideo: Bool {
+        guard let video, video.format == .video else { return false }
+        return video.location.deletingLastPathComponent().lastPathComponent == directoryName
     }
 }
