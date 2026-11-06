@@ -102,6 +102,9 @@ public final class Select: NSPopUpButton {
     public override func menu(for event: NSEvent) -> NSMenu? { nil }
     public override func rightMouseDown(with event: NSEvent) {}
 
+    /// The field is drawn edge to edge, so its frame is its alignment rect and it lines up with the fields above and below it.
+    public override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
+
     public override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.md).fill() }
     public override var focusRingMaskBounds: NSRect { bounds }
 
