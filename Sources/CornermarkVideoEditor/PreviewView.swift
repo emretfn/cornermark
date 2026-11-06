@@ -179,6 +179,9 @@ final class PreviewView: NSView {
         pointerStyle = style
     }
 
+    /// How many ring layers show a ring now. The badge layer never paints one.
+    var visibleRingCount: Int { rings.filter { !$0.isHidden }.count }
+
     private func placeRings() {
         withoutAnimation {
             let placed = pointSize.width > 0 && pointSize.height > 0 ? state?.input.rings ?? [] : []

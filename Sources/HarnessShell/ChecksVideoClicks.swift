@@ -186,5 +186,27 @@ func checkClickExport(_ editor: VideoEditorWindowController, frames: StillFrames
     check(frameState(zoomed, outputTime: 1.65).crop.width < 1 && zoomedRows.count == 1 && zoomedRows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 && $0.encoded.psnr > 35 },
           "zoomed in, the rings follow the crop in the preview as in the export", detail: zoomedRows.map { $0.drawn.description }.joined(separator: "; "))
     editor.undo()
+
+    editor.setKeystrokes(KeystrokeDisplay(isVisible: true, keys: .shortcuts, position: .topCenter, size: .large, theme: .light))
+    let both = editor.state.project
+    let bothOut = root.appendingPathComponent("clicks-badge.mp4")
+    let bothReport = try await VideoExporter.export(project: both, video: editor.videoURL, settings: ExportSettings(), to: bothOut)
+    let bothTimes = [1.65, 1.75]
+    let bothRows = await measureParity(editor, frames: frames, clock: clock, export: bothOut, plan: bothReport.plan, project: both, times: bothTimes, name: "parity-clicks-badge")
+    for r in bothRows {
+        let s = frameState(both, outputTime: r.time)
+        print(String(format: "PARITY clicks+badge t=%.2f rings=%d badge=%@ drawn-rings-in-preview=%d preview-vs-drawn %@ | preview-vs-file %@", r.time, s.input.rings.count,
+                     s.input.badge?.text ?? "none", editor.previewRingLayerCount, r.drawn.description, r.encoded.description))
+    }
+    let atBoth = bothTimes.map { frameState(both, outputTime: $0) }
+    check(atBoth.allSatisfy { !$0.input.rings.isEmpty && $0.input.badge != nil } && atBoth.last?.input.rings.count == 2,
+          "the measured moments have a ring and a badge on screen together, the last with two rings")
+    check(editor.previewRingLayerCount == atBoth.last?.input.rings.count, "the preview draws each ring once: one ring layer per ring, and the badge layer paints no ring",
+          detail: "\(editor.previewRingLayerCount) ring layers for \(atBoth.last?.input.rings.count ?? -1) rings")
+    check(bothRows.count == bothTimes.count && bothRows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.005 && $0.drawn.psnr > 34 },
+          "a ring and a badge together: the export draws what the preview shows, so no ring is drawn twice in either", detail: bothRows.map { $0.drawn.description }.joined(separator: "; "))
+    check(bothRows.count == bothTimes.count && bothRows.allSatisfy { $0.encoded.psnr > 34 }, "a ring and a badge together: the file's frames match the preview within compression loss",
+          detail: bothRows.map { $0.encoded.description }.joined(separator: "; "))
+    editor.setKeystrokes(KeystrokeDisplay())
     editor.setClickHighlight(ClickHighlight())
 }

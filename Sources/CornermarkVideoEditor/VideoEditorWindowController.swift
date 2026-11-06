@@ -922,6 +922,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var previewImage: CGImage? { preview.image }
     /// The frame the preview drew last.
     public var previewState: FrameState? { preview.state }
+    /// How many click rings the preview shows, one layer each.
+    public var previewRingLayerCount: Int { preview.visibleRingCount }
 
     private func refresh() {
         let background = state.project.edits.background

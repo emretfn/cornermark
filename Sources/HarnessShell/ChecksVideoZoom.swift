@@ -336,10 +336,10 @@ func checkVideoZoom() async throws {
             let mapped = changedShare(file, without, in: cell(frame, crop: state.crop).insetBy(dx: 6, dy: 6))
             let pinned = changedShare(file, without, in: cell(frame, crop: .full).insetBy(dx: 6, dy: 6))
             landed.append(String(format: "t=%.2f scale=%.2f mapped=%.3f pinned=%.3f", t, state.crop.scale, mapped, pinned))
-            if visible { moved = moved && mapped > 0.3 && (state.crop.scale < 1.01 || pinned < 0.05) } else { moved = moved && mapped < 0.05 }
+            if visible { moved = moved && mapped > 0.3 && (state.crop.scale < 1.01 || pinned < 0.05) } else { moved = moved && pinned < 0.05 }
         }
         print("PLACEMENT badge under zoom: " + landed.joined(separator: " | "))
-        check(moved && landed.count == times.count, "in the file the badge is where the crop maps its cell, not pinned to the frame, and absent where the crop leaves it out", detail: landed.joined(separator: "; "))
+        check(moved && landed.count == times.count, "in the file the badge is where the crop maps its cell, not pinned to the frame, and not drawn at the frame cell when the crop leaves its own cell out", detail: landed.joined(separator: "; "))
         let source = combined.source
         check(rows.count == times.count && times.allSatisfy { t in
             let state = frameState(combined, outputTime: t)

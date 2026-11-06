@@ -354,7 +354,9 @@ private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: Scripted
     section("video export: cursor style, motion and hiding match the preview")
     let copy = try clickingCopy(of: folder, in: root)
     var typed = try RecordingProjectFile.read(from: copy)
-    typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false)]
+    // The Command key, a moment after the third click, puts a badge on screen with the rings. Command keys leave the pointer showing.
+    typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false),
+                         KeyEvent(t: 1.6, label: "\u{2318}K", isCommand: true)]
     try RecordingProjectFile.write(typed, to: copy)
     guard let editor = c.openVideoEditor(copy), let frames = decoder(copy) else { return check(false, "the moving-pointer copy opens in the editor") }
     defer { editor.window?.close() }
