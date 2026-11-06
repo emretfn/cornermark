@@ -46,7 +46,7 @@ final class AppCoordinator {
         // A corner the bubble was dragged to is where the next recording starts it.
         controls.camera.onCorner = { corner in store.update { $0.recording.camera.corner = corner } }
 
-        recording.onSaved = { [unowned self] finished in Task { await recordingFinished(finished) } }
+        recording.onSaved = { [weak self] finished in Task { await self?.recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
