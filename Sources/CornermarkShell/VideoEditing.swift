@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkCapture
 import CornermarkCore
 import CornermarkVideoEditor
 
@@ -30,6 +31,7 @@ extension AppCoordinator {
         editor.exportFolder = { [unowned self] in env.store.incomingDirectory }
         // Save As moves the editor to another folder, so each callback asks the editor where it is now.
         editor.onExport = { [weak editor, unowned self] event in handleExport(event, project: editor?.folder ?? key) }
+        editor.onExportFrame = { [weak editor, unowned self] event in frameExported(event, project: editor?.folder ?? key) }
         editor.onClose = { [weak editor, unowned self] closed in
             let folder = editor?.folder ?? key
             Log.shell.notice("video editor closed project=\(folder.lastPathComponent, privacy: .public) result=\(String(describing: closed), privacy: .public)")
@@ -125,6 +127,19 @@ extension AppCoordinator {
         case .failed(let message):
             Log.shell.error("video export failed project=\(name, privacy: .public): \(message, privacy: .public)")
             hud.show("Could not export the video. Check that the disk has free space, then export again.", symbol: "exclamationmark.triangle.fill")
+        }
+    }
+
+    /// A frame from the editor is a capture like a screenshot: it goes to History and then wherever After capture sends captures.
+    func frameExported(_ event: FrameExportEvent, project folder: URL) {
+        switch event {
+        case .finished(let frame):
+            let kind = env.store.list(filter: CaptureFilter(recordings: true)).first { $0.video?.location.standardizedFileURL.resolvingSymlinksInPath().path == folder.path }?.kind ?? .area
+            Log.shell.notice("video frame exported project=\(folder.lastPathComponent, privacy: .public) t=\(String(format: "%.3f", frame.outputTime), privacy: .public) size=\(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) kind=\(kind.rawValue, privacy: .public)")
+            handleCaptured(CaptureOutput(image: frame.image, kind: kind, pointScale: frame.pointScale))
+        case .failed(let message):
+            Log.shell.error("video frame export failed project=\(folder.lastPathComponent, privacy: .public): \(message, privacy: .public)")
+            hud.show("Could not export the frame. Check that the recording's video is still in its project, then try again.", symbol: "exclamationmark.triangle.fill")
         }
     }
 

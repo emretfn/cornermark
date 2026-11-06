@@ -90,20 +90,16 @@ final class TimelineView: NSView {
 
     // MARK: Keyboard
 
-    /// Left and right step a frame, a second with Shift; Home and End jump to the ends. The pointer's click and drag do the same.
-    /// With Option the arrows trim instead: the clip's start, or with Command its end, so every drag on an edge has a key too.
+    /// The arrows step a frame, Home and End jump to the ends, and with Option the arrows trim the clip's start, or with Command its end,
+    /// so every drag on an edge has a key too. Shift makes a step a second. The keys come from `EditorShortcuts`.
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags
-        let second = flags.contains(.shift)
-        let size = second ? 1 : frameStep
-        if flags.contains(.option), event.keyCode == 123 || event.keyCode == 124 {
-            return onNudge(flags.contains(.command) ? .end : .start, event.keyCode == 123 ? -size : size)
-        }
-        switch event.keyCode {
-        case 123: step(second ? -1 : -frameStep)
-        case 124: step(second ? 1 : frameStep)
-        case 115: jump(to: 0)
-        case 119: jump(to: duration)
+        guard let press = EditorShortcuts.match(event, in: .timeline) else { return super.keyDown(with: event) }
+        let size = (press.bySecond ? 1 : frameStep) * (press.forward ? 1 : -1)
+        switch press.command {
+        case .step: step(size)
+        case .jump: jump(to: press.forward ? duration : 0)
+        case .trimStart: onNudge(.start, size)
+        case .trimEnd: onNudge(.end, size)
         default: super.keyDown(with: event)
         }
     }

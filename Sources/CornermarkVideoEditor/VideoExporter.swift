@@ -207,6 +207,32 @@ public enum VideoExporter {
         }
     }
 
+    /// The finished video's frame at `outputTime` as one picture at the export's original size: the same drawing, and the source and
+    /// camera frames read the same way, as the frame an export writes at that moment. It is the sharp frame, since a still has no shutter.
+    public static func frame(project: RecordingProject, video: URL, at outputTime: Double) async throws -> CGImage {
+        let plan = ExportPlan(project: project, settings: ExportSettings(resolution: .original))
+        let t = min(max(outputTime, 0), project.outputDuration)
+        let state = frameState(project, outputTime: t)
+        let timeline = project.timeline
+        let clip = timeline.clipIndex(at: t)
+        // The reader starts shortly before the moment rather than at the clip's start, so a late frame does not decode the whole clip.
+        var range = timeline.clips[clip]
+        range.start = max(range.start, state.sourceTime - 1)
+        let asset = AVURLAsset(url: video)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
+        let source = try ClipReader(asset: asset, track: track, clip: clip, range: range).image(at: state.sourceTime)
+        var camera: CGImage?
+        if state.camera != nil, let file = project.source.camera {
+            let cameraAsset = AVURLAsset(url: video.deletingLastPathComponent().appendingPathComponent(file))
+            if let cameraTrack = try? await cameraAsset.loadTracks(withMediaType: .video).first {
+                camera = try? ClipReader(asset: cameraAsset, track: cameraTrack, clip: clip, range: range).image(at: state.sourceTime)
+            }
+        }
+        let renderer = ExportFrameRenderer(plan: plan, project: project, folder: video.deletingLastPathComponent())
+        guard let image = renderer.image(state, source: source, camera: camera) else { throw ExportError.writer("the frame could not be drawn") }
+        return image
+    }
+
     /// The encoder this machine gives an export of `plan`'s size, without writing anything.
     public static func probeEncoder(plan: ExportPlan) throws -> (usesHardware: Bool, encoderID: String) {
         let encoder = try Encoder(plan: plan)
