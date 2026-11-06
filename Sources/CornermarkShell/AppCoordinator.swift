@@ -105,10 +105,8 @@ final class AppCoordinator {
             Log.shell.notice("debug language picked=\(name, privacy: .public) now=\(L10n.language.rawValue, privacy: .public)")
             return true
         case "/snapshot":
-            guard query["window"] == "settings", let path = query["path"], let frame = settingsWindow?.window?.contentView?.superview,
-                  let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return false }
-            frame.cacheDisplay(in: frame.bounds, to: rep)
-            do { try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) } catch { return false }
+            guard query["window"] == "settings", let path = query["path"], let window = settingsWindow?.window else { return false }
+            do { try DebugSnapshot.write(window, to: URL(fileURLWithPath: path)) } catch { return false }
             Log.shell.notice("debug snapshot path=\(path, privacy: .public)")
             return true
         default:
