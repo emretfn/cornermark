@@ -1,16 +1,17 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// The small window the recording panel's help button opens: what a project recording is, a picture of the editor it opens in, and
 /// one button to close it. It sits above the capture overlay, takes the keyboard while it is open, and gives it back when it closes.
 final class RecordingHelpWindow: NSPanel {
-    static let title = "What is a project recording?"
-    static let body = "Record Project keeps your recording editable. After you stop, you can add zooms, change the cursor, add click effects, move or resize the camera, and adjust the sound. Export a video when it looks right."
-    static let dismiss = "Close"
+    static var title: String { tr("What is a project recording?") }
+    static var body: String { tr("Record Project keeps your recording editable. After you stop, you can add zooms, change the cursor, add click effects, move or resize the camera, and adjust the sound. Export a video when it looks right.") }
+    static var dismiss: String { tr("Close") }
     private static let width: CGFloat = 440
     private static let margin = DS.Space.s24
 
-    let closeButton = Button(title: dismiss, variant: .primary, size: .large)
+    let closeButton = Button(title: RecordingHelpWindow.dismiss, variant: .primary, size: .large)
     var onClose: () -> Void = {}
 
     init(level overlay: NSWindow.Level) {
@@ -20,7 +21,7 @@ final class RecordingHelpWindow: NSPanel {
         let art = RecordingHelpIllustration(frame: CGRect(x: 0, y: 0, width: inner, height: RecordingHelpIllustration.height(for: inner)))
         art.setAccessibilityElement(true)
         art.setAccessibilityRole(.image)
-        art.setAccessibilityLabel("The video editor: a zoom on part of the recording, the pointer and a click ring, the camera bubble, and the zoom, clip and sound lanes")
+        art.setAccessibilityLabel(tr("The video editor: a zoom on part of the recording, the pointer and a click ring, the camera bubble, and the zoom, clip and sound lanes"))
         let titleBar: CGFloat = 28
         var y = Self.margin
         let height = Self.margin + DS.Size.controlLarge + DS.Space.s24 + art.frame.height + DS.Space.s24 + bodyLabel.frame.height
@@ -59,6 +60,7 @@ final class RecordingHelpWindow: NSPanel {
         titleLabel.setAccessibilityIdentifier("cornermark.record.help.title")
         root.addSubview(titleLabel)
         contentView = root
+        root.applyLanguageDirection()
         initialFirstResponder = closeButton
     }
 
@@ -95,7 +97,8 @@ private extension NSTextField {
 
 /// A sketch of the video editor drawn from Cornermark's own pieces: a preview with a zoom frame, the pointer, a click ring and the
 /// camera bubble over a made-up page, and below it the timeline's zoom lane, clip strip and sound. Nothing in it is a real screenshot.
-final class RecordingHelpIllustration: NSView {
+/// It is a picture of the editor, which keeps its timeline running left to right, so it is never mirrored.
+final class RecordingHelpIllustration: NSView, KeepsLeftToRight {
     static func height(for width: CGFloat) -> CGFloat { (width * 0.5).rounded() }
 
     override var isFlipped: Bool { true }

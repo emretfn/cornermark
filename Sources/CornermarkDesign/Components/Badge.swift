@@ -23,6 +23,10 @@ public final class Badge: NSView {
 
     private static let style = DS.Text.caption
 
+    public override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { if oldValue != userInterfaceLayoutDirection { needsDisplay = true } }
+    }
+
     public override var intrinsicContentSize: NSSize {
         NSSize(width: DS.Space.s8 + DS.Size.iconSmall + DS.Space.s4 + Paint.width(of: text, Self.style) + DS.Space.s8, height: DS.Size.controlSmall)
     }
@@ -32,9 +36,15 @@ public final class Badge: NSView {
         let path = NSBezierPath.continuous(bounds, radius: DS.Radius.sm)
         Paint.fill(path, look.fill)
         Paint.strokeInside(path, look.border)
-        Paint.symbol(symbol, in: CGRect(x: DS.Space.s8, y: 0, width: DS.Size.iconSmall, height: bounds.height), pointSize: DS.Size.iconSmall, look.text)
+        Paint.symbol(symbol, in: symbolRect, pointSize: DS.Size.iconSmall, look.text)
+        Paint.text(text, Self.style, look.text, in: textRect, rtl: isRightToLeft)
+    }
+
+    var symbolRect: CGRect { mirrored(CGRect(x: DS.Space.s8, y: 0, width: DS.Size.iconSmall, height: bounds.height)) }
+
+    var textRect: CGRect {
         let textX = DS.Space.s8 + DS.Size.iconSmall + DS.Space.s4
-        Paint.text(text, Self.style, look.text, in: CGRect(x: textX, y: 0, width: bounds.width - textX - DS.Space.s8, height: bounds.height))
+        return mirrored(CGRect(x: textX, y: 0, width: bounds.width - textX - DS.Space.s8, height: bounds.height))
     }
 }
 

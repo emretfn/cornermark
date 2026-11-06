@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkDesign
 import CornermarkCore
+import CornermarkL10n
 
 /// The contextual bar under the toolbar. Its controls come from `ToolSpec.properties`, so a new
 /// tool shows the right controls without the bar knowing about it.
@@ -51,7 +52,18 @@ final class PropertyBar: BarView {
         rebuild()
     }
 
+    /// Builds the controls again in the current language. The model is untouched, so values and selection carry over.
+    func relocalize() {
+        signature = []
+        reload()
+    }
+
     private func rebuild() {
+        buildControls()
+        stack.applyLanguageDirection()
+    }
+
+    private func buildControls() {
         refreshers = []
         stackFill.isActive = false
         stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
@@ -61,14 +73,14 @@ final class PropertyBar: BarView {
             return
         }
         if model.tool == .background {
-            stack.addArrangedSubview(UI.caption("Pick a background, padding and corner radius in the panel on the right."))
+            stack.addArrangedSubview(UI.caption(tr("Pick a background, padding and corner radius in the panel on the right.")))
             return
         }
         let props = currentProperties
         guard !props.isEmpty else {
             let hint = model.tool == .select
-                ? "Click to select. Drag to move, drag a handle to resize, double-click text to edit, Delete removes."
-                : model.tool.spec.hint
+                ? tr("Click to select. Drag to move, drag a handle to resize, double-click text to edit, Delete removes.")
+                : model.tool.spec.hint?.text ?? ""
             stack.addArrangedSubview(UI.caption(hint))
             return
         }
@@ -89,11 +101,11 @@ final class PropertyBar: BarView {
     private func control(for p: PropertyKind) -> NSView {
         switch p {
         case .color: return colorControls()
-        case .width: return slider(label: model.styleTool == .counter ? "Size" : "Width", range: 1...(60 * widthScale), id: "prop.width",
+        case .width: return slider(label: model.styleTool == .counter ? tr("Size") : tr("Width"), range: 1...(60 * widthScale), id: "prop.width",
                                    get: { $0.width }, set: { s, v in s.width = v.rounded() }, key: "width")
-        case .fontSize: return slider(label: "Size", range: 8...(160 * widthScale), id: "prop.fontSize",
+        case .fontSize: return slider(label: tr("Size"), range: 8...(160 * widthScale), id: "prop.fontSize",
                                       get: { $0.fontSize }, set: { s, v in s.fontSize = v.rounded() }, key: "fontSize")
-        case .pixelBlock: return slider(label: "Block", range: 3...(64 * widthScale), id: "prop.pixelBlock",
+        case .pixelBlock: return slider(label: tr("Block"), range: 3...(64 * widthScale), id: "prop.pixelBlock",
                                         get: { Double($0.pixelBlock) }, set: { s, v in s.pixelBlock = Int(v.rounded()) }, key: "pixelBlock")
         case .arrowStyle: return arrowStyleControl()
         case .textStyle: return textStyleControl()
@@ -115,9 +127,9 @@ final class PropertyBar: BarView {
         let well = SolidWell(shape: .circle)
         well.widthAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         well.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
-        well.toolTip = "Custom colour"
+        well.toolTip = tr("Custom colour")
         well.setAccessibilityIdentifier("prop.colorWell")
-        well.setAccessibilityLabel("Custom colour")
+        well.setAccessibilityLabel(tr("Custom colour"))
         well.isCurrent = { [unowned self] in
             let active = model.activeStyle.color
             return !(Palette.swatches + model.prefs.favoriteColors).contains { active.isClose(to: $0) }
@@ -133,7 +145,7 @@ final class PropertyBar: BarView {
         refreshers.last?()
         chips.append(well)
 
-        let eyedropper = UI.button(symbol: "eyedropper", tip: "Pick a colour from the screen", id: "prop.eyedropper")
+        let eyedropper = UI.button(symbol: "eyedropper", tip: tr("Pick a colour from the screen"), id: "prop.eyedropper")
         eyedropper.onAction { [unowned self] sender in
             let sampler = NSColorSampler()
             self.sampler = sampler
@@ -144,7 +156,7 @@ final class PropertyBar: BarView {
         }
         chips.append(eyedropper)
 
-        let star = UI.button(symbol: "star", tip: "Save this colour to your palette", id: "prop.favorite")
+        let star = UI.button(symbol: "star", tip: tr("Save this colour to your palette"), id: "prop.favorite")
         star.onAction { [unowned self] _ in model.addFavoriteColor(model.activeStyle.color) }
         chips.append(star)
 
@@ -161,7 +173,7 @@ final class PropertyBar: BarView {
         b.setAccessibilityIdentifier(favorite ? "prop.favoriteChip" : "prop.chip")
         if favorite {
             let menu = NSMenu()
-            menu.addItem(NSMenuItem(title: "Remove from palette") { [unowned self] in model.removeFavoriteColor(color) })
+            menu.addItem(NSMenuItem(title: tr("Remove from palette")) { [unowned self] in model.removeFavoriteColor(color) })
             b.menu = menu
         }
         refreshers.append { b.needsDisplay = true }
@@ -177,13 +189,13 @@ final class PropertyBar: BarView {
         s.onAction { [unowned self] c in
             let v = (c as! NSSlider).doubleValue
             model.editStyle({ set(&$0, v) }, key: key)
-            value.stringValue = "\(Int(v.rounded()))"
+            value.stringValue = Digits.string(Int(v.rounded()))
         }
         s.onTrackingEnd = { [unowned self] in model.endCoalescing() }
         refreshers.append { [unowned self] in
             let v = get(model.activeStyle)
             s.doubleValue = v
-            value.stringValue = "\(Int(v.rounded()))"
+            value.stringValue = Digits.string(Int(v.rounded()))
         }
         refreshers.last?()
         return UI.hstack([UI.caption(label), s, value], spacing: DS.Space.s8)
@@ -207,12 +219,12 @@ final class PropertyBar: BarView {
     }
 
     private func arrowStyleControl() -> NSView {
-        UI.hstack([UI.caption("Style"), segmented(ArrowStyle.allCases.map { ($0.rawValue.capitalized, $0) }, id: "prop.arrowStyle",
+        UI.hstack([UI.caption(tr("Style")), segmented(ArrowStyle.allCases.map { ($0.title, $0) }, id: "prop.arrowStyle",
                                                   get: { $0.arrowStyle }, set: { $0.arrowStyle = $1 }, key: "arrowStyle")], spacing: DS.Space.s8)
     }
 
     private func blurModeControl() -> NSView {
-        UI.hstack([UI.caption("Mode"), segmented(BlurMode.allCases.map { ($0.rawValue.capitalized, $0) }, id: "prop.blurMode",
+        UI.hstack([UI.caption(tr("Mode")), segmented(BlurMode.allCases.map { ($0.title, $0) }, id: "prop.blurMode",
                                                  get: { $0.blurMode }, set: { $0.blurMode = $1 }, key: "blurMode")], spacing: DS.Space.s8)
     }
 
@@ -221,7 +233,7 @@ final class PropertyBar: BarView {
         popup.controlSize = .small
         popup.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         popup.setAccessibilityIdentifier("prop.textStyle")
-        for style in TextStylePreset.allCases { popup.addItem(withTitle: style.rawValue.capitalized) }
+        for style in TextStylePreset.allCases { popup.addItem(withTitle: style.title) }
         popup.onAction { [unowned self] c in
             let i = (c as! NSPopUpButton).indexOfSelectedItem
             model.editStyle({ $0.textStyle = TextStylePreset.allCases[i] }, key: "textStyle")
@@ -231,7 +243,7 @@ final class PropertyBar: BarView {
             popup.selectItem(at: TextStylePreset.allCases.firstIndex(of: model.activeStyle.textStyle) ?? 0)
         }
         refreshers.last?()
-        return UI.hstack([UI.caption("Look"), popup], spacing: DS.Space.s8)
+        return UI.hstack([UI.caption(tr("Look")), popup], spacing: DS.Space.s8)
     }
 
     // MARK: Presets
@@ -241,19 +253,19 @@ final class PropertyBar: BarView {
         popup.controlSize = .small
         popup.heightAnchor.constraint(equalToConstant: DS.Size.controlSmall).isActive = true
         popup.setAccessibilityIdentifier("prop.presets")
-        popup.addItem(withTitle: "Presets")
+        popup.addItem(withTitle: tr("Presets"))
         let presets = model.stylePresetsForTool
         for preset in presets {
             popup.menu?.addItem(NSMenuItem(title: preset.name) { [unowned self] in model.applyStylePreset(preset) })
         }
         popup.menu?.addItem(.separator())
-        popup.menu?.addItem(NSMenuItem(title: "Save Current Style…") { [unowned self] in promptForPresetName(from: popup) })
+        popup.menu?.addItem(NSMenuItem(title: tr("Save Current Style…")) { [unowned self] in promptForPresetName(from: popup) })
         if !presets.isEmpty {
             let deleteMenu = NSMenu()
             for preset in presets {
                 deleteMenu.addItem(NSMenuItem(title: preset.name) { [unowned self] in model.deleteStylePreset(preset.id) })
             }
-            let parent = NSMenuItem(title: "Delete Preset", action: nil, keyEquivalent: "")
+            let parent = NSMenuItem(title: tr("Delete Preset"), action: nil, keyEquivalent: "")
             parent.submenu = deleteMenu
             popup.menu?.addItem(parent)
         }
@@ -261,12 +273,13 @@ final class PropertyBar: BarView {
     }
 
     private func promptForPresetName(from anchor: NSView) {
-        let field = TextInput(placeholder: "Preset name", size: .small)
+        let field = TextInput(placeholder: tr("Preset name"), size: .small)
+        field.alignment = .natural
         field.setAccessibilityIdentifier("prop.presetName")
         field.widthAnchor.constraint(equalToConstant: 150).isActive = true
         let popover = NSPopover()
         popover.behavior = .transient
-        let save = Button(title: "Save", variant: .secondary, size: .small)
+        let save = Button(title: tr("Save"), variant: .secondary, size: .small)
         save.keyEquivalent = "\r"
         let onSave: (NSControl) -> Void = { [unowned self] _ in
             model.saveStylePreset(named: field.stringValue)
@@ -278,6 +291,7 @@ final class PropertyBar: BarView {
         row.edgeInsets = NSEdgeInsets(top: DS.Space.s12, left: DS.Space.s12, bottom: DS.Space.s12, right: DS.Space.s12)
         let vc = NSViewController()
         vc.view = row
+        row.applyLanguageDirection()
         popover.contentViewController = vc
         namePopover = popover
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
@@ -295,21 +309,21 @@ final class PropertyBar: BarView {
         }
         refreshers.last?()
 
-        let reset = Button(title: "Reset", variant: .ghost, size: .small)
+        let reset = Button(title: tr("Reset"), variant: .ghost, size: .small)
         reset.setAccessibilityIdentifier("crop.reset")
         reset.onAction { [unowned self] _ in
             model.setCropDraft(CropDraft(rect: model.document.sourceBounds, aspect: model.cropDraft?.aspect ?? .free))
         }
-        let cancel = Button(title: "Cancel", variant: .ghost, size: .small)
+        let cancel = Button(title: tr("Cancel"), variant: .ghost, size: .small)
         cancel.setAccessibilityIdentifier("crop.cancel")
         cancel.onAction { [unowned self] _ in cancelCrop() }
-        let apply = Button(title: "Apply", variant: .primary, size: .small)
+        let apply = Button(title: tr("Apply"), variant: .primary, size: .small)
         apply.setAccessibilityIdentifier("crop.apply")
         apply.onAction { [unowned self] _ in applyCrop() }
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
-        let hint = UI.caption("Return applies, Esc cancels")
+        let hint = UI.caption(tr("Return applies, Esc cancels"))
 
         for v: NSView in [aspect, spacer, hint, reset, cancel, apply] { stack.addArrangedSubview(v) }
         stack.setCustomSpacing(DS.Space.s16, after: hint)

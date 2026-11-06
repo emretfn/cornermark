@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 import UniformTypeIdentifiers
 
 /// What the editor shows and plays. The project is the document; everything else is how it is being looked at.
@@ -146,12 +147,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var sourceFrames: SourceFrames { frames }
     private let clock: () -> Double
     private let preview = PreviewView()
-    private let transportBar = TransportBar()
+    private var transportBar = TransportBar()
     let timeline = TimelineView()
-    private let inspector = InspectorView()
-    private let header = HeaderBar()
-    private let exportPanel = ExportPanel()
-    private let animationPanel = ZoomAnimationPanel()
+    private var inspector = InspectorView()
+    private var header = HeaderBar()
+    private var exportPanel = ExportPanel()
+    private var animationPanel = ZoomAnimationPanel()
+    private var languageObserver: NSObjectProtocol?
     private var animationPanelTop: NSLayoutConstraint?
     private var exportJob: Task<ExportReport, Error>?
     private let bottomRule = Separator(axis: .horizontal)
@@ -206,11 +208,19 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         window.backgroundColor = DS.Color.bgSurface
         window.collectionBehavior.insert(.fullScreenPrimary)
         frames.isSilent = true
+        configureMedia()
         buildContent(in: window)
         wire()
         window.center()
         refresh()
+        languageObserver = NotificationCenter.default.addObserver(forName: L10n.didChange, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.languageChanged() }
+        }
         preparation = Task { [weak self] in await self?.prepare() }
+    }
+
+    deinit {
+        if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
     }
 
     public required init?(coder: NSCoder) { fatalError("VideoEditorWindowController is created in code") }
@@ -239,6 +249,17 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     // MARK: Layout
 
+    /// What the preview and the timeline show of this recording. They live as long as the editor.
+    private func configureMedia() {
+        preview.pointSize = CGSize(width: max(state.project.source.pointWidth, 1), height: max(state.project.source.pointHeight, 1))
+        let source = state.project.source
+        preview.pixelSize = CGSize(width: source.pixelWidth > 0 ? Double(source.pixelWidth) : preview.pointSize.width,
+                                   height: source.pixelHeight > 0 ? Double(source.pixelHeight) : preview.pointSize.height)
+        timeline.timeline = state.project.timeline
+        timeline.frameStep = 1 / Double(max(state.project.source.fps, 1))
+        timeline.aspect = state.project.source.pointHeight > 0 ? CGFloat(state.project.source.pointWidth / state.project.source.pointHeight) : 16 / 9
+    }
+
     private func buildContent(in window: NSWindow) {
         let content = NSView()
         window.contentView = content
@@ -253,13 +274,6 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         // Below the window's own size, so a panel that would reach the timeline rises instead of growing the window.
         animationTop.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 10)
         animationPanelTop = animationTop
-        preview.pointSize = CGSize(width: max(state.project.source.pointWidth, 1), height: max(state.project.source.pointHeight, 1))
-        let source = state.project.source
-        preview.pixelSize = CGSize(width: source.pixelWidth > 0 ? Double(source.pixelWidth) : preview.pointSize.width,
-                                   height: source.pixelHeight > 0 ? Double(source.pixelHeight) : preview.pointSize.height)
-        timeline.timeline = state.project.timeline
-        timeline.frameStep = 1 / Double(max(state.project.source.fps, 1))
-        timeline.aspect = state.project.source.pointHeight > 0 ? CGFloat(state.project.source.pointWidth / state.project.source.pointHeight) : 16 / 9
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: content.topAnchor),
             header.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -298,6 +312,35 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             transportBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ]
         NSLayoutConstraint.activate(editingConstraints)
+        content.applyChromeDirection()
+    }
+
+    /// Writes every text of the window in the new language, and mirrors the chrome for a right-to-left one. The panels and bars are built
+    /// again so their controls size to the new words; the project, playhead, selection, section, export and the media views carry over.
+    private func languageChanged() {
+        guard let window else { return }
+        let focus = FocusMemory(window)
+        let background = inspector.backgroundPanel.snapshot()
+        header = HeaderBar()
+        inspector = InspectorView()
+        transportBar = TransportBar()
+        exportPanel = ExportPanel()
+        animationPanel = ZoomAnimationPanel()
+        buildContent(in: window)
+        wire()
+        timeline.relocalize()
+        preview.relocalize()
+        if state.isPreviewOnly { applyLayout() }
+        refresh()
+        exportPanel.isHidden = state.export == .closed
+        if state.showsZoomAnimation {
+            animationPanel.isHidden = false
+            placeZoomAnimationPanel()
+        }
+        inspector.backgroundPanel.restore(background)
+        window.contentView?.layoutSubtreeIfNeeded()
+        focus.restore(in: self)
+        tick()
     }
 
     private func wire() {
@@ -469,7 +512,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func addBackgroundImage() {
         chooseImage(window) { [weak self] url in
             guard let self, let url else { return }
-            do { try useBackgroundImage(at: url) } catch { inspector.backgroundPanel.showProblem("\(url.lastPathComponent) could not be added. Choose another image.") }
+            do { try useBackgroundImage(at: url) } catch { inspector.backgroundPanel.showProblem(file: url.lastPathComponent) }
         }
     }
 
@@ -608,7 +651,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// The zoom's right-click menu. Its items act on that zoom, whichever is picked when one is chosen.
     func zoomMenu(for id: UUID) -> NSMenu? {
         guard let zoom = zoomLane.zoom(id) else { return nil }
-        let menu = NSMenu(title: "Zoom")
+        let menu = NSMenu(title: tr("Zoom"))
         menu.autoenablesItems = false
         func item(_ title: String, enabled: Bool = true, state on: Bool = false, _ action: @escaping () -> Void) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -617,30 +660,30 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             item.state = on ? .on : .off
             return item
         }
-        let level = NSMenuItem(title: "Level", action: nil, keyEquivalent: "")
-        level.submenu = NSMenu(title: "Level")
+        let level = NSMenuItem(title: tr("Level"), action: nil, keyEquivalent: "")
+        level.submenu = NSMenu(title: tr("Level"))
         for s in Zoom.levels {
-            level.submenu?.addItem(item(Zoom.percent(s), state: abs(s - zoom.scale) < 0.005) { [unowned self] in setZoomScale(s, of: id) })
+            level.submenu?.addItem(item(Digits.percent(s), state: abs(s - zoom.scale) < 0.005) { [unowned self] in setZoomScale(s, of: id) })
         }
         menu.addItem(level)
-        menu.addItem(item("Apply Level to All", enabled: zoomLane.zooms.count > 1) { [unowned self] in applyZoomLevelToAll(from: id) })
-        let mode = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
-        mode.submenu = NSMenu(title: "Mode")
+        menu.addItem(item(tr("Apply Level to All"), enabled: zoomLane.zooms.count > 1) { [unowned self] in applyZoomLevelToAll(from: id) })
+        let mode = NSMenuItem(title: tr("Mode"), action: nil, keyEquivalent: "")
+        mode.submenu = NSMenu(title: tr("Mode"))
         for m in ZoomMode.allCases {
-            mode.submenu?.addItem(item(m.title, state: m == zoom.mode) { [unowned self] in setZoomMode(m, of: id) })
+            mode.submenu?.addItem(item(m.localizedTitle, state: m == zoom.mode) { [unowned self] in setZoomMode(m, of: id) })
         }
         menu.addItem(mode)
         menu.addItem(.separator())
-        menu.addItem(item("Animation Settings\u{2026}") { [unowned self] in
+        menu.addItem(item(tr("Animation Settings\u{2026}")) { [unowned self] in
             selectZoom(id)
             openZoomAnimation()
         })
         menu.addItem(.separator())
-        menu.addItem(item("Split at Playhead", enabled: zoomLane.splitting(id, at: playhead) != nil) { [unowned self] in splitZoom(id) })
-        menu.addItem(item("Duplicate", enabled: zoomLane.duplicating(id) != nil) { [unowned self] in duplicateZoom(id) })
+        menu.addItem(item(tr("Split at Playhead"), enabled: zoomLane.splitting(id, at: playhead) != nil) { [unowned self] in splitZoom(id) })
+        menu.addItem(item(tr("Duplicate"), enabled: zoomLane.duplicating(id) != nil) { [unowned self] in duplicateZoom(id) })
         menu.addItem(.separator())
-        menu.addItem(item("Remove Zoom") { [unowned self] in removeZoom(id) })
-        menu.addItem(item("Remove All Zooms") { [unowned self] in removeAllZooms() })
+        menu.addItem(item(tr("Remove Zoom")) { [unowned self] in removeZoom(id) })
+        menu.addItem(item(tr("Remove All Zooms")) { [unowned self] in removeAllZooms() })
         return menu
     }
 
@@ -671,16 +714,22 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         guard state.selectedZoom != nil, !state.showsZoomAnimation, !state.isPreviewOnly, let content = window?.contentView else { return }
         closeExport()
         state.showsZoomAnimation = true
-        content.layoutSubtreeIfNeeded()
-        let button = inspector.zoomPanel.animationSettings
-        let frame = content.convert(button.bounds, from: button)
-        animationPanelTop?.constant = (content.isFlipped ? frame.minY : content.bounds.height - frame.maxY) - ZoomAnimationPanel.inset
+        placeZoomAnimationPanel()
         animationPanel.show(state.project.edits.zoomAnimation)
         content.layoutSubtreeIfNeeded()
         // It grows from its top-left corner, the one beside the button that opened it.
         let corner = CGPoint(x: ZoomAnimationPanel.inset, y: animationPanel.bounds.height - ZoomAnimationPanel.inset)
         animationPanel.fade(visible: true, growsFrom: corner) { true }
         window?.makeFirstResponder(animationPanel.firstControl)
+    }
+
+    /// Level with the button that opens Animation Settings.
+    private func placeZoomAnimationPanel() {
+        guard let content = window?.contentView else { return }
+        content.layoutSubtreeIfNeeded()
+        let button = inspector.zoomPanel.animationSettings
+        let frame = content.convert(button.bounds, from: button)
+        animationPanelTop?.constant = (content.isFlipped ? frame.minY : content.bounds.height - frame.maxY) - ZoomAnimationPanel.inset
     }
 
     public func closeZoomAnimation() {
@@ -949,7 +998,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                 result = .failed(String(describing: error))
             }
             guard let self else { return }
-            if case .finished = result { announce("Frame exported") } else { announce("Could not export the frame") }
+            if case .finished = result { announce(tr("Frame exported")) } else { announce(tr("Could not export the frame")) }
             onExportFrame(result)
         }
     }
@@ -972,14 +1021,14 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             refresh()
             setPanelVisible(false)
             window?.makeFirstResponder(header.exportButton)
-            announce("Export finished")
+            announce(tr("Export finished"))
             onExport(.finished(report))
         case .failure(let error):
             state.export = .choosing
             refresh()
             window?.makeFirstResponder(exportPanel.firstControl)
             let cancelled = error is CancellationError
-            announce(cancelled ? "Export cancelled" : "Export failed")
+            announce(cancelled ? tr("Export cancelled") : tr("Export failed"))
             onExport(cancelled ? .cancelled(reached) : .failed(String(describing: error)))
         }
     }
@@ -1196,7 +1245,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let result = writeIfChanged()
         refresh()
         // The header's word changes without moving focus, so VoiceOver hears the outcome too.
-        if case .failed = result { announce("Could not save the edits") } else { announce("Saved") }
+        if case .failed = result { announce(tr("Could not save the edits")) } else { announce(tr("Saved")) }
         onSave(result)
         return result
     }

@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Security
+import CornermarkL10n
 
 /// Checks that an unpacked app is the same product as the running one, signed by the same certificate.
 enum UpdateVerifier {
@@ -68,13 +69,13 @@ final class UpdateInstaller: UpdateServicing {
     func latestRelease() async throws -> AppRelease? {
         let (data, status) = try await getJSON(feedURL)
         if status == 404 { return nil }
-        guard status == 200 else { throw UpdateError.network("GitHub answered \(status).") }
+        guard status == 200 else { throw UpdateError.network(tr("GitHub answered {status}.", ["status": status])) }
         return try AppRelease.parse(json: data)
     }
 
     func releaseHistory() async throws -> [ReleaseEntry] {
         let (data, status) = try await getJSON(historyURL)
-        guard status == 200 else { throw UpdateError.network("GitHub answered \(status).") }
+        guard status == 200 else { throw UpdateError.network(tr("GitHub answered {status}.", ["status": status])) }
         return try ReleaseEntry.parseList(json: data)
     }
 
@@ -169,7 +170,7 @@ final class UpdateInstaller: UpdateServicing {
     private func download(_ url: URL, to destination: URL) async throws {
         let (file, response) = try await transfer { try await session.download(from: url) }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw UpdateError.network("The download answered \(status).") }
+        guard status == 200 else { throw UpdateError.network(tr("The download answered {status}.", ["status": status])) }
         try FileManager.default.moveItem(at: file, to: destination)
     }
 
@@ -188,11 +189,11 @@ final class UpdateInstaller: UpdateServicing {
         process.standardError = errors
         let status: Int32 = try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-            do { try process.run() } catch { continuation.resume(throwing: UpdateError.process("\(name) did not start.")) }
+            do { try process.run() } catch { continuation.resume(throwing: UpdateError.process(tr("{name} did not start.", ["name": name]))) }
         }
         guard status == 0 else {
             let text = String(decoding: errors.fileHandleForReading.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            throw UpdateError.process("\(name) failed. \(text)")
+            throw UpdateError.process(tr("{name} failed. {output}", ["name": name, "output": text]))
         }
     }
 }

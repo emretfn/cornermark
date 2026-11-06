@@ -98,12 +98,17 @@ final class QuickAccessManager {
     private var panels: [UUID: QuickAccessPanel] = [:]
     private var lastTick: Date
     private var timer: Timer?
+    private var language: LanguageObserver?
     static let recentLimit = 10
 
     init(env: AppEnvironment, settings: @escaping () -> Settings) {
         self.env = env
         self.settings = settings
         lastTick = env.clock()
+        language = LanguageObserver { [weak self] in
+            guard let self else { return }
+            for card in stack { cardView(for: card)?.relocalize() }
+        }
     }
 
     func panel(for card: QuickAccessCard) -> QuickAccessPanel? { panels[card.id] }

@@ -1,12 +1,13 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 import QuartzCore
 
 /// The finished video at the playhead: the background, the source frame `frameState` names cropped to its zoom, the camera, the click rings and
 /// keystroke badge, and the pointer it places, in the look export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
 /// The video is content, so only the area around it follows the appearance.
-final class PreviewView: NSView {
+final class PreviewView: NSView, KeepsLeftToRight {
     /// The recorded area in points, the unit of pointer positions.
     var pointSize = CGSize(width: 16, height: 9) { didSet { needsLayout = true } }
     /// The recorded area in pixels, the size original export draws the recording at.
@@ -96,9 +97,12 @@ final class PreviewView: NSView {
         picture.addSublayer(pointer)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel("Preview")
+        relocalize()
         setAccessibilityIdentifier("video.preview")
     }
+
+    /// Reads the accessibility label again in the current language.
+    func relocalize() { setAccessibilityLabel(tr("Preview")) }
 
     required init?(coder: NSCoder) { fatalError("PreviewView is created in code") }
 

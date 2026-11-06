@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import CornermarkCore
+import CornermarkL10n
 
 /// What a recording films. Areas are in global AppKit points (bottom-left origin), like every other capture rect.
 public enum RecordingTarget: Equatable {
@@ -12,7 +13,13 @@ public enum RecordingTarget: Equatable {
 /// How hard the encoder works to keep detail: the average bits it spends on each pixel of each frame.
 public enum VideoQuality: String, Codable, CaseIterable, Sendable {
     case high, medium, low
-    public var title: String { rawValue.capitalized }
+    public var title: String {
+        switch self {
+        case .high: return tr("High")
+        case .medium: return tr("Medium", context: "quality")
+        case .low: return tr("Low")
+        }
+    }
     public var bitsPerPixel: Double {
         switch self {
         case .high: return 0.2

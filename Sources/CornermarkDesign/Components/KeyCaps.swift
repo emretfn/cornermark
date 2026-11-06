@@ -1,8 +1,8 @@
 import AppKit
 
 /// Keys written as caps, one per key combination, such as `⌥←` and `⌥→`. It reads, it does not record: a key that can be changed
-/// uses the shortcut recorder instead.
-public final class KeyCaps: NSView {
+/// uses the shortcut recorder instead. Caps are laid out like the keyboard, left to right in every language.
+public final class KeyCaps: NSView, KeepsLeftToRight {
     public let keys: [String]
 
     /// `spoken` names the keys in words for VoiceOver, which reads symbols such as ⌥ unevenly.

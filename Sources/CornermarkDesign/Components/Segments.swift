@@ -163,8 +163,11 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
         NSSize(width: (0..<segmentCount).reduce(0) { $0 + slotWidth($1) }, height: size.height)
     }
 
-    /// The tile of segment `i`, vertically centred in the bounds. On a track it is the thumb's place for that choice.
-    func tile(_ i: Int) -> CGRect {
+    /// The tile of segment `i`, vertically centred in the bounds. On a track it is the thumb's place for that choice. The first choice
+    /// is at the left edge, or at the right edge in a right-to-left language, where the row runs in reverse.
+    func tile(_ i: Int) -> CGRect { mirrored(leftToRightTile(i)) }
+
+    private func leftToRightTile(_ i: Int) -> CGRect {
         if style == .track {
             let x = Self.trackPadding + tileWidths[..<i].reduce(0, +)
             return CGRect(x: x, y: ((bounds.height - size.height) / 2).rounded() + Self.trackPadding, width: tileWidths[i], height: size.height - 2 * Self.trackPadding)
@@ -175,7 +178,7 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
 
     /// The whole track, behind every choice.
     var trackRect: CGRect {
-        CGRect(x: 0, y: ((bounds.height - size.height) / 2).rounded(), width: intrinsicContentSize.width, height: size.height)
+        mirrored(CGRect(x: 0, y: ((bounds.height - size.height) / 2).rounded(), width: intrinsicContentSize.width, height: size.height))
     }
 
     /// Where the thumb is: a whole index at rest, between two while it slides.
@@ -221,16 +224,23 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
 
     /// Where the divider after segment `i` is drawn.
     func dividerRect(after i: Int) -> CGRect {
-        let t = tile(i)
-        return CGRect(x: t.maxX + DS.Space.s4 + DS.Space.s4, y: bounds.midY - Self.dividerLength / 2, width: 1, height: Self.dividerLength)
+        let t = leftToRightTile(i)
+        return mirrored(CGRect(x: t.maxX + DS.Space.s4 + DS.Space.s4, y: bounds.midY - Self.dividerLength / 2, width: 1, height: Self.dividerLength))
+    }
+
+    /// The room segment `i` owns: its tile and the gap or divider after it.
+    private func slot(_ i: Int) -> CGRect {
+        let t = leftToRightTile(i)
+        return mirrored(CGRect(x: t.minX, y: bounds.minY, width: slotWidth(i), height: bounds.height))
     }
 
     func segment(at point: CGPoint) -> Int? {
         (0..<segmentCount).first { i in
-            let slot = tile(i)
-            guard style == .track else { return CGRect(x: slot.minX, y: bounds.minY, width: slotWidth(i), height: bounds.height).contains(point) }
+            guard style == .track else { return slot(i).contains(point) }
             // A track's end choices also take the inset beside them.
-            let minX = i == 0 ? 0 : slot.minX, maxX = i == segmentCount - 1 ? trackRect.maxX : slot.maxX
+            let tile = self.tile(i), track = trackRect
+            let firstOnLeft = i == (isRightToLeft ? segmentCount - 1 : 0), lastOnRight = i == (isRightToLeft ? 0 : segmentCount - 1)
+            let minX = firstOnLeft ? track.minX : tile.minX, maxX = lastOnRight ? track.maxX : tile.maxX
             return point.x >= minX && point.x < maxX && point.y >= bounds.minY && point.y <= bounds.maxY
         }
     }
@@ -238,6 +248,14 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         refreshToolTips()
+    }
+
+    public override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet {
+            guard oldValue != userInterfaceLayoutDirection else { return }
+            refreshToolTips()
+            needsDisplay = true
+        }
     }
 
     // MARK: State
@@ -350,7 +368,7 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
     private func refreshToolTips() {
         removeAllToolTips()
         for i in 0..<segmentCount where toolTips[i] != nil {
-            addToolTip(CGRect(x: tile(i).minX, y: bounds.minY, width: slotWidth(i), height: bounds.height), owner: self, userData: nil)
+            addToolTip(slot(i), owner: self, userData: nil)
         }
     }
 
@@ -397,7 +415,7 @@ final class SegmentsCell: NSSegmentedCell {
             if let glyph = segments.glyph(i) {
                 Paint.symbol(glyph, in: tile, pointSize: segments.size.iconSize, look.text)
             } else {
-                Paint.text(label(forSegment: i) ?? "", DS.Text.label, look.text, in: tile, alignment: .center)
+                Paint.text(label(forSegment: i) ?? "", DS.Text.label, look.text, in: tile, alignment: .center, rtl: segments.isRightToLeft)
             }
             context.restoreGState()
 

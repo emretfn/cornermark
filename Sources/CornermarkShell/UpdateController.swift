@@ -1,4 +1,5 @@
 import Foundation
+import CornermarkL10n
 
 /// Runs the update flow: check, ask, download, install. The menu reads `state`.
 @MainActor
@@ -24,7 +25,7 @@ final class UpdateController {
         do {
             if let release = try await newerRelease() {
                 state = .available(release)
-                hud.show("Cornermark \(release.version) is available. Install it from the menu.", symbol: "arrow.down.circle.fill")
+                hud.show(tr("Cornermark {version} is available. Install it from the menu.", ["version": "\(release.version)"]), symbol: "arrow.down.circle.fill")
             } else {
                 state = .idle
             }
@@ -51,12 +52,12 @@ final class UpdateController {
         } catch {
             state = .idle
             Log.shell.error("update check failed: \(String(describing: error), privacy: .public)")
-            _ = env.presentUpdateAlert(UpdateAlert(title: "Cornermark could not check for updates", message: Self.message(for: error), offersReleasePage: false))
+            _ = env.presentUpdateAlert(UpdateAlert(title: tr("Cornermark could not check for updates"), message: Self.message(for: error), offersReleasePage: false))
             return
         }
         guard let release else {
             state = .idle
-            return hud.show("Cornermark is up to date")
+            return hud.show(tr("Cornermark is up to date"))
         }
         state = .available(release)
         await confirmAndInstall(release)
@@ -65,7 +66,7 @@ final class UpdateController {
     private func confirmAndInstall(_ release: AppRelease) async {
         guard env.confirmUpdate(release) else { return }
         state = .installing(release)
-        hud.show("Downloading Cornermark \(release.version)", symbol: "arrow.down.circle.fill")
+        hud.show(tr("Downloading Cornermark {version}", ["version": "\(release.version)"]), symbol: "arrow.down.circle.fill")
         var staged: StagedUpdate?
         do {
             let ready = try await env.updateService.stage(release)
@@ -77,7 +78,7 @@ final class UpdateController {
             if let staged { env.updateService.discard(staged) }
             state = .available(release)
             Log.shell.error("update failed: \(String(describing: error), privacy: .public)")
-            let alert = UpdateAlert(title: "Cornermark could not install the update", message: Self.message(for: error), offersReleasePage: true)
+            let alert = UpdateAlert(title: tr("Cornermark could not install the update"), message: Self.message(for: error), offersReleasePage: true)
             if env.presentUpdateAlert(alert) { env.openURL(release.pageURL) }
         }
     }

@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CornermarkCapture
 import CornermarkCore
+import CornermarkL10n
 import CornermarkVideoEditor
 import ImageIO
 
@@ -221,17 +222,17 @@ final class RecordingController {
         let source: FrameSource
         do { source = try env.frameSource(target, options) } catch {
             Log.shell.error("recording refused: \(String(describing: error), privacy: .public)")
-            return onFailed("Recording not allowed")
+            return onFailed(tr("Recording not allowed"))
         }
         do { try FileManager.default.createDirectory(at: folder(), withIntermediateDirectories: true) } catch {
             Log.shell.error("recording refused: cannot create the folder: \(error.localizedDescription, privacy: .public)")
-            return onFailed("Could not save the recording")
+            return onFailed(tr("Could not save the recording"))
         }
         let destination = RecordingOutput.destination(style, in: folder(), for: env.clock())
         if destination.format == .project {
             do { try FileManager.default.createDirectory(at: destination.location, withIntermediateDirectories: false) } catch {
                 Log.shell.error("recording refused: cannot create the project folder: \(error.localizedDescription, privacy: .public)")
-                return onFailed("Could not save the recording")
+                return onFailed(tr("Could not save the recording"))
             }
         }
         self.destination = destination
@@ -254,7 +255,7 @@ final class RecordingController {
         let input = capture.isEmpty || !inputAllowed ? nil : env.inputSource(capture)
         if request.preferences.showsInput, !inputAllowed {
             Log.shell.error("recording input unavailable: Input Monitoring is not allowed, recording without clicks and keystrokes")
-            onNotice("Turn on Input Monitoring to show clicks and keys")
+            onNotice(tr("Turn on Input Monitoring to show clicks and keys"))
         }
         let camera = cameraRecording(style: request.style, destination: destination)
         let sound = audio(for: request, destination: destination, source: source)
@@ -298,7 +299,7 @@ final class RecordingController {
                 Log.shell.notice("recording camera wanted=\(request.preferences.camera.isVisible, privacy: .public) source=\(cameraKind, privacy: .public) access=\(self.env.cameraAccess().rawValue, privacy: .public) inPicture=\(recorder.cameraInPicture, privacy: .public) failure=\(recorder.cameraFailure.map(String.init(describing:)) ?? "none", privacy: .public) requests=\(CameraAccess.requests, privacy: .public) sessions=\(LiveCameraSource.sessionsOpened, privacy: .public)")
                 if recorder.cameraFailure != nil {
                     cameraLook = nil
-                    onNotice("The camera could not start, so this recording has no camera. Quit other apps using the camera and record again.")
+                    onNotice(tr("The camera could not start, so this recording has no camera. Quit other apps using the camera and record again."))
                 }
                 Log.shell.notice("recording started project=\(name, privacy: .public) style=\(request.style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) hideNotifications=\(options.exclusion.hidesNotifications, privacy: .public) hideDesktopIcons=\(options.exclusion.hidesDesktopIcons, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
@@ -307,7 +308,7 @@ final class RecordingController {
             } catch {
                 Log.shell.error("recording failed to start: \(String(describing: error), privacy: .public)")
                 reset()
-                onFailed(error as? RecordingError == .permissionDenied ? "Screen recording is not allowed" : "Could not start recording")
+                onFailed(error as? RecordingError == .permissionDenied ? tr("Screen recording is not allowed") : tr("Could not start recording"))
             }
         }
     }
@@ -319,7 +320,7 @@ final class RecordingController {
             cameraLook = nil
             guard env.cameraAccess() != .allowed else { return nil }
             Log.shell.error("recording camera unavailable: camera access is \(self.env.cameraAccess().rawValue, privacy: .public), recording without the camera")
-            onNotice("Allow camera access in Settings > Camera to show the camera")
+            onNotice(tr("Allow camera access in Settings > Camera to show the camera"))
             return nil
         }
         guard let cameraLook else { return nil }
@@ -382,7 +383,7 @@ final class RecordingController {
             do { launch(try env.frameSource(request.target, request.preferences.options(for: request.style))) } catch {
                 Log.shell.error("recording refused: \(String(describing: error), privacy: .public)")
                 reset()
-                onFailed("Recording not allowed")
+                onFailed(tr("Recording not allowed"))
             }
         }
     }
@@ -454,13 +455,13 @@ final class RecordingController {
             // The recorder is free again while the GIF is made, so a new recording can start.
             let made = await RecordingOutput.finishGif(destination.location, kind: kind)
             if let entry { env.recordingJournal?.close(entry) }
-            guard let made else { return onFailed("Could not save the recording") }
-            if made.failed { onFailed("Could not convert the recording to GIF. It is saved as a video.") }
+            guard let made else { return onFailed(tr("Could not save the recording")) }
+            if made.failed { onFailed(tr("Could not convert the recording to GIF. It is saved as a video.")) }
             onSaved(made.recording)
         } catch {
             Log.shell.error("recording failed to finish: \(String(describing: error), privacy: .public)")
             reset()
-            onFailed("Could not save the recording")
+            onFailed(tr("Could not save the recording"))
         }
     }
 
@@ -502,7 +503,7 @@ extension RecordingController {
         if prefs.microphone {
             if env.microphoneAccess() != .allowed {
                 Log.shell.error("recording microphone unavailable: access=\(self.env.microphoneAccess().rawValue, privacy: .public), recording without it")
-                onNotice("Turn on microphone access in System Settings to record your voice")
+                onNotice(tr("Turn on microphone access in System Settings to record your voice"))
             } else if let mic = env.microphoneSource(prefs.microphoneID) {
                 let hearing = MicrophoneHearing(start: recordingClockNow())
                 self.hearing = hearing
@@ -529,7 +530,7 @@ extension RecordingController {
         Log.shell.notice("recording audio microphone=\(sound.microphone != nil && recorder.audioFailures[.microphone] == nil, privacy: .public) device=\(sound.microphoneName, privacy: .public) mono=\(prefs.mono, privacy: .public) system=\(sound.system != nil && recorder.audioFailures[.system] == nil, privacy: .public) source=\(sound.kind, privacy: .public) failure=\(failures.isEmpty ? "none" : failures, privacy: .public) realMicrophoneAccess=\(MicrophoneAccess.current.rawValue, privacy: .public) devicesOpened=\(LiveMicrophoneSource.sessionsOpened, privacy: .public) accessRequests=\(MicrophoneAccess.requests, privacy: .public)")
         if recorder.audioFailures[.microphone] != nil {
             hearing = nil
-            onNotice("Could not record the microphone")
+            onNotice(tr("Could not record the microphone"))
         }
     }
 
@@ -555,7 +556,7 @@ extension RecordingController {
         } catch {
             try? FileManager.default.removeItem(at: mixed)
             Log.shell.error("recording sound not mixed: \(String(describing: error), privacy: .public)")
-            onNotice("Could not add the sound. The video is saved without it.")
+            onNotice(tr("Could not add the sound. The video is saved without it."))
         }
         report.audio.forEach { try? FileManager.default.removeItem(at: $0.url) }
     }

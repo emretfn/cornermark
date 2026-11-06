@@ -5,7 +5,7 @@ import CornermarkCore
 /// Draws the document through `Renderer.draw` and owns pointer interaction. View coordinates are
 /// flipped (y-down) and the canvas sits `margin` points in from the top-left, so a view point
 /// minus the margin is a canvas pixel at any zoom: the scroll view magnifies, this view never scales.
-final class CanvasView: NSView, NSTextViewDelegate {
+final class CanvasView: NSView, NSTextViewDelegate, KeepsLeftToRight {
     static let margin: CGFloat = 40
 
     let model: EditorModel

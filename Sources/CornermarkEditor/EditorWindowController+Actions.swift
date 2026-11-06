@@ -155,6 +155,7 @@ extension EditorWindowController {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkDrag", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
         stamp.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let url = dir.appendingPathComponent("Cornermark \(stamp.string(from: Date())).png")
         try exportImage(to: url, format: .png)

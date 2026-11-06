@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 public struct EditorCallbacks {
     public var onSaveProject: (Document, AssetStore) -> Void
@@ -54,6 +55,7 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
     private var resizePopover: NSPopover?
     private var panelWidth: NSLayoutConstraint!
     private var copyButton: Button?
+    private var titleLeading: CGFloat = 0
     private var segmentActions: [String: (Int) -> Void] = [:]
 
     public init(document: Document, assets: AssetStore, callbacks: EditorCallbacks = EditorCallbacks(),
@@ -80,9 +82,13 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         buildContent(in: window)
         buildToolbar(for: window)
         wire()
+        window.contentView?.applyLanguageDirection()
         window.center()
         refreshUI(.all)
+        NotificationCenter.default.addObserver(self, selector: #selector(languageDidChange), name: L10n.didChange, object: nil)
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     public required init?(coder: NSCoder) { fatalError("EditorWindowController is created in code") }
 
@@ -138,10 +144,16 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         backgroundPanel.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
 
+        // The canvas never mirrors, but where it sits between the bars does. Constraints between views of different directions
+        // resolve their leading and trailing edges by the first view's direction, so the canvas hangs in a host that mirrors.
+        let canvasHost = NSView()
+        canvasHost.translatesAutoresizingMaskIntoConstraints = false
+        canvasHost.addSubview(scroll)
+
         let content = NSView()
         window.contentView = content
         titleBar.translatesAutoresizingMaskIntoConstraints = false
-        [titleBar, propertyBar, scroll, backgroundPanel, statusBar].forEach(content.addSubview)
+        [titleBar, propertyBar, canvasHost, backgroundPanel, statusBar].forEach(content.addSubview)
         NSLayoutConstraint.activate([
             titleBar.topAnchor.constraint(equalTo: content.topAnchor),
             titleBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -151,13 +163,17 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
             propertyBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             propertyBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
-            scroll.topAnchor.constraint(equalTo: propertyBar.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            scroll.topAnchor.constraint(equalTo: canvasHost.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: canvasHost.bottomAnchor),
+            scroll.leftAnchor.constraint(equalTo: canvasHost.leftAnchor),
+            scroll.rightAnchor.constraint(equalTo: canvasHost.rightAnchor),
+            canvasHost.topAnchor.constraint(equalTo: propertyBar.bottomAnchor),
+            canvasHost.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            canvasHost.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
 
             backgroundPanel.topAnchor.constraint(equalTo: propertyBar.bottomAnchor),
             backgroundPanel.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
-            backgroundPanel.leadingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            backgroundPanel.leadingAnchor.constraint(equalTo: canvasHost.trailingAnchor),
             backgroundPanel.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
             statusBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -166,7 +182,7 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         ])
         panelWidth = backgroundPanel.widthAnchor.constraint(equalToConstant: 0)
         panelWidth.isActive = true
-        let flush = scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor)
+        let flush = canvasHost.trailingAnchor.constraint(equalTo: content.trailingAnchor)
         flush.priority = .defaultLow
         flush.isActive = true
     }
@@ -215,6 +231,11 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
 
     func refreshUI(_ change: Change) {
         canvas.modelChanged(change)
+        refreshChrome()
+    }
+
+    /// Everything around the canvas that mirrors the model: bars, panel, toolbar state.
+    private func refreshChrome() {
         propertyBar.reload()
         let showPanel = model.tool == .background
         backgroundPanel.isHidden = !showPanel
@@ -248,26 +269,39 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
     }
 
     private func buildToolbar(for window: NSWindow) {
-        let tools = EditorTool.allCases
-        toolControl = Segments(symbols: tools.map { $0.spec.symbol }, labels: tools.map { $0.spec.title })
-        toolControl.dividers = Self.toolDividers
-        toolControl.setAccessibilityIdentifier("toolbar.tools")
-        for (i, t) in tools.enumerated() {
-            toolControl.setToolTip("\(t.spec.title) (\(String(t.spec.key).uppercased()))", forSegment: i)
-        }
-        toolControl.onAction { [unowned self] c in model.setTool(tools[(c as! NSSegmentedControl).selectedSegment]) }
-
-        undoControl = momentary(["arrow.uturn.backward", "arrow.uturn.forward"], tips: ["Undo", "Redo"], id: "toolbar.history") { [unowned self] i in
-            canvas.cancelGesture()
-            if i == 0 { model.undo() } else { model.redo() }
-        }
-        dragHandle.toolTip = "Drag the rendered image into Finder or any app"
-        dragHandle.setAccessibilityIdentifier("toolbar.dragHandle")
-
         // An empty toolbar gives the taller title bar with centred window buttons. The controls live in `titleBar` instead of
         // toolbar items, because macOS 26 puts every toolbar item on a glass capsule that no public API removes.
         let (rowHeight, leading) = WindowChrome.titleRowMetrics(for: window, toolbarIdentifier: "cornermark.editor")
+        titleLeading = leading
         titleBar.heightAnchor.constraint(equalToConstant: rowHeight).isActive = true
+        populateToolbar()
+    }
+
+    /// Builds the toolbar row from scratch, so a language change swaps its text, tooltips and reading-order symbols in one place.
+    private func populateToolbar() {
+        titleBar.subviews.forEach { row in
+            (row as? NSStackView)?.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            row.removeFromSuperview()
+        }
+        segmentActions = [:]
+
+        let tools = EditorTool.allCases
+        toolControl = Segments(symbols: tools.map { $0.spec.symbol }, labels: tools.map { $0.spec.title.text })
+        toolControl.dividers = Self.toolDividers
+        toolControl.setAccessibilityIdentifier("toolbar.tools")
+        for (i, t) in tools.enumerated() {
+            toolControl.setToolTip(tr("{tool} ({key})", ["tool": t.spec.title.text, "key": String(t.spec.key).uppercased()]), forSegment: i)
+        }
+        toolControl.onAction { [unowned self] c in model.setTool(tools[(c as! NSSegmentedControl).selectedSegment]) }
+
+        undoControl = momentary([Glyph.directional("arrow.uturn.backward"), Glyph.directional("arrow.uturn.forward")],
+                                tips: [tr("Undo"), tr("Redo")], id: "toolbar.history") { [unowned self] i in
+            canvas.cancelGesture()
+            if i == 0 { model.undo() } else { model.redo() }
+        }
+        dragHandle.toolTip = tr("Drag the rendered image into Finder or any app")
+        dragHandle.setAccessibilityIdentifier("toolbar.dragHandle")
+
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
         let row = NSStackView(views: [toolControl, spacer, geometryControl(), undoControl, dragHandle, actionsView()])
@@ -276,11 +310,23 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         row.spacing = DS.Space.s8
         row.translatesAutoresizingMaskIntoConstraints = false
         titleBar.addSubview(row)
+        // The window buttons stay at the physical left, so the room kept for them is the left inset whichever way the row reads.
         NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: titleBar.leadingAnchor, constant: leading),
-            row.trailingAnchor.constraint(equalTo: titleBar.trailingAnchor, constant: -DS.Space.s12),
+            row.leftAnchor.constraint(equalTo: titleBar.leftAnchor, constant: titleLeading),
+            row.rightAnchor.constraint(equalTo: titleBar.rightAnchor, constant: -DS.Space.s12),
             row.centerYAnchor.constraint(equalTo: titleBar.centerYAnchor),
         ])
+    }
+
+    @objc private func languageDidChange() {
+        populateToolbar()
+        propertyBar.relocalize()
+        backgroundPanel.relocalize()
+        statusBar.relocalize()
+        if resizePanel.isViewLoaded { resizePanel.relocalize() }
+        window?.contentView?.applyLanguageDirection()
+        refreshChrome()
+        if model.tool == .crop { canvas.needsDisplay = true }
     }
 
     private func momentary(_ symbols: [String], tips: [String], id: String, action: @escaping (Int) -> Void) -> Segments {
@@ -295,7 +341,7 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
     private func geometryControl() -> NSView {
         momentary(["rotate.right", "arrow.left.and.right.righttriangle.left.righttriangle.right",
                    "arrow.up.and.down.righttriangle.up.righttriangle.down", "arrow.up.left.and.down.right.magnifyingglass"],
-                  tips: ["Rotate 90° clockwise", "Flip horizontally", "Flip vertically", "Resize"], id: "toolbar.geometry") { [unowned self] i in
+                  tips: [tr("Rotate 90° clockwise"), tr("Flip horizontally"), tr("Flip vertically"), tr("Resize")], id: "toolbar.geometry") { [unowned self] i in
             switch i {
             case 0: perform(.rotateClockwise)
             case 1: perform(.flipHorizontal)
@@ -316,14 +362,15 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
             }
         }
         segmentActions["toolbar.actions"] = run
-        let segments = Segments(symbols: ["pin", "square.and.arrow.down"], labels: ["Pin to screen", "Save image… (⌘S)"], trackingMode: .momentary, quiet: true)
+        let tips = [tr("Pin to screen"), tr("Save image… (⌘S)")]
+        let segments = Segments(symbols: ["pin", "square.and.arrow.down"], labels: tips, trackingMode: .momentary, quiet: true)
         segments.setAccessibilityIdentifier("toolbar.actions")
-        for (i, tip) in ["Pin to screen", "Save image… (⌘S)"].enumerated() { segments.setToolTip(tip, forSegment: i) }
+        for (i, tip) in tips.enumerated() { segments.setToolTip(tip, forSegment: i) }
         segments.onAction { c in run([0, 2][(c as! NSSegmentedControl).selectedSegment]) }
 
-        let copy = Button(title: "Copy", variant: .primary)
+        let copy = Button(title: tr("Copy"), variant: .primary)
         copyButton = copy
-        copy.toolTip = "Copy (⌘C)"
+        copy.toolTip = tr("Copy (⌘C)")
         copy.setAccessibilityIdentifier("toolbar.copy")
         copy.onAction { _ in run(1) }
         return UI.hstack([segments, copy], spacing: DS.Space.s8)
@@ -376,6 +423,7 @@ final class StatusBar: BarView {
     var fit: () -> Void = {}
     private let info = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let zoomLabel = NSTextField.label("100%", style: DS.Text.readout, color: DS.Color.textPrimary)
+    private var buttons: [(button: NSButton, tip: () -> String)] = []
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -384,16 +432,17 @@ final class StatusBar: BarView {
         zoomLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
         zoomLabel.setAccessibilityIdentifier("status.zoom")
 
-        func small(_ symbol: String, _ tip: String, _ id: String, _ action: @escaping () -> Void) -> NSButton {
-            let b = UI.button(symbol: symbol, tip: tip, id: id)
+        func small(_ symbol: String, _ tip: @escaping () -> String, _ id: String, _ action: @escaping () -> Void) -> NSButton {
+            let b = UI.button(symbol: symbol, tip: tip(), id: id)
             b.onAction { _ in action() }
+            buttons.append((b, tip))
             return b
         }
         let controls = UI.hstack([
-            small("minus", "Zoom out (⌘−)", "status.zoomOut") { [unowned self] in zoomOut() },
+            small("minus", { tr("Zoom out (⌘−)") }, "status.zoomOut") { [unowned self] in zoomOut() },
             zoomLabel,
-            small("plus", "Zoom in (⌘+)", "status.zoomIn") { [unowned self] in zoomIn() },
-            small("arrow.up.left.and.down.right.and.arrow.up.right.and.down.left", "Fit to window (⌘0)", "status.fit") { [unowned self] in fit() },
+            small("plus", { tr("Zoom in (⌘+)") }, "status.zoomIn") { [unowned self] in zoomIn() },
+            small("arrow.up.left.and.down.right.and.arrow.up.right.and.down.left", { tr("Fit to window (⌘0)") }, "status.fit") { [unowned self] in fit() },
         ], spacing: DS.Space.s4)
         for v in [info, controls] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
@@ -408,13 +457,21 @@ final class StatusBar: BarView {
     required init?(coder: NSCoder) { fatalError() }
 
     func update(model: EditorModel, zoom: CGFloat) {
-        zoomLabel.stringValue = "\(Int((zoom * 100).rounded()))%"
+        zoomLabel.stringValue = Digits.percent(zoom)
         let doc = model.document
         let out = Renderer.canvasSize(doc, assets: model.assets)
-        var parts = ["Source \(Int(doc.pixelSize.width)) × \(Int(doc.pixelSize.height))"]
-        if let c = doc.crop { parts.append("Crop \(Int(c.width)) × \(Int(c.height))") }
-        parts.append("Output \(Int(out.width)) × \(Int(out.height)) px")
-        parts.append("\(doc.annotations.count) annotation\(doc.annotations.count == 1 ? "" : "s")")
+        var parts = [tr("Source {size}", ["size": Digits.size(doc.pixelSize)])]
+        if let c = doc.crop { parts.append(tr("Crop {size}", ["size": Digits.size(c.size)])) }
+        parts.append(tr("Output {size} px", ["size": Digits.size(out)]))
+        parts.append(trPlural(one: "{count} annotation", other: "{count} annotations", count: doc.annotations.count))
         info.stringValue = parts.joined(separator: "   ·   ")
+    }
+
+    /// Swaps the tooltips in place. The readout text follows from the `update` that comes next.
+    func relocalize() {
+        for (button, tip) in buttons {
+            button.toolTip = tip()
+            button.setAccessibilityLabel(tip())
+        }
     }
 }

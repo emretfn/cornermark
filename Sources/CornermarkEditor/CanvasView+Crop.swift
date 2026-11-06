@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkDesign
 import CornermarkCore
+import CornermarkL10n
 
 extension CanvasView {
     private var cropBounds: CGRect { CGRect(origin: .zero, size: plan.canvasSize) }
@@ -146,7 +147,7 @@ extension CanvasView {
 
     /// The size chip sits inside the box's top-left corner when the box has room for it clear of the marks, else just outside.
     private func drawCropReadout(_ draft: CropDraft, box: CGRect, page: CGRect, mag: CGFloat) {
-        let label = "\(Int(draft.rect.width.rounded())) × \(Int(draft.rect.height.rounded()))" as NSString
+        let label = Digits.size(CGSize(width: draft.rect.width.rounded(), height: draft.rect.height.rounded())) as NSString
         let base = DS.Text.readout.font
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont(descriptor: base.fontDescriptor, size: base.pointSize / mag) ?? base,

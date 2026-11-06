@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCapture
+import CornermarkL10n
 
 /// Where a permission stands, read without asking.
 enum PermissionAnswer: String, Equatable {
@@ -34,10 +35,10 @@ extension RecordingSource {
     /// How to allow a source macOS refused. The privacy pane's name matches System Settings.
     var deniedNote: String {
         switch self {
-        case .microphone: return "Turn on Cornermark in System Settings > Privacy & Security > Microphone."
-        case .systemAudio: return "Turn on Cornermark in System Settings > Privacy & Security > Screen & System Audio Recording."
-        case .camera: return "Turn on Cornermark in System Settings > Privacy & Security > Camera."
-        case .clicks, .keystrokes: return "Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it."
+        case .microphone: return tr("Turn on Cornermark in System Settings > Privacy & Security > Microphone.")
+        case .systemAudio: return tr("Turn on Cornermark in System Settings > Privacy & Security > Screen & System Audio Recording.")
+        case .camera: return tr("Turn on Cornermark in System Settings > Privacy & Security > Camera.")
+        case .clicks, .keystrokes: return tr("Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it.")
         }
     }
 }
@@ -62,7 +63,7 @@ final class RecordingSourceToggles {
     /// Called just before Input Monitoring is requested. macOS sends no answer for it and the permission works only after Cornermark
     /// reopens, so the overlay closes first instead of waiting over the prompt.
     var onInputRequest: () -> Void = {}
-    static let waitingNote = "Waiting for permission. Answer the macOS prompt to go on."
+    static var waitingNote: String { tr("Waiting for permission. Answer the macOS prompt to go on.") }
 
     init(env: AppEnvironment, settings: SettingsStore) {
         self.env = env
@@ -88,10 +89,10 @@ final class RecordingSourceToggles {
         if !asking.isEmpty { return RecordingSources(on: on, pending: asking, note: .waiting(Self.waitingNote)) }
         if let refused { return RecordingSources(on: on, note: .blocked(refused.deniedNote)) }
         if let waiting = RecordingSource.allCases.first(where: { $0.isWanted(in: prefs) && !on.contains($0) }) {
-            let text = answer(waiting) == .denied ? waiting.deniedNote : "Turn on \(waiting.name) to allow access."
+            let text = answer(waiting) == .denied ? waiting.deniedNote : tr("Turn on {source} to allow access.", ["source": waiting.name])
             return RecordingSources(on: on, note: .blocked(text))
         }
-        if on.contains(.microphone) || on.contains(.systemAudio) { return RecordingSources(on: on, note: .hint("Record GIF never records sound.")) }
+        if on.contains(.microphone) || on.contains(.systemAudio) { return RecordingSources(on: on, note: .hint(tr("Record GIF never records sound."))) }
         return RecordingSources(on: on)
     }
 

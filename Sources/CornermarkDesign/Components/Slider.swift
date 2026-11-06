@@ -57,6 +57,10 @@ open class Slider: NSSlider {
 
     open override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    open override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { if oldValue != userInterfaceLayoutDirection { needsDisplay = true } }
+    }
+
     open override var isEnabled: Bool {
         didSet {
             if !isEnabled { isHovering = false }
@@ -109,7 +113,8 @@ open class Slider: NSSlider {
     /// Sets the value under the pointer and sends the action. The pointer's place across the whole field is the value.
     private func track(_ event: NSEvent) {
         let x = convert(event.locationInWindow, from: nil).x
-        let fraction = bounds.width > 0 ? min(max(x / bounds.width, 0), 1) : 0
+        let reach = bounds.width > 0 ? min(max(x / bounds.width, 0), 1) : 0
+        let fraction = isRightToLeft ? 1 - reach : reach
         doubleValue = settled(minValue + Double(fraction) * (maxValue - minValue))
         sendAction(action, to: target)
     }
@@ -124,12 +129,16 @@ open class Slider: NSSlider {
     // MARK: Keys
 
     /// Arrows step a field by a twentieth of its range, or a tick mark; Shift steps five times as far. Home and End go to the ends.
+    /// The value grows toward the left in a right-to-left language, so Left steps up there and Right steps down.
     open override func keyDown(with event: NSEvent) {
         guard style == .field, isEnabled else { return super.keyDown(with: event) }
         let far = event.modifierFlags.contains(.shift) && numberOfTickMarks == 0 ? 5.0 : 1.0
+        let toward = isRightToLeft ? -1.0 : 1.0
         switch event.keyCode {
-        case 123, 125: _ = step(by: -far)
-        case 124, 126: _ = step(by: far)
+        case 123: _ = step(by: -far * toward)
+        case 124: _ = step(by: far * toward)
+        case 125: _ = step(by: -far)
+        case 126: _ = step(by: far)
         case 115: set(minValue)
         case 119: set(maxValue)
         default: super.keyDown(with: event)
@@ -170,12 +179,15 @@ open class Slider: NSSlider {
         return isHovering ? .hover : .normal
     }
 
-    /// Where the fill ends, on a whole point.
-    var edgeX: CGFloat {
+    /// How far along the fill reaches, from its starting edge, on a whole point.
+    var fillLength: CGFloat {
         let span = maxValue - minValue
         let fraction = span > 0 ? min(max((doubleValue - minValue) / span, 0), 1) : 0
         return (bounds.width * CGFloat(fraction)).rounded()
     }
+
+    /// Where the fill ends, on a whole point. It starts at the left edge, or at the right edge in a right-to-left language.
+    var edgeX: CGFloat { isRightToLeft ? bounds.width - fillLength : fillLength }
 
     /// Interior marks: the tick marks of a stepped slider, or the detents of a free one.
     var tickValues: [Double] {
@@ -191,13 +203,12 @@ open class Slider: NSSlider {
         Paint.fill(field, state == .hover || state == .pressed ? c.bgControlHover : c.bgControl)
         NSGraphicsContext.saveGraphicsState()
         field.addClip()
-        let edge = edgeX
-        if edge > 0 { Paint.fill(NSBezierPath(rect: CGRect(x: 0, y: 0, width: edge, height: bounds.height)), c.bgControlActive) }
+        if fillLength > 0 { Paint.fill(NSBezierPath(rect: mirrored(CGRect(x: 0, y: 0, width: fillLength, height: bounds.height))), c.bgControlActive) }
         let span = maxValue - minValue
         let tickHeight = DS.Space.s4 + 1
         for value in tickValues where span > 0 {
             let x = (bounds.width * CGFloat((value - minValue) / span)).rounded()
-            Paint.fill(NSBezierPath(rect: CGRect(x: x, y: isFlipped ? bounds.maxY - tickHeight : 0, width: 1, height: tickHeight)),
+            Paint.fill(NSBezierPath(rect: mirrored(CGRect(x: x, y: isFlipped ? bounds.maxY - tickHeight : 0, width: 1, height: tickHeight))),
                        state == .disabled ? c.border : c.borderStrong)
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -206,21 +217,21 @@ open class Slider: NSSlider {
         let active = state == .hover || state == .pressed || isFocused
         for piece in layout.marker { Paint.fill(NSBezierPath(rect: piece), active ? c.textPrimary : c.textSecondary) }
         guard let text = layout.text else { return }
-        Paint.text(text, DS.Text.readout, state == .disabled ? c.textDisabled : c.textPrimary, in: layout.textRect)
+        Paint.text(text, DS.Text.readout, state == .disabled ? c.textDisabled : c.textPrimary, in: layout.textRect, rtl: isRightToLeft)
     }
 
-    /// The value text and the edge marker of a field. The value sits at the field's right end and never moves. The marker stops short
+    /// The value text and the edge marker of a field. The value sits at the field's trailing end and never moves. The marker stops short
     /// of it, so once the fill reaches the value the marker leaves only stubs above and below the text and the number stays clean at
     /// any fill. Every rect is on whole points.
     func fieldLayout(_ state: InteractionState) -> (text: String?, textRect: CGRect, marker: [CGRect]) {
         let text = format?(doubleValue)
         let width = text.map { Paint.width(of: $0, DS.Text.readout) } ?? 0
         let lineHeight = DS.Text.readout.lineHeight
-        let textRect = CGRect(x: (bounds.maxX - DS.Space.s8 - width).rounded(), y: ((bounds.height - lineHeight) / 2).rounded(), width: width, height: lineHeight)
-        let edge = edgeX
+        let textRect = mirrored(CGRect(x: (bounds.maxX - DS.Space.s8 - width).rounded(), y: ((bounds.height - lineHeight) / 2).rounded(), width: width, height: lineHeight))
+        let edge = fillLength
         guard state != .disabled, edge >= 2 else { return (text, textRect, []) }
         let inset = state == .pressed ? DS.Space.s4 : DS.Space.s6
-        let marker = CGRect(x: edge - 2, y: inset, width: 2, height: bounds.height - 2 * inset)
+        let marker = mirrored(CGRect(x: edge - 2, y: inset, width: 2, height: bounds.height - 2 * inset))
         let keepOut = textRect.insetBy(dx: -DS.Space.s4, dy: 0)
         guard text != nil, marker.maxX > keepOut.minX, marker.minX < keepOut.maxX else { return (text, textRect, [marker]) }
         let pieces = [CGRect(x: marker.minX, y: marker.minY, width: 2, height: keepOut.minY - marker.minY),
@@ -258,8 +269,11 @@ final class SliderCell: NSSliderCell {
         let enabled = isEnabled
         Paint.fill(NSBezierPath.continuous(track, radius: Self.trackHeight / 2), DS.Color.bgControlActive)
 
-        let travel = knobRect(flipped: flipped).midX - track.minX
-        let filled = CGRect(x: track.minX, y: track.minY, width: max(travel, 0), height: track.height)
+        // AppKit already puts the knob at the right end of a right-to-left slider's range start, and the fill grows from there.
+        let knobX = knobRect(flipped: flipped).midX
+        let rtl = controlView?.isRightToLeft ?? false
+        let travel = rtl ? track.maxX - knobX : knobX - track.minX
+        let filled = CGRect(x: rtl ? track.maxX - max(travel, 0) : track.minX, y: track.minY, width: max(travel, 0), height: track.height)
         if filled.width > 0 {
             Paint.fill(NSBezierPath.continuous(filled, radius: Self.trackHeight / 2), enabled ? DS.Color.textSecondary : DS.Color.textDisabled)
         }

@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// A flat colour behind a window's content, so a snapshot of the view carries the window colour too.
 final class FillView: NSView {
@@ -30,9 +31,9 @@ private final class PermissionTile: NSView {
 /// A numbered disc. The digit is drawn on the text's optical line so it sits in the middle of the disc.
 private final class StepNumber: NSView {
     static let side: CGFloat = 20
-    private let digit: String
+    private let digit: Int
     init(_ digit: Int) {
-        self.digit = "\(digit)"
+        self.digit = digit
         super.init(frame: .zero)
         setAccessibilityElement(false)
     }
@@ -46,7 +47,7 @@ private final class StepNumber: NSView {
         let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
         paragraph.alignment = .center
         attributes[.paragraphStyle] = paragraph
-        NSAttributedString(string: digit, attributes: attributes)
+        NSAttributedString(string: Numerals.text(digit), attributes: attributes)
             .draw(with: CGRect(x: 0, y: bounds.midY - style.lineHeight / 2, width: bounds.width, height: style.lineHeight), options: [.usesLineFragmentOrigin])
     }
 }
@@ -56,12 +57,13 @@ private final class StepNumber: NSView {
 final class PermissionWindowController: NSWindowController {
     private let env: AppEnvironment
     private static let width: CGFloat = 520
+    private var language: LanguageObserver?
 
     init(env: AppEnvironment) {
         self.env = env
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 340),
                               styleMask: [.titled, .closable], backing: .buffered, defer: true)
-        window.title = "Screen Recording Permission"
+        window.title = tr("Screen Recording Permission")
         window.backgroundColor = DS.Color.bgWindow
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -71,15 +73,27 @@ final class PermissionWindowController: NSWindowController {
         window.contentView = content
         window.setContentSize(fitted)
         window.center()
+        language = LanguageObserver { [weak self] in self?.relocalize() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    static let steps = [
-        "Open System Settings \u{2192} Privacy & Security \u{2192} Screen & System Audio Recording.",
-        "Switch on Cornermark in the list. If it is missing, click + and add Cornermark.app.",
-        "Quit and reopen Cornermark. macOS only applies the permission to a freshly launched app.",
-    ]
+    /// Builds the window's content again in the new language. The window stays where it is, and keeps its top left corner if the text
+    /// needs a different height.
+    private func relocalize() {
+        guard let window else { return }
+        window.title = tr("Screen Recording Permission")
+        let content = buildContent()
+        window.replaceContent(content, fitting: content.frame.size)
+    }
+
+    static var steps: [String] {
+        [
+            tr("Open System Settings \u{2192} Privacy & Security \u{2192} Screen & System Audio Recording."),
+            tr("Switch on Cornermark in the list. If it is missing, click + and add Cornermark.app."),
+            tr("Quit and reopen Cornermark. macOS only applies the permission to a freshly launched app."),
+        ]
+    }
 
     private func wrapping(_ text: String, _ style: TextStyle, _ color: NSColor, width: CGFloat) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: text)
@@ -93,14 +107,14 @@ final class PermissionWindowController: NSWindowController {
     private func buildContent() -> NSView {
         let inner = Self.width - 2 * DS.Space.s24
 
-        let title = wrapping("Cornermark needs permission to record your screen", DS.Text.title, DS.Color.textPrimary,
+        let title = wrapping(tr("Cornermark needs permission to record your screen"), DS.Text.title, DS.Color.textPrimary,
                              width: inner - PermissionTile.side - DS.Space.s12)
         let header = NSStackView(views: [PermissionTile(), title])
         header.orientation = .horizontal
         header.spacing = DS.Space.s12
         header.alignment = .centerY
 
-        let intro = wrapping("macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.",
+        let intro = wrapping(tr("macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it."),
                              DS.Text.body, DS.Color.textSecondary, width: inner)
 
         let steps = NSStackView()
@@ -129,14 +143,14 @@ final class PermissionWindowController: NSWindowController {
             steps.addArrangedSubview(row)
         }
 
-        let hint = wrapping("After you switch it on, macOS asks you to quit Cornermark. Reopen it from Applications.", DS.Text.caption, DS.Color.textSecondary, width: inner)
+        let hint = wrapping(tr("After you switch it on, macOS asks you to quit Cornermark. Reopen it from Applications."), DS.Text.caption, DS.Color.textSecondary, width: inner)
 
-        let openButton = Button(title: "Open System Settings", variant: .primary)
+        let openButton = Button(title: tr("Open System Settings"), variant: .primary)
         openButton.keyEquivalent = "\r"
         openButton.target = self
         openButton.action = #selector(openSettings)
         openButton.setAccessibilityIdentifier("permission.open")
-        let quitButton = Button(title: "Quit Cornermark", variant: .ghost)
+        let quitButton = Button(title: tr("Quit Cornermark"), variant: .ghost)
         quitButton.target = self
         quitButton.action = #selector(quit)
         quitButton.setAccessibilityIdentifier("permission.quit")
@@ -164,6 +178,7 @@ final class PermissionWindowController: NSWindowController {
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
         ])
+        root.applyLanguageDirection()
         root.layoutSubtreeIfNeeded()
         root.setFrameSize(NSSize(width: Self.width, height: ceil(stack.fittingSize.height)))
         return root

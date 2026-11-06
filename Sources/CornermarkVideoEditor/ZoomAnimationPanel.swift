@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// How the camera moves in this video, opened from Animation Settings in the zoom panel: the length of a move into or out of a zoom,
 /// and how a Follow Cursor zoom keeps up with the pointer. It floats over the settings column, leaving the preview whole, and applies
@@ -14,17 +15,17 @@ final class ZoomAnimationPanel: Surface {
     var onSliderEnd: () -> Void = {}
     var onClose: () -> Void = {}
 
-    private let title = NSTextField.label("Animation Settings", style: DS.Text.heading, color: DS.Color.textPrimary)
-    private let scope = NSTextField.label("Applies to every zoom in this video.", style: DS.Text.caption, color: DS.Color.textSecondary)
-    private let moveHeading = NSTextField.label("Zoom in and out", style: DS.Text.captionStrong, color: DS.Color.textPrimary)
-    private let followHeading = NSTextField.label("Follow Cursor", style: DS.Text.captionStrong, color: DS.Color.textPrimary)
+    private let title = NSTextField.label(tr("Animation Settings"), style: DS.Text.heading, color: DS.Color.textPrimary)
+    private let scope = NSTextField.label(tr("Applies to every zoom in this video."), style: DS.Text.caption, color: DS.Color.textSecondary)
+    private let moveHeading = NSTextField.label(tr("Zoom in and out"), style: DS.Text.captionStrong, color: DS.Color.textPrimary)
+    private let followHeading = NSTextField.label(tr("Follow Cursor"), style: DS.Text.captionStrong, color: DS.Color.textPrimary)
     private let duration = TrackingSlider()
     private let deadZone = TrackingSlider()
     private let settle = TrackingSlider()
-    private let moveNote = ZoomAnimationPanel.note("How long the camera takes to zoom in or out.")
-    private let followNote = ZoomAnimationPanel.note("The pointer moves freely inside the hold area. Once it leaves, the camera catches up in about this time.")
-    private let reset = Button(title: "Reset to Defaults", variant: .ghost, size: .small)
-    private let done = Button(title: "Done", variant: .secondary, size: .small)
+    private let moveNote = ZoomAnimationPanel.note(tr("How long the camera takes to zoom in or out."))
+    private let followNote = ZoomAnimationPanel.note(tr("The pointer moves freely inside the hold area. Once it leaves, the camera catches up in about this time."))
+    private let reset = Button(title: tr("Reset to Defaults"), variant: .ghost, size: .small)
+    private let done = Button(title: tr("Done"), variant: .secondary, size: .small)
     private(set) var animation = ZoomAnimation()
 
     /// Catch-up is shown as the seconds the camera takes to settle, so all three read as a feel rather than a rate.
@@ -44,16 +45,16 @@ final class ZoomAnimationPanel: Surface {
         duration.doubleValue = animation.duration
         duration.setAccessibilityValueDescription(Self.spoken(animation.duration))
         deadZone.doubleValue = animation.deadZone
-        deadZone.setAccessibilityValueDescription("\(Self.percent(animation.deadZone)) of the view")
+        deadZone.setAccessibilityValueDescription(tr("{percent} of the view", ["percent": Self.percent(animation.deadZone)]))
         let settling = min(max(animation.settleTime, Self.settleRange.lowerBound), Self.settleRange.upperBound)
         settle.doubleValue = settling
         settle.setAccessibilityValueDescription(Self.spoken(animation.settleTime))
         reset.isEnabled = animation != ZoomAnimation()
     }
 
-    static func seconds(_ s: Double) -> String { String(format: "%.2f s", s) }
-    static func percent(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
-    static func spoken(_ s: Double) -> String { String(format: "%.2f seconds", s) }
+    static func seconds(_ s: Double) -> String { tr("{value} s", ["value": Digits.fixed(s, 2)]) }
+    static func percent(_ v: Double) -> String { Digits.percent(v) }
+    static func spoken(_ s: Double) -> String { tr("{value} seconds", ["value": Digits.fixed(s, 2)]) }
 
     private static func note(_ text: String) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: text)
@@ -74,12 +75,12 @@ final class ZoomAnimationPanel: Surface {
             s.action = action
             s.onTrackingEnd = { [unowned self] in onSliderEnd() }
         }
-        configure(duration, ZoomAnimation.durationRange, id: "video.zoomAnimation.duration", label: "Zoom move duration", action: #selector(durationMoved))
-        configure(deadZone, ZoomAnimation.deadZoneRange, id: "video.zoomAnimation.holdArea", label: "Hold area", action: #selector(deadZoneMoved))
-        configure(settle, Self.settleRange, id: "video.zoomAnimation.catchUp", label: "Catch-up time", action: #selector(settleMoved))
-        duration.toolTip = "Seconds for each move into or out of a zoom. Zooms closer than two moves hand over without returning to 100%."
-        deadZone.toolTip = "The share of the view the pointer moves in before a Follow Cursor zoom pans."
-        settle.toolTip = "Seconds a Follow Cursor zoom takes to catch up after the pointer leaves the hold area."
+        configure(duration, ZoomAnimation.durationRange, id: "video.zoomAnimation.duration", label: tr("Zoom move duration"), action: #selector(durationMoved))
+        configure(deadZone, ZoomAnimation.deadZoneRange, id: "video.zoomAnimation.holdArea", label: tr("Hold area"), action: #selector(deadZoneMoved))
+        configure(settle, Self.settleRange, id: "video.zoomAnimation.catchUp", label: tr("Catch-up time"), action: #selector(settleMoved))
+        duration.toolTip = tr("Seconds for each move into or out of a zoom. Zooms closer than two moves hand over without returning to 100%.")
+        deadZone.toolTip = tr("The share of the view the pointer moves in before a Follow Cursor zoom pans.")
+        settle.toolTip = tr("Seconds a Follow Cursor zoom takes to catch up after the pointer leaves the hold area.")
         title.setAccessibilityIdentifier("video.zoomAnimation.title")
         moveNote.setAccessibilityIdentifier("video.zoomAnimation.moveNote")
         followNote.setAccessibilityIdentifier("video.zoomAnimation.followNote")
@@ -94,9 +95,9 @@ final class ZoomAnimationPanel: Surface {
         duration.format = { Self.seconds(($0 * 100).rounded() / 100) }
         deadZone.format = { Self.percent($0) }
         settle.format = { Self.seconds(($0 * 100).rounded() / 100) }
-        let durationRow = row("Duration", [duration])
-        let holdRow = row("Hold area", [deadZone])
-        let catchUpRow = row("Catch-up", [settle])
+        let durationRow = row(tr("Duration"), [duration])
+        let holdRow = row(tr("Hold area"), [deadZone])
+        let catchUpRow = row(tr("Catch-up"), [settle])
         let rule = Separator(axis: .horizontal)
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
@@ -129,7 +130,7 @@ final class ZoomAnimationPanel: Surface {
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Animation Settings")
+        setAccessibilityLabel(tr("Animation Settings"))
         setAccessibilityIdentifier("video.zoomAnimation.panel")
     }
 
