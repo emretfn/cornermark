@@ -1,4 +1,5 @@
 import Foundation
+import CornermarkL10n
 
 /// A release number such as `0.2.1`. Anything other than three numeric parts is not a version.
 struct AppVersion: Comparable, Equatable, CustomStringConvertible {
@@ -90,6 +91,16 @@ struct ReleaseNotes: Equatable {
         /// Empty for bullets that come before any heading.
         let title: String
         let items: [String]
+
+        /// The title as a reader sees it. The two names this app gives the changelog's groups follow the language; any other
+        /// heading is the release's own text.
+        var displayTitle: String {
+            switch title {
+            case "New": return tr("New")
+            case "Fixed": return tr("Fixed")
+            default: return title
+            }
+        }
     }
 
     let sections: [Section]
@@ -142,7 +153,7 @@ struct ReleaseNotes: Equatable {
     /// Each section title on its own line, then one `\u{2022}` line per item.
     var plainText: String {
         sections.map { section in
-            (section.title.isEmpty ? [] : [section.title]) + section.items.map { "\u{2022} \($0)" }
+            (section.title.isEmpty ? [] : [section.displayTitle]) + section.items.map { "\u{2022} \($0)" }
         }
         .map { $0.joined(separator: "\n") }
         .joined(separator: "\n\n")
@@ -208,18 +219,18 @@ enum UpdateState: Equatable {
 
     var menuTitle: String {
         switch self {
-        case .idle: return "Check for Updates\u{2026}"
-        case .checking: return "Checking for Updates\u{2026}"
-        case .available(let r): return "Install Cornermark \(r.version)\u{2026}"
-        case .installing(let r): return "Installing Cornermark \(r.version)\u{2026}"
+        case .idle: return tr("Check for Updates\u{2026}")
+        case .checking: return tr("Checking for Updates\u{2026}")
+        case .available(let r): return tr("Install Cornermark {version}\u{2026}", ["version": "\(r.version)"])
+        case .installing(let r): return tr("Installing Cornermark {version}\u{2026}", ["version": "\(r.version)"])
         }
     }
 
     /// The short text beside the menu bar icon, nil when there is nothing to point out.
     var statusLabel: String? {
         switch self {
-        case .available: return "Update"
-        case .installing: return "Updating\u{2026}"
+        case .available: return tr("Update")
+        case .installing: return tr("Updating\u{2026}")
         case .idle, .checking: return nil
         }
     }
@@ -254,25 +265,25 @@ enum UpdateError: Error, Equatable {
     var message: String {
         switch self {
         case .selfNotReleaseSigned:
-            return "This copy of Cornermark was not signed by a release, so it cannot check that an update is genuine."
+            return tr("This copy of Cornermark was not signed by a release, so it cannot check that an update is genuine.")
         case .signatureMismatch:
-            return "The downloaded app is not signed by the same certificate as this one, so it was not installed."
+            return tr("The downloaded app is not signed by the same certificate as this one, so it was not installed.")
         case .versionMismatch:
-            return "The downloaded app is not the newer version the release announced, so it was not installed."
+            return tr("The downloaded app is not the newer version the release announced, so it was not installed.")
         case .bundleMissing:
-            return "The download does not contain Cornermark.app."
+            return tr("The download does not contain Cornermark.app.")
         case .noDownload:
-            return "This release has no download yet."
+            return tr("This release has no download yet.")
         case .cannotReplace(let path):
-            return "Cornermark cannot replace itself at \(path). Move it to the Applications folder, or install the update by hand."
+            return tr("Cornermark cannot replace itself at {path}. Move it to the Applications folder, or install the update by hand.", ["path": path])
         case .relaunchFailed:
-            return "The update is installed, but Cornermark could not reopen itself. Open it again from Applications."
+            return tr("The update is installed, but Cornermark could not reopen itself. Open it again from Applications.")
         case .badResponse:
-            return "GitHub sent an answer Cornermark could not read."
+            return tr("GitHub sent an answer Cornermark could not read.")
         case .network(let detail):
-            return "Cornermark could not reach GitHub. \(detail)"
+            return tr("Cornermark could not reach GitHub. {detail}", ["detail": detail])
         case .process(let detail):
-            return "Unpacking the download failed. \(detail)"
+            return tr("Unpacking the download failed. {detail}", ["detail": detail])
         }
     }
 }
