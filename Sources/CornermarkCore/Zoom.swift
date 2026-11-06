@@ -1,7 +1,6 @@
 import Foundation
 
-/// What the camera aims at inside a zoom. Until following the pointer and picking a target by hand arrive, both modes hold the
-/// zoom's stored center.
+/// What the camera aims at inside a zoom: the pointer, kept in view as it moves, or the zoom's stored center.
 public enum ZoomMode: String, Codable, CaseIterable, Sendable {
     case followCursor, manual
 
@@ -98,32 +97,42 @@ public enum ZoomCurve {
 }
 
 public enum ZoomCamera {
-    /// What the finished video shows at `t` seconds. Pure, so preview and export cannot disagree.
+    /// What the finished video shows at `t` seconds. Pure, so preview and export cannot disagree. A zoom that follows the cursor
+    /// aims where `FollowPath` says; the recording's pointer is read through the project's clips.
+    public static func rect(_ project: RecordingProject, at t: Double) -> ZoomRect {
+        rect(project.edits.zooms, at: t, follow: FollowPath.of(project))
+    }
+
+    /// The same with every zoom aimed at its stored center, as when the recording has no pointer to follow.
+    public static func rect(_ zooms: [Zoom], at t: Double) -> ZoomRect { rect(zooms, at: t, follow: nil) }
+
     /// A zoom's move in happens over its first `ramp` seconds and its move out over its last, so outside every zoom the picture is
     /// whole. A zoom that starts within `joinGap` of the one before moves in from that zoom instead of from the whole picture, and
     /// the one before then holds until it does.
-    public static func rect(_ zooms: [Zoom], at t: Double) -> ZoomRect {
+    static func rect(_ zooms: [Zoom], at t: Double, follow: FollowPath?) -> ZoomRect {
         guard let i = zooms.lastIndex(where: { $0.start <= t }) else { return .full }
+        func aim(_ k: Int) -> ZoomRect { target(zooms[k], center: follow?.center(k, at: t)) }
         let zoom = zooms[i]
         let joinedNext = i + 1 < zooms.count && zooms[i + 1].start - zoom.end < ZoomCurve.joinGap
-        guard t < zoom.end else { return joinedNext ? target(zoom) : .full }
+        guard t < zoom.end else { return joinedNext ? aim(i) : .full }
         let joinedPrevious = i > 0 && zoom.start - zooms[i - 1].end < ZoomCurve.joinGap
         let ramp = ZoomCurve.ramp(zoom)
         if t < zoom.start + ramp {
-            let from = joinedPrevious ? target(zooms[i - 1]) : .full
-            return blend(from, target(zoom), ZoomCurve.smootherstep((t - zoom.start) / ramp))
+            let from = joinedPrevious ? aim(i - 1) : .full
+            return blend(from, aim(i), ZoomCurve.smootherstep((t - zoom.start) / ramp))
         }
         if !joinedNext && t > zoom.end - ramp {
-            return blend(.full, target(zoom), ZoomCurve.smootherstep((zoom.end - t) / ramp))
+            return blend(.full, aim(i), ZoomCurve.smootherstep((zoom.end - t) / ramp))
         }
-        return target(zoom)
+        return aim(i)
     }
 
-    /// The zoom's level around its center, moved inside the picture where the center sits too close to an edge.
-    public static func target(_ zoom: Zoom) -> ZoomRect {
+    /// The zoom's level around `center`, or its stored center, moved inside the picture where it sits too close to an edge.
+    public static func target(_ zoom: Zoom, center: ZoomPoint? = nil) -> ZoomRect {
         let side = 1 / min(max(zoom.scale, Zoom.scaleRange.lowerBound), Zoom.scaleRange.upperBound)
-        func origin(_ c: Double) -> Double { min(max(c - side / 2, 0), 1 - side) }
-        return ZoomRect(x: origin(zoom.center.x), y: origin(zoom.center.y), width: side, height: side)
+        let c = center ?? zoom.center
+        func origin(_ v: Double) -> Double { min(max(v - side / 2, 0), 1 - side) }
+        return ZoomRect(x: origin(c.x), y: origin(c.y), width: side, height: side)
     }
 
     /// The scale goes from `a`'s to `b`'s along `e` by equal ratios, so a move in and a move out are mirror images and the picture
