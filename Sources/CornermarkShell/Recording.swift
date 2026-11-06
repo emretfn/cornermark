@@ -185,6 +185,12 @@ final class RecordingController {
     /// A stop during the countdown ends it with no file.
     private var cancelRequested = false
     private var activity: NSObjectProtocol?
+    /// The camera's look while a recording with the camera runs. The bubble on screen and the recorder both read it.
+    private(set) var cameraLook: CameraLook?
+    /// Camera pictures for the bubble on screen, from the camera's queue.
+    let cameraFeed = CameraFeed()
+    /// Called on the main thread when the camera's look changes during a recording.
+    var onCameraChange: () -> Void = {}
     /// Seconds between countdown numbers. The harness shortens it.
     var countdownTick: TimeInterval = 1
     var onSaved: (FinishedRecording) -> Void = { _ in }
@@ -231,6 +237,7 @@ final class RecordingController {
         self.destination = destination
         self.target = target
         self.preferences = preferences
+        cameraLook = preferences.camera.isVisible ? CameraLook(preferences.camera) : nil
         request = Request(target: target, style: style, preferences: preferences)
         // The activity keeps the display awake until `reset` ends it, countdown included.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleDisplaySleepDisabled, .latencyCritical], reason: "Recording the screen")
@@ -249,11 +256,12 @@ final class RecordingController {
             Log.shell.error("recording input unavailable: Input Monitoring is not allowed, recording without clicks and keystrokes")
             onNotice("Turn on Input Monitoring to show clicks and keys")
         }
+        let camera = cameraRecording(style: request.style, destination: destination)
         let sound = audio(for: request, destination: destination, source: source)
         // A finished video or GIF has its pointer in the picture, so nothing watches it.
         let recorder = Recorder(source: source, output: destination.film, pointer: request.style == .editing ? env.pointerSource() : nil,
                                 input: input, marks: request.preferences.marks(for: request.style),
-                                microphone: sound.microphone, systemAudio: sound.system, quality: options.quality)
+                                microphone: sound.microphone, systemAudio: sound.system, camera: camera, quality: options.quality)
         let inputKind = input.map { $0 is ScriptedInputSource ? "scripted" : "live" } ?? "none"
         let kind = source is FixtureFrameSource ? "fixture" : "screen"
         recorder.onFailure = { [weak self] error in
@@ -285,6 +293,12 @@ final class RecordingController {
                                                           kind: request.target.captureKind, area: recorder.pointArea)
                 let size = recorder.format.map { "\($0.width)x\($0.height)" } ?? "?"
                 Log.shell.notice("recording input source=\(inputKind, privacy: .public) clicks=\(capture.clicks, privacy: .public) keys=\(capture.keys?.rawValue ?? "off", privacy: .public) marksInPicture=\(recorder.marksInPicture, privacy: .public) failure=\(recorder.inputFailure.map(String.init(describing:)) ?? "none", privacy: .public) taps=\(LiveInputSource.tapsCreated, privacy: .public)")
+                let cameraKind = camera.map { $0.source is ScriptedCameraSource ? "scripted" : "live" } ?? "none"
+                Log.shell.notice("recording camera wanted=\(request.preferences.camera.isVisible, privacy: .public) source=\(cameraKind, privacy: .public) access=\(self.env.cameraAccess().rawValue, privacy: .public) inPicture=\(recorder.cameraInPicture, privacy: .public) failure=\(recorder.cameraFailure.map(String.init(describing:)) ?? "none", privacy: .public) requests=\(CameraAccess.requests, privacy: .public) sessions=\(LiveCameraSource.sessionsOpened, privacy: .public)")
+                if recorder.cameraFailure != nil {
+                    cameraLook = nil
+                    onNotice("The camera could not start, so this recording has no camera. Quit other apps using the camera and record again.")
+                }
                 Log.shell.notice("recording started project=\(name, privacy: .public) style=\(request.style.rawValue, privacy: .public) source=\(kind, privacy: .public) size=\(size, privacy: .public) fps=\(options.fps, privacy: .public) quality=\(options.quality.rawValue, privacy: .public) cursorInPicture=\(options.showsCursor, privacy: .public) hideNotifications=\(options.exclusion.hidesNotifications, privacy: .public) hideDesktopIcons=\(options.exclusion.hidesDesktopIcons, privacy: .public) clock=\(String(format: "%.6f", recordingClockNow()), privacy: .public)")
                 phase = .recording
                 startMeter()
@@ -295,6 +309,45 @@ final class RecordingController {
                 onFailed(error as? RecordingError == .permissionDenied ? "Screen recording is not allowed" : "Could not start recording")
             }
         }
+    }
+
+    /// The camera is drawn into a finished video or GIF, and written to its own file beside a project's video.
+    private func cameraRecording(style: RecordingStyle, destination: RecordedVideo) -> CameraRecording? {
+        guard cameraLook != nil else { return nil }
+        guard env.cameraAccess() == .allowed, let source = env.cameraSource() else {
+            cameraLook = nil
+            guard env.cameraAccess() != .allowed else { return nil }
+            Log.shell.error("recording camera unavailable: camera access is \(self.env.cameraAccess().rawValue, privacy: .public), recording without the camera")
+            onNotice("Allow camera access in Settings > Camera to show the camera")
+            return nil
+        }
+        guard let cameraLook else { return nil }
+        let output = style == .editing ? destination.location.appendingPathComponent(RecordingProjectFile.cameraName) : nil
+        let feed = cameraFeed
+        return CameraRecording(source: source, output: output, look: cameraLook, preview: { feed.send($0) })
+    }
+
+    /// Changes the camera's look while recording. A click on the bubble toggles full screen through here too.
+    func changeCamera(_ change: CameraChange) {
+        guard phase != .idle, phase != .stopping, let look = cameraLook else { return Log.shell.error("recording refused: no camera is showing") }
+        look.update { b in
+            if let shape = change.shape { b.shape = shape }
+            if let size = change.size { b.size = size }
+            if let corner = change.corner { b.corner = corner }
+            if let mirrored = change.mirrored { b.isMirrored = mirrored }
+        }
+        if let full = change.fullScreen {
+            let on: Bool
+            switch full {
+            case .on: on = true
+            case .off: on = false
+            case .toggle: on = !look.isFullScreen
+            }
+            look.setFullScreen(on, at: recordingClockNow())
+        }
+        let b = look.current
+        Log.shell.notice("camera changed shape=\(b.shape.rawValue, privacy: .public) size=\(b.size.rawValue, privacy: .public) corner=\(b.corner.rawValue, privacy: .public) mirrored=\(b.isMirrored, privacy: .public) fullScreen=\(look.isFullScreen, privacy: .public)")
+        onCameraChange()
     }
 
     func pause() {
@@ -370,6 +423,10 @@ final class RecordingController {
             journalEntry = nil
             if destination.format != .gif, let entry { env.recordingJournal?.close(entry) }
             let rate = String(format: "%.3f", report.dropRate * 100)
+            if let camera = report.camera {
+                let b = camera.bubble
+                Log.shell.notice("recording camera finished pictures=\(camera.pictures, privacy: .public) filled=\(camera.filled, privacy: .public) file=\(camera.file?.lastPathComponent ?? "none", privacy: .public) fullScreenSpans=\(b.fullScreen.count, privacy: .public) shape=\(b.shape.rawValue, privacy: .public) size=\(b.size.rawValue, privacy: .public) corner=\(b.corner.rawValue, privacy: .public) mirrored=\(b.isMirrored, privacy: .public)")
+            }
             let marked = recorder.markedFrames
             Log.shell.notice("recording input finished clicks=\(report.clicks.count, privacy: .public) keys=\(report.keys.count, privacy: .public) markedFrames=\(marked.marked, privacy: .public) filledFrames=\(marked.filled, privacy: .public)")
             let seconds = String(format: "%.3f", report.duration)
@@ -407,6 +464,7 @@ final class RecordingController {
         request = nil
         area = nil
         target = nil
+        cameraLook = nil
         phase = .idle
         env.recordingTestWindow?.close()
         if let activity { ProcessInfo.processInfo.endActivity(activity) }

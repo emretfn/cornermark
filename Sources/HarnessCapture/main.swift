@@ -34,6 +34,7 @@ Task { @MainActor in
     await runRecordingControlTests()
     await runProjectTimelineTests()
     await runInputTests()
+    await runCameraTests()
     await runAudioTests()
     check(LiveMicrophoneSource.sessionsOpened == 0 && MicrophoneAccess.requests == 0, "no real audio device was opened and microphone access was never requested")
     check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))

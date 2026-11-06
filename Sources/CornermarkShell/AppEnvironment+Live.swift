@@ -62,6 +62,9 @@ extension AppEnvironment {
         env.pointerSource = { LivePointerSource() }
         env.inputSource = { LiveInputSource(capture: $0) }
         env.hasInputPermission = { LiveInputSource.isPermitted }
+        env.cameraSource = { LiveCameraSource() }
+        env.cameraAccess = { CameraAccess.current }
+        env.requestCameraAccess = { CameraAccess.request($0) }
         env.microphones = { LiveMicrophoneSource.devices() }
         env.microphoneAccess = { MicrophoneAccess.current }
         env.requestMicrophoneAccess = { MicrophoneAccess.request($0) }
@@ -102,6 +105,12 @@ extension AppEnvironment {
         env.pointerSource = { ScriptedPointerSource() }
         env.inputSource = { ScriptedInputSource(capture: $0) }
         env.hasInputPermission = { true }
+        env.cameraSource = { ScriptedCameraSource() }
+        env.cameraAccess = { .allowed }
+        env.requestCameraAccess = { done in
+            Log.shell.error("camera access request refused: a scripted instance never asks")
+            done(false)
+        }
         // Sound comes from scripts, so no real device is ever opened and access is never asked for.
         env.microphones = { ScriptedAudioSource.microphones }
         env.microphoneAccess = { .allowed }

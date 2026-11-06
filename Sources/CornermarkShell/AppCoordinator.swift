@@ -50,8 +50,10 @@ final class AppCoordinator {
         updates = UpdateController(env: env, hud: hud)
         recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
         controls = RecordingControls(env: env, recording: recording)
+        // A corner the bubble was dragged to is where the next recording starts it.
+        controls.camera.onCorner = { corner in store.update { $0.recording.camera.corner = corner } }
 
-        recording.onSaved = { [unowned self] finished in Task { await recordingFinished(finished) } }
+        recording.onSaved = { [weak self] finished in Task { await self?.recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         overlay.perform = { [unowned self] action, card in cardAction(action, card) }
@@ -96,6 +98,7 @@ final class AppCoordinator {
         case .controlRecording(.pause): recording.pause()
         case .controlRecording(.resume): recording.resume()
         case .controlRecording(.restart): recording.restart()
+        case .changeCamera(let change): recording.changeCamera(change)
         case .openRecordingTestWindow: openRecordingTestWindow()
         case .filmVideoEditor(let folder, let scene): filmVideoEditor(folder, scene: scene)
         case .quit: env.quit()

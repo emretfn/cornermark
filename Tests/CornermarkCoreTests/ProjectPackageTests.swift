@@ -27,6 +27,19 @@ final class ProjectPackageTests: XCTestCase {
         XCTAssertEqual(unknown.source.origin, .recording, "an origin a later version adds still opens")
     }
 
+    func testEveryFieldOfAProjectDecodesLeniently() throws {
+        let json = #"{"source": {"video": "a.mov", "origin": "file", "camera": 7, "microphone": 3}, "edits": {"cursor": 5, "clips": "x", "zooms": 9, "background": "x", "camera": [], "clicks": 1, "keystrokes": 2}}"#
+        let p = try JSONDecoder().decode(RecordingProject.self, from: Data(json.utf8))
+        XCTAssertEqual(p.source.origin, .file)
+        XCTAssertNil(p.source.camera)
+        XCTAssertNil(p.source.microphone)
+        XCTAssertEqual(p.edits.cursor, CursorSettings())
+        XCTAssertTrue(p.edits.zooms.isEmpty)
+        XCTAssertEqual(p.edits.background, VideoBackground())
+        XCTAssertEqual(p.edits.camera, CameraBubble())
+        XCTAssertEqual(p.edits.clips.count, 1, "damaged clips fall back to the whole recording")
+    }
+
     func testOriginRoundTrips() throws {
         let (url, project) = try folder("Clip.cornermarkvideo", video: "clip.mov", origin: .file)
         XCTAssertEqual(try RecordingProjectFile.read(from: url), project)

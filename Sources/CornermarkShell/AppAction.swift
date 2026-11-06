@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 enum ActionID: String, CaseIterable {
     case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer, recordScreen
     case restoreOverlay, hideOverlays, history, settings, checkForUpdates, whatsNew, openFile, quit
-    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording, editRecording
+    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording, editRecording, recordingCamera
 }
 
 /// What the recording controls do to a recording that is under way.
@@ -55,6 +55,7 @@ enum ActionTable {
         ActionSpec(id: .pauseRecording, title: "Pause Recording", symbol: "pause.fill", hotKey: nil, urlPath: "record/pause", menuGroup: nil),
         ActionSpec(id: .resumeRecording, title: "Resume Recording", symbol: "play.fill", hotKey: nil, urlPath: "record/resume", menuGroup: nil),
         ActionSpec(id: .restartRecording, title: "Restart Recording", symbol: "arrow.counterclockwise", hotKey: nil, urlPath: "record/restart", menuGroup: nil),
+        ActionSpec(id: .recordingCamera, title: "Camera Full Screen", symbol: "arrow.up.left.and.arrow.down.right", hotKey: nil, urlPath: "record/camera", menuGroup: nil),
         ActionSpec(id: .recordTestWindow, title: "Show Recording Test Window", symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
         ActionSpec(id: .editRecording, title: "Edit Recording", symbol: "slider.horizontal.3", hotKey: nil, urlPath: "edit-recording", menuGroup: nil),
         ActionSpec(id: .quit, title: "Quit Cornermark", symbol: "power", hotKey: nil, urlPath: nil, menuGroup: 3),
@@ -77,6 +78,7 @@ enum AppAction: Equatable {
     case startRecording(RecordingTarget, RecordingStyle)
     case stopRecording
     case controlRecording(RecordingControl)
+    case changeCamera(CameraChange)
     case openRecordingTestWindow
     /// A scripted instance shows the editor for a project as its test window and plays a scene in it while it is recorded.
     case filmVideoEditor(URL, scene: String)
@@ -110,6 +112,7 @@ enum AppAction: Equatable {
         case .controlRecording(.pause): return .pauseRecording
         case .controlRecording(.resume): return .resumeRecording
         case .controlRecording(.restart): return .restartRecording
+        case .changeCamera: return .recordingCamera
         case .openRecordingTestWindow, .filmVideoEditor: return .recordTestWindow
         case .openRecording, .exportRecording: return .editRecording
         case .quit: return .quit
@@ -140,6 +143,7 @@ enum AppAction: Equatable {
         case .pauseRecording: return .controlRecording(.pause)
         case .resumeRecording: return .controlRecording(.resume)
         case .restartRecording: return .controlRecording(.restart)
+        case .recordingCamera: return .changeCamera(.toggleFullScreen)
         case .openFile, .record, .editRecording: return nil
         }
     }
@@ -185,6 +189,7 @@ enum URLCommand {
             guard let style = query["style"].map(RecordingStyle.init(rawValue:)) ?? .editing else { return .failure(.invalidRecording("style")) }
             return recordingTarget(query).map { .startRecording($0, style) }
         }
+        if spec.id == .recordingCamera { return CameraChange.parse(query).map { .changeCamera($0) } }
         let seconds = query["seconds"].flatMap(Int.init).map { min(max($0, 1), 60) } ?? timerSeconds
         return AppAction.make(spec.id, timerSeconds: seconds).map { .success($0) } ?? .failure(.unknownPath(rawPath))
     }

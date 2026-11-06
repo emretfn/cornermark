@@ -60,6 +60,12 @@ final class AppEnvironment {
     var pointerSource: () -> PointerSource? = { nil }
     var inputSource: (InputCapture) -> InputSource? = { _ in nil }
     var hasInputPermission: () -> Bool = { false }
+    /// The camera for a recording. A scripted instance draws a synthetic one and never opens a real camera.
+    var cameraSource: () -> CameraSource? = { nil }
+    /// Reads camera access without asking.
+    var cameraAccess: () -> CameraAccess = { .denied }
+    /// Shows the system's camera prompt. Only the live app has one, and only a click in Settings calls it.
+    var requestCameraAccess: (@escaping (Bool) -> Void) -> Void = { $0(false) }
     /// The microphones a recording can use. Listing them never asks for access.
     var microphones: () -> [MicrophoneDevice] = { [] }
     /// Read without asking, so it never shows the system prompt.
