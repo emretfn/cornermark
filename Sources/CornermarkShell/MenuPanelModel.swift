@@ -59,6 +59,8 @@ struct MenuPanelModel: Equatable {
         let symbol: String
         let title: String
         let isEnabled: Bool
+        /// Throws work away, so it is drawn in the danger colour, the way the bar draws its confirm buttons.
+        var isDestructive = false
         var accessibilityLabel: String { title.replacingOccurrences(of: "\u{2026}", with: "") }
     }
 
@@ -115,12 +117,14 @@ struct MenuPanelModel: Equatable {
         }
         sections.append(.captures(tiles))
 
-        // The bar never takes the keyboard, so pausing and restarting by keyboard happens here.
+        // The bar never takes the keyboard, so pausing, restarting and deleting by keyboard happens here.
         if recording.isRunning {
             let pause = ActionTable.spec(recording == .paused ? .resumeRecording : .pauseRecording)
             let restart = ActionTable.spec(.restartRecording)
+            let discard = ActionTable.spec(.discardRecording)
             var rows = [Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
-                        Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true)]
+                        Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true),
+                        Row(item: .action(discard.id), symbol: discard.symbol, title: discard.title, isEnabled: true, isDestructive: true)]
             // The camera's bubble never takes the keyboard either, so its click has a row here.
             if let full = cameraFullScreen {
                 rows.append(Row(item: .action(.recordingCamera), symbol: full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",

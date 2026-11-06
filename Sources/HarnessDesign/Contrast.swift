@@ -42,6 +42,10 @@ private let table: [Pair] = {
     }
     all += pairs([("borderStrong", C.borderStrong)], on: windowSurface, 3.0)
     all += pairs([("accentMark", C.accentMark)], on: windowSurface, 3.0)
+    // The menu panel's Delete Recording row, and the check a source toggle carries while it is on.
+    all.append(Pair(fg: family(danger).text, bg: surfaces[5], minimum: 4.5))
+    all.append(Pair(fg: ("bgInverse", C.bgInverse), bg: ("bgControlActive", C.bgControlActive), minimum: 3.0))
+    all.append(Pair(fg: ("onInverse", C.onInverse), bg: ("bgInverse", C.bgInverse), minimum: 3.0))
     return all
 }()
 

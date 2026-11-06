@@ -12,6 +12,7 @@ public enum RecordingTarget: Equatable {
 /// How hard the encoder works to keep detail: the average bits it spends on each pixel of each frame.
 public enum VideoQuality: String, Codable, CaseIterable, Sendable {
     case high, medium, low
+    public var title: String { rawValue.capitalized }
     public var bitsPerPixel: Double {
         switch self {
         case .high: return 0.2

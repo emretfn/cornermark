@@ -62,6 +62,10 @@ final class AppCoordinator {
             capture.refreshOverlay()
         }
         sources.onChange = { [unowned capture] in capture.refreshOverlay() }
+        sources.onAsking = { [unowned capture] asking in capture.yieldOverlay(asking) }
+        sources.onInputRequest = { [unowned capture] in capture.cancel() }
+        capture.recordingOptions = { store.value.recording.quick }
+        capture.changeRecordingOptions = { options in store.update { $0.recording.quick = options } }
         recording.onSaved = { [weak self] finished in Task { await self?.recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
@@ -107,6 +111,7 @@ final class AppCoordinator {
         case .controlRecording(.pause): recording.pause()
         case .controlRecording(.resume): recording.resume()
         case .controlRecording(.restart): recording.restart()
+        case .controlRecording(.discard): recording.discard()
         case .changeCamera(let change): recording.changeCamera(change)
         case .openRecordingTestWindow: openRecordingTestWindow()
         case .filmVideoEditor(let folder, let scene): filmVideoEditor(folder, scene: scene)

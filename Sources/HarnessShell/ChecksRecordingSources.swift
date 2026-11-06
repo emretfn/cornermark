@@ -10,24 +10,30 @@ private final class Permissions {
     var camera = CameraAccess.notAsked
     var input = false
     var grants: Set<RecordingSource> = []
-    var requests: [RecordingSource: Int] = [:]
+    /// While true, an answer waits in `held` until the check releases it, the way a prompt nobody has answered yet does.
+    var holds = false
+    var held: [() -> Void] = []
+    /// Keyed by the permission, so clicks and keystrokes count against the one Input Monitoring request they share.
+    var requests: [String: Int] = [:]
 
     func install(in env: AppEnvironment) {
         env.microphoneAccess = { [unowned self] in microphone }
         env.requestMicrophoneAccess = { [unowned self] done in
-            requests[.microphone, default: 0] += 1
+            requests["microphone", default: 0] += 1
             let yes = grants.contains(.microphone)
-            DispatchQueue.main.async { self.microphone = yes ? .allowed : .denied; done(yes) }
+            let answer = { self.microphone = yes ? .allowed : .denied; done(yes) }
+            if holds { held.append(answer) } else { DispatchQueue.main.async(execute: answer) }
         }
         env.cameraAccess = { [unowned self] in camera }
         env.requestCameraAccess = { [unowned self] done in
-            requests[.camera, default: 0] += 1
+            requests["camera", default: 0] += 1
             let yes = grants.contains(.camera)
-            DispatchQueue.main.async { self.camera = yes ? .allowed : .denied; done(yes) }
+            let answer = { self.camera = yes ? .allowed : .denied; done(yes) }
+            if holds { held.append(answer) } else { DispatchQueue.main.async(execute: answer) }
         }
         env.hasInputPermission = { [unowned self] in input }
         env.requestInputPermission = { [unowned self] in
-            requests[.input, default: 0] += 1
+            requests["inputMonitoring", default: 0] += 1
             return input
         }
     }
@@ -54,7 +60,8 @@ func checkRecordingSources() async throws {
         RecordingSource.allCases.allSatisfy { s in
             guard let t = toggle(s) else { return false }
             let want = on.contains(s)
-            return t.isSelected == want && t.symbol.hasSuffix("slash") != want && (t.accessibilityValue() as? Int) == (want ? 1 : 0)
+            let offGlyphs: Set = ["mic.slash", "speaker.slash", "video.slash", "cursorarrow.slash", "keyboard"]
+            return t.isSelected == want && t.marksSelection && offGlyphs.contains(t.symbol) != want && (t.accessibilityValue() as? Int) == (want ? 1 : 0)
         }
     }
     func prefs() -> RecordingPreferences { w.settings.value.recording }
@@ -62,41 +69,66 @@ func checkRecordingSources() async throws {
 
     check(shows([]) && note() == nil, "with the defaults every source is off and the panel has no note")
 
+    p.holds = true
     toggle(.microphone)?.performClick(nil)
-    check(p.requests[.microphone] == 1, "turning on the microphone before macOS asked asks once, right then")
+    check(p.requests["microphone"] == 1, "turning on the microphone before macOS asked asks once, right then")
+    check(c.capture.isOverlayYielding && c.capture.overlayState != nil, "while the prompt waits, the overlay steps off the screen and keeps its selection")
+    check(toggle(.microphone)?.isEnabled == false && toggle(.microphone)?.toolTip == "Record microphone (waiting for permission)"
+          && toggle(.microphone)?.accessibilityHelp()?.hasPrefix("Waiting for permission.") == true && note() == RecordingSourceToggles.waitingNote,
+          "the toggle shows it is waiting, for VoiceOver too, and the note says to answer the prompt", detail: note() ?? "nil")
+    for _ in 0..<4 { toggle(.microphone)?.performClick(nil) }
+    c.capture.toggleRecordingSource(.microphone)
+    check(p.requests["microphone"] == 1 && p.held.count == 1, "more clicks while it waits, on the toggle or through the app, ask nothing more", detail: "\(p.requests)")
+    p.holds = false
+    p.held.forEach { $0() }
+    p.held = []
+    check(!c.capture.isOverlayYielding && !c.capture.overlayWindows.isEmpty, "the answer brings the overlay back")
     check(await waitUntil { prefs().audio.microphone && shows([.microphone]) }, "allowed, it is on in the settings and in the panel")
     check(note() == "Record GIF never records sound.", "and the panel says a GIF records no sound", detail: note() ?? "nil")
     toggle(.microphone)?.performClick(nil)
     check(!prefs().audio.microphone && shows([]) && note() == nil, "a second click turns it off")
     toggle(.microphone)?.performClick(nil)
-    check(prefs().audio.microphone && shows([.microphone]) && p.requests[.microphone] == 1, "once allowed, turning it on asks nothing")
+    check(prefs().audio.microphone && shows([.microphone]) && p.requests["microphone"] == 1, "once allowed, turning it on asks nothing")
 
     toggle(.systemAudio)?.performClick(nil)
     check(prefs().audio.systemAudio && shows([.microphone, .systemAudio]) && total() == 1, "system audio needs no permission of its own and asks nothing")
 
     toggle(.camera)?.performClick(nil)
-    check(p.requests[.camera] == 1, "turning on the camera before macOS asked asks once")
+    check(p.requests["camera"] == 1 && c.capture.isOverlayYielding, "turning on the camera before macOS asked asks once, with the overlay out of the way")
     _ = await waitUntil { p.camera == .denied && note() != nil }
     check(!prefs().camera.isVisible && shows([.microphone, .systemAudio]), "refused, the camera stays off in the settings and in the panel")
     check(note() == "Turn on Cornermark in System Settings > Privacy & Security > Camera.", "and the note says how to allow it",
           detail: note() ?? "nil")
     toggle(.camera)?.performClick(nil)
-    check(p.requests[.camera] == 1 && !prefs().camera.isVisible && note()?.contains("Privacy & Security > Camera") == true,
+    check(p.requests["camera"] == 1 && !prefs().camera.isVisible && note()?.contains("Privacy & Security > Camera") == true,
           "once refused, another click asks nothing and repeats how to allow it")
 
-    toggle(.input)?.performClick(nil)
-    check(p.requests[.input] == 1 && w.defaults.bool(forKey: RecordingSourceToggles.inputAskedKey), "turning on clicks and keys asks for Input Monitoring once")
-    check(!prefs().clicks.isVisible && !prefs().keystrokes.isVisible && !shows([]) && toggle(.input)?.isSelected == false,
-          "refused, clicks and keys stay off")
-    check(note() == "Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it.", "and the note says how to allow it",
-          detail: note() ?? "nil")
-    toggle(.input)?.performClick(nil)
-    check(p.requests[.input] == 1, "once asked, another click does not ask again")
+    check(!c.capture.isOverlayYielding, "and comes back after the camera's answer")
+    let inputNote = "Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it."
+    toggle(.clicks)?.performClick(nil)
+    check(p.requests["inputMonitoring"] == 1 && w.defaults.bool(forKey: RecordingSourceToggles.inputAskedKey), "turning on click highlights asks for Input Monitoring once")
+    check(await waitUntil { c.capture.overlayWindows.isEmpty },
+          "the overlay closes before that prompt, since macOS sends no answer for it and it applies only after Cornermark reopens")
+    check(!prefs().clicks.isVisible && !prefs().keystrokes.isVisible, "refused, click highlights stay off")
+    c.perform(.capture(.recording))
+    guard await waitUntil(5, { !c.capture.overlayWindows.isEmpty }) else { return check(false, "the recording overlay opens again") }
+    check(toggle(.clicks)?.isSelected == false && toggle(.microphone)?.isSelected == true, "reopened, the panel shows clicks off and the rest as chosen")
+    toggle(.keystrokes)?.performClick(nil)
+    check(p.requests["inputMonitoring"] == 1 && !prefs().keystrokes.isVisible && note() == inputNote,
+          "keystrokes share that request: a click on them asks nothing more, stays off and repeats the note")
+    toggle(.clicks)?.performClick(nil)
+    check(p.requests["inputMonitoring"] == 1, "once asked, another click does not ask again")
     p.input = true
-    toggle(.input)?.performClick(nil)
-    check(prefs().clicks.isVisible && prefs().keystrokes.isVisible && toggle(.input)?.isSelected == true && p.requests[.input] == 1,
-          "with Input Monitoring allowed, one click shows clicks and keys and asks nothing")
-    check(p.requests == [.microphone: 1, .camera: 1, .input: 1], "three permissions, one request each, for the whole tour", detail: "\(p.requests)")
+    toggle(.clicks)?.performClick(nil)
+    check(prefs().clicks.isVisible && !prefs().keystrokes.isVisible && toggle(.clicks)?.isSelected == true && toggle(.keystrokes)?.isSelected == false,
+          "with Input Monitoring allowed, the clicks toggle writes clicks.isVisible alone")
+    toggle(.keystrokes)?.performClick(nil)
+    check(prefs().clicks.isVisible && prefs().keystrokes.isVisible && toggle(.keystrokes)?.isSelected == true, "and the keystrokes toggle writes keystrokes.isVisible")
+    toggle(.clicks)?.performClick(nil)
+    check(!prefs().clicks.isVisible && prefs().keystrokes.isVisible && shows([.microphone, .systemAudio, .keystrokes]),
+          "turning clicks off leaves keystrokes on: two settings, two toggles")
+    toggle(.clicks)?.performClick(nil)
+    check(p.requests == ["microphone": 1, "camera": 1, "inputMonitoring": 1], "three permissions, one request each, for the whole tour", detail: "\(p.requests)")
 
     if let field = panelView("cornermark.record.sources.note") as? NSTextField {
         let notes = RecordingSource.allCases.map(\.deniedNote) + RecordingSource.allCases.map { "Turn on \($0.name) to allow access." } + ["Record GIF never records sound."]
@@ -110,6 +142,49 @@ func checkRecordingSources() async throws {
               detail: "\(zip(lines, notes).filter { $0.0 > 2 }.map(\.1)) width=\(field.frame.width)")
     }
     if let host = toggle(.microphone)?.window { _ = snapshotWindow(host, name: "recording-panel-sources") }
+
+    section("recording panel options")
+    func optionsMenu() -> NSMenu? { panelView("cornermark.record.options")?.menu }
+    func item(_ id: String) -> (NSMenu, Int)? {
+        guard let menu = optionsMenu(), let i = menu.items.firstIndex(where: { $0.identifier?.rawValue == "cornermark.record.option." + id }) else { return nil }
+        return (menu, i)
+    }
+    func pick(_ id: String) {
+        guard let (menu, i) = item(id) else { return check(false, "the options menu has \(id)") }
+        menu.performActionForItem(at: i)
+    }
+    func isOn(_ id: String) -> Bool { item(id).map { $0.0.items[$0.1].state == .on } ?? false }
+    let headers = optionsMenu()?.items.filter(\.isSectionHeader).map(\.title) ?? []
+    check(headers == ["Quality", "Frame Rate", "Countdown"], "the options menu groups quality, frame rate and countdown", detail: "\(headers)")
+    check(isOn("quality.high") && isOn("fps.60") && isOn("countdown.0") && isOn("cursor") && isOn("dim") && isOn("notifications") && !isOn("desktopIcons"),
+          "it checks what the settings hold")
+    pick("quality.medium"); pick("fps.30"); pick("countdown.5"); pick("cursor"); pick("desktopIcons")
+    let r = prefs()
+    check(r.quality == .medium && r.fps == 30 && r.countdown == 5 && !r.showCursor && r.hideDesktopIcons && r.dimOutside && r.hideNotifications,
+          "each pick writes the Recording settings and leaves the rest alone", detail: "\(r.quick)")
+    check(isOn("quality.medium") && !isOn("quality.high") && isOn("fps.30") && isOn("countdown.5") && !isOn("cursor") && isOn("desktopIcons"),
+          "and the menu follows at once")
+    w.settings.update { $0.recording.quick = RecordingQuickOptions() }
+    c.capture.refreshOverlay()
+    check(isOn("quality.high") && isOn("countdown.0") && isOn("cursor"), "a change made in Settings shows in the menu too")
+
+    section("recording panel help")
+    check(panelView("cornermark.record.help.title") == nil, "the help window opens only when asked")
+    (panelView("cornermark.record.help") as? NSButton)?.performClick(nil)
+    let helpTitle = panelView("cornermark.record.help.title") as? NSTextField
+    let helpWindow = helpTitle?.window
+    let close = panelView("cornermark.record.help.close") as? CornermarkDesign.Button
+    check(helpTitle?.stringValue == "What is a project recording?" && close?.title == "Close" && close?.variant == .primary && close?.keyEquivalent == "\r",
+          "the help button opens a window with a title and one primary button that Return presses", detail: helpTitle?.stringValue ?? "nil")
+    let overlayLevel = c.capture.overlayWindows.first?.level.rawValue ?? 0
+    check((helpWindow?.level.rawValue ?? 0) > overlayLevel && helpWindow?.canBecomeKey == true && helpWindow?.isVisible == false,
+          "it sits above the overlay, can take the keyboard, and the harness never shows it", detail: "\(helpWindow?.level.rawValue ?? -1) \(overlayLevel)")
+    if let helpWindow { _ = snapshotWindow(helpWindow, name: "recording-help") }
+    close?.performClick(nil)
+    check(!c.capture.overlayWindows.isEmpty && prefs().quick == RecordingQuickOptions(), "closing it leaves the overlay open and changes nothing")
+    (panelView("cornermark.record.help") as? NSButton)?.performClick(nil)
+    (panelView("cornermark.record.help.title") as? NSTextField)?.window?.cancelOperation(nil)
+    check(!c.capture.overlayWindows.isEmpty, "Escape in it closes it without leaving the overlay")
     c.capture.cancel()
     check(await waitUntil { c.capture.overlayWindows.isEmpty }, "the overlay closes")
 
@@ -140,7 +215,7 @@ func checkRecordingSources() async throws {
     check(toggle(.camera)?.isSelected == false && note()?.contains("Privacy & Security > Camera") == true,
           "the panel shows the camera off, as the recording will be, and says how to allow it", detail: note() ?? "nil")
     toggle(.camera)?.performClick(nil)
-    check(!prefs().camera.isVisible && p.requests[.camera] == 1, "a click on it asks nothing and writes it off, so Settings agrees")
+    check(!prefs().camera.isVisible && p.requests["camera"] == 1, "a click on it asks nothing and writes it off, so Settings agrees")
     c.capture.cancel()
     _ = await waitUntil { c.capture.overlayWindows.isEmpty }
     check(nothingOnScreen(), "the panel put nothing on screen")

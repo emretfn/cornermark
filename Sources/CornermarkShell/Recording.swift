@@ -386,6 +386,19 @@ final class RecordingController {
         }
     }
 
+    /// Throws away what was filmed and ends the recording: no file is left and nothing reaches History.
+    func discard() {
+        guard phase.isRunning, let recorder else { return Log.shell.error("recording refused: nothing to discard") }
+        phase = .stopping
+        let discarded = recorder.seconds
+        stopMeter()
+        Task {
+            await recorder.cancel()
+            Log.shell.notice("recording discarded seconds=\(String(format: "%.3f", discarded), privacy: .public)")
+            reset()
+        }
+    }
+
     func stop() {
         switch phase {
         case .recording, .paused: Task { await finish() }

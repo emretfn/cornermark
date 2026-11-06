@@ -114,8 +114,19 @@ final class ZoomLaneView: NSView {
 
     // MARK: Drawing
 
+    /// A lane with no zoom yet says what it is for across its whole width, so adding the first zoom does not wait on a hover.
+    var showsEmptyHint: Bool {
+        guard zooms.isEmpty, duration > 0 else { return false }
+        switch interaction {
+        case .adding: return false
+        case .hovering: return !showsHint
+        default: return true
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         for zoom in zooms { drawBlock(zoom) }
+        if showsEmptyHint { drawEmptyHint() }
         switch interaction {
         case .adding(let a, let b):
             drawGhost(CGRect(x: min(a, b), y: 2, width: max(abs(b - a), 2), height: bounds.height - 4), hint: false)
@@ -154,6 +165,24 @@ final class ZoomLaneView: NSView {
                 NSBezierPath.continuous(CGRect(x: x, y: r.midY - 5, width: 2, height: 10), radius: 1).fill()
             }
         }
+    }
+
+    private func drawEmptyHint() {
+        let r = bounds.insetBy(dx: 2, dy: 2)
+        let shape = NSBezierPath.continuous(r.insetBy(dx: 0.5, dy: 0.5), radius: DS.Radius.xs - 0.5)
+        DS.Color.borderSubtle.setStroke()
+        shape.lineWidth = 1
+        shape.setLineDash([3, 2], count: 2, phase: 0)
+        shape.stroke()
+        let text = Self.hint as NSString
+        let attrs = DS.Text.caption.attributes(color: DS.Color.textSecondary)
+        let size = text.size(withAttributes: attrs)
+        let icon = DS.Size.iconSmall
+        let width = icon + DS.Space.s4 + size.width
+        guard width <= r.width - 2 * DS.Space.s8 else { return }
+        let x = (r.midX - width / 2).rounded()
+        Glyph.draw("plus", in: CGRect(x: x, y: r.minY, width: icon, height: r.height), pointSize: icon, DS.Color.textSecondary)
+        text.draw(at: CGPoint(x: x + icon + DS.Space.s4, y: (r.midY - size.height / 2).rounded()), withAttributes: attrs)
     }
 
     /// Where a click at `x` would put a zoom.

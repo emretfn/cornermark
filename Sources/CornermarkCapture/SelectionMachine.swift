@@ -90,16 +90,32 @@ public enum RecordingStyle: String, Hashable, CaseIterable {
 
 /// What a recording takes besides the picture. The recording panel has one toggle for each.
 public enum RecordingSource: String, Hashable, CaseIterable, Sendable {
-    case microphone, systemAudio, camera, input
+    case microphone, systemAudio, camera, clicks, keystrokes
 
     public var name: String {
         switch self {
         case .microphone: return "Microphone"
         case .systemAudio: return "System audio"
         case .camera: return "Camera"
-        case .input: return "Clicks and keys"
+        case .clicks: return "Click highlights"
+        case .keystrokes: return "Keystrokes"
         }
     }
+}
+
+/// The recording settings the panel's options menu changes in place. They are the Recording pane's own values.
+public struct RecordingQuickOptions: Equatable, Sendable {
+    public static let fpsChoices = [30, 60]
+    public static let countdownChoices = [0, 3, 5, 10]
+    public var quality: VideoQuality = .high
+    public var fps = 60
+    public var countdown = 0
+    public var showCursor = true
+    public var dimOutside = true
+    public var hideNotifications = true
+    public var hideDesktopIcons = false
+
+    public init() {}
 }
 
 /// What the recording panel shows of the sources: the ones the next recording takes, and one line about a source that needs attention.
@@ -109,19 +125,24 @@ public struct RecordingSources: Equatable, Sendable {
         case blocked(String)
         /// Worth knowing before a start button is pressed.
         case hint(String)
+        /// A macOS permission prompt is open and its answer has not come back.
+        case waiting(String)
 
         public var text: String {
             switch self {
-            case .blocked(let text), .hint(let text): return text
+            case .blocked(let text), .hint(let text), .waiting(let text): return text
             }
         }
     }
 
     public var on: Set<RecordingSource>
+    /// Sources whose permission request has no answer yet. Their toggles take no clicks until it comes.
+    public var pending: Set<RecordingSource>
     public var note: Note?
 
-    public init(on: Set<RecordingSource> = [], note: Note? = nil) {
+    public init(on: Set<RecordingSource> = [], pending: Set<RecordingSource> = [], note: Note? = nil) {
         self.on = on
+        self.pending = pending
         self.note = note
     }
 }

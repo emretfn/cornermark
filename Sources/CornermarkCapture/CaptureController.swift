@@ -27,6 +27,10 @@ public final class CaptureController {
     public var recordingSources: () -> RecordingSources = { RecordingSources() }
     /// A click on one of the recording panel's toggles. Call `refreshOverlay` once its answer changes what the panel shows.
     public var toggleRecordingSource: (RecordingSource) -> Void = { _ in }
+    /// What the recording panel's options menu shows. Read each time the panel redraws.
+    public var recordingOptions: () -> RecordingQuickOptions = { RecordingQuickOptions() }
+    /// The options menu changed a value. The overlay redraws from `recordingOptions` right after.
+    public var changeRecordingOptions: (RecordingQuickOptions) -> Void = { _ in }
 
     public var overlayWindows: [NSWindow] { session?.windows ?? [] }
     public var overlayState: OverlayState? { session?.machine.state }
@@ -51,6 +55,10 @@ public final class CaptureController {
 
     /// Redraws the open overlay from its state and `recordingSources`.
     public func refreshOverlay() { session?.refreshOverlay() }
+
+    /// Takes the open overlay off the screen while a macOS permission prompt waits for an answer, and brings it back after.
+    public func yieldOverlay(_ yield: Bool) { session?.yield(yield) }
+    public var isOverlayYielding: Bool { session?.isYielding ?? false }
 
     // MARK: Run
 
@@ -109,6 +117,8 @@ public final class CaptureController {
         options.scrollInterval = scrollPollInterval
         options.sources = { [weak self] in self?.recordingSources() ?? RecordingSources() }
         options.toggleSource = { [weak self] in self?.toggleRecordingSource($0) }
+        options.quickOptions = { [weak self] in self?.recordingOptions() ?? RecordingQuickOptions() }
+        options.changeOptions = { [weak self] in self?.changeRecordingOptions($0) }
         let session = CaptureSession(displays: displays, config: config, source: source, options: options) { [weak self] end in
             self?.sessionEnded(end, id: id)
         }

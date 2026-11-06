@@ -13,6 +13,8 @@ struct SessionOptions {
     var scrollInterval: TimeInterval = 0.15
     var sources: () -> RecordingSources = { RecordingSources() }
     var toggleSource: (RecordingSource) -> Void = { _ in }
+    var quickOptions: () -> RecordingQuickOptions = { RecordingQuickOptions() }
+    var changeOptions: (RecordingQuickOptions) -> Void = { _ in }
 }
 
 enum SessionEnd {
@@ -34,6 +36,10 @@ final class CaptureSession: OverlayHost {
     private(set) var panels: [OverlayPanel] = []
     private var toolbar: SelectionToolbar?
     private var recordingPanel: RecordingPanel?
+    private(set) var help: RecordingHelpWindow?
+    /// The overlay is out of the way of a macOS permission prompt. Its selection and state stay as they were.
+    private(set) var isYielding = false
+    private var keyBeforeYield: OverlayPanel?
     private(set) var toolbarPill: CGRect?
     private var countdown: CountdownPanel?
     private var scroll: ScrollCapture?
@@ -50,7 +56,7 @@ final class CaptureSession: OverlayHost {
     }
 
     var windows: [NSWindow] {
-        panels + [countdown].compactMap { $0 } + (scroll?.windows ?? [])
+        panels + [countdown, help].compactMap { $0 } + (scroll?.windows ?? [])
     }
 
     func start(cursor: CGPoint) {
@@ -150,7 +156,43 @@ final class CaptureSession: OverlayHost {
         updateToolbar()
     }
 
+    /// Opens above the overlay and takes the keyboard, so Return and Escape close it instead of reaching the selection. Closing gives the
+    /// keyboard back to the overlay window that had it.
+    private func showHelp() {
+        let window = help ?? RecordingHelpWindow(level: panels.first?.level ?? .screenSaver)
+        help = window
+        let previous = panels.first { $0.isKeyWindow }
+        window.onClose = { [weak self, weak previous] in
+            guard let self, self.options.presentation == .onscreen else { return }
+            (previous ?? self.panels.first)?.makeKey()
+        }
+        guard options.presentation == .onscreen else { return }
+        if let screen = (previous ?? panels.first)?.screen {
+            let f = screen.visibleFrame
+            window.setFrameOrigin(CGPoint(x: f.midX - window.frame.width / 2, y: f.midY - window.frame.height / 2))
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// A macOS permission prompt opens below a screen-saver-level overlay, where nobody can answer it, so the overlay leaves the screen
+    /// while one is open and comes back, with the keyboard, once the answer arrives.
+    func yield(_ on: Bool) {
+        guard on != isYielding else { return }
+        isYielding = on
+        guard options.presentation == .onscreen else { return }
+        if on {
+            keyBeforeYield = panels.first { $0.isKeyWindow }
+            for p in panels { p.orderOut(nil) }
+        } else {
+            NSApp.activate()
+            for p in panels { p.orderFrontRegardless() }
+            (keyBeforeYield ?? panels.first)?.makeKeyAndOrderFront(nil)
+            keyBeforeYield = nil
+        }
+    }
+
     private func closePanels() {
+        help?.orderOut(nil); help?.close(); help = nil
         toolbar?.removeFromSuperview()
         recordingPanel?.removeFromSuperview()
         for p in panels { p.keyHost = nil; p.orderOut(nil); p.close() }
@@ -199,10 +241,16 @@ final class CaptureSession: OverlayHost {
                 panel = RecordingPanel()
                 panel.onAction = { [weak self] in self?.send(.toolbar($0)) }
                 panel.onToggle = { [weak self] in self?.options.toggleSource($0) }
+                panel.onOptions = { [weak self] in
+                    self?.options.changeOptions($0)
+                    self?.refreshOverlay()
+                }
+                panel.onHelp = { [weak self] in self?.showHelp() }
                 recordingPanel = panel
             }
             panel.update(machine)
             panel.show(options.sources())
+            panel.show(options.quickOptions())
             bar = panel
             pill = panel.pillRect.size
         } else {

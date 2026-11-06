@@ -63,65 +63,101 @@ enum RecordingBarLayout {
 
 /// The control bar's look in each phase, read from one table so a phase cannot show a mix of two.
 struct RecordingBarLook: Equatable {
-    var indicator: String
-    var indicatorIsDanger: Bool
+    /// The mark at the start of the stop button: what a click ends. Red while frames are being kept. A filled circle symbol would draw as
+    /// a plain dot in one colour, which reads as record, so the stop mark stays the outlined circle with its square.
+    var stopSymbol: String
+    var stopIsDanger: Bool
     var timeIsMuted: Bool
     /// The pause button, or in its place the resume button.
     var showsResume: Bool
     var canPause: Bool
-    var canRestart: Bool
+    /// Restart and delete both need frames to throw away.
+    var canDiscard: Bool
     var stopTitle: String
     var canStop: Bool
 
     static func of(_ phase: RecordingController.Phase) -> RecordingBarLook {
         switch phase {
-        case .starting:
-            return .init(indicator: "record.circle", indicatorIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canRestart: false, stopTitle: "Cancel", canStop: true)
-        case .countingDown:
-            return .init(indicator: "timer", indicatorIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canRestart: false, stopTitle: "Cancel", canStop: true)
+        case .starting, .countingDown:
+            return .init(stopSymbol: "xmark.circle", stopIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canDiscard: false, stopTitle: "Cancel", canStop: true)
         case .recording:
-            return .init(indicator: "record.circle.fill", indicatorIsDanger: true, timeIsMuted: false, showsResume: false, canPause: true, canRestart: true, stopTitle: "Stop", canStop: true)
+            return .init(stopSymbol: "stop.circle", stopIsDanger: true, timeIsMuted: false, showsResume: false, canPause: true, canDiscard: true, stopTitle: "Stop", canStop: true)
         case .paused:
-            return .init(indicator: "pause.fill", indicatorIsDanger: false, timeIsMuted: true, showsResume: true, canPause: true, canRestart: true, stopTitle: "Stop", canStop: true)
+            return .init(stopSymbol: "stop.circle", stopIsDanger: false, timeIsMuted: true, showsResume: true, canPause: true, canDiscard: true, stopTitle: "Stop", canStop: true)
         case .idle, .stopping:
-            return .init(indicator: "record.circle", indicatorIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canRestart: false, stopTitle: "Stop", canStop: false)
+            return .init(stopSymbol: "stop.circle", stopIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canDiscard: false, stopTitle: "Stop", canStop: false)
         }
     }
 }
 
-/// A symbol drawn in a colour role, resolved at draw time so it follows the appearance.
+/// A symbol drawn in a colour role, resolved at draw time so it follows the appearance. Clicks pass through to the button under it.
 private final class SymbolView: NSView {
     var symbol = "record.circle" { didSet { needsDisplay = true } }
     var color = DS.Color.textSecondary { didSet { needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) { Glyph.draw(symbol, in: bounds, pointSize: DS.Size.iconLarge, color) }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// The bar: what is happening and for how long, then pause or resume, restart, and stop. Dragging its background moves it.
+/// The time sits on the stop button, so a click on it reaches the button.
+private final class PassThroughLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Six dots that say the bar can be dragged. The whole background drags it; this only makes that visible.
+final class RecordingBarGrip: NSView {
+    static let width = DS.Space.s12
+    override var mouseDownCanMoveWindow: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        DS.Color.textSecondary.setFill()
+        let d: CGFloat = 2.5
+        for col in 0..<2 {
+            for row in 0..<3 {
+                let x = bounds.midX - 3 + CGFloat(col) * 4 - d / 2
+                let y = bounds.midY - 5 + CGFloat(row) * 5 - d / 2
+                NSBezierPath(ovalIn: CGRect(x: x, y: y, width: d, height: d)).fill()
+            }
+        }
+    }
+}
+
+/// The bar: the stop button that carries the length so far, then pause or resume, restart, delete, and the grip. Dragging its
+/// background moves it.
 final class RecordingBarView: NSView {
     static let height = DS.Size.control + 2 * DS.Space.s4
     private static let timeFont = NSFont.monospacedDigitSystemFont(ofSize: DS.Text.bodyStrong.size, weight: DS.Text.bodyStrong.weight)
 
+    /// What a second click confirms. Only one of them waits at a time.
+    enum Armed: Equatable { case restart, delete }
+
     private let indicator = SymbolView()
-    let time = NSTextField.label("0:00", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
+    let time: NSTextField = PassThroughLabel(labelWithString: "0:00")
+    /// The red stop mark and the time together are the stop button, the one thing a recording most often needs.
+    let stop = Button(title: "", variant: .ghost)
     private let divider = Separator(axis: .vertical)
     let pause = IconButton(symbol: "pause.fill", label: "Pause")
     let resume = IconButton(symbol: "play.fill", label: "Resume")
     let restart = IconButton(symbol: "arrow.counterclockwise", label: "Restart")
     /// Restart throws the take away, so it asks once more in place: a second click within a few seconds confirms.
     let confirmRestart = Button(title: "Discard take", variant: .dangerGhost)
-    let stop = Button(title: "Stop", variant: .secondary)
+    let delete = IconButton(symbol: "trash", label: "Delete")
+    /// Delete ends the recording and keeps nothing, so it asks the same way.
+    let confirmDelete = Button(title: "Delete recording", variant: .dangerGhost)
+    let grip = RecordingBarGrip()
     /// The microphone's level, or its warning, shown only when the recording has a microphone.
     let microphone = MicrophoneSlotView()
     var showsMicrophone = false {
         didSet { if showsMicrophone != oldValue { microphone.isHidden = !showsMicrophone; layoutBar() } }
     }
     private var disarm: DispatchWorkItem?
-    private(set) var isRestartArmed = false
+    private(set) var armed: Armed?
+    var isRestartArmed: Bool { armed == .restart }
+    var isDeleteArmed: Bool { armed == .delete }
     private(set) var look = RecordingBarLook.of(.idle)
 
     var onPause: () -> Void = {}
     var onResume: () -> Void = {}
     var onRestart: () -> Void = {}
+    var onDelete: () -> Void = {}
     var onStop: () -> Void = {}
 
     init() {
@@ -132,21 +168,33 @@ final class RecordingBarView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Recording controls")
         time.font = Self.timeFont
+        time.textColor = DS.Color.textPrimary
+        time.setAccessibilityElement(false)
         time.setAccessibilityIdentifier("recording.time")
+        stop.setAccessibilityIdentifier("recording.stop")
         pause.setAccessibilityIdentifier("recording.pause")
         resume.setAccessibilityIdentifier("recording.resume")
         restart.setAccessibilityIdentifier("recording.restart")
-        stop.setAccessibilityIdentifier("recording.stop")
+        delete.setAccessibilityIdentifier("recording.delete")
+        grip.setAccessibilityElement(false)
+        pause.toolTip = "Pause recording"
+        resume.toolTip = "Resume recording"
         restart.toolTip = "Restart: discard this take and start again"
         confirmRestart.setAccessibilityIdentifier("recording.confirmRestart")
         confirmRestart.toolTip = "Click again to discard this take and start over"
+        delete.toolTip = "Delete: stop and keep nothing"
+        delete.setAccessibilityHelp("Stops the recording and deletes it. Asks once more first.")
+        confirmDelete.setAccessibilityIdentifier("recording.confirmDelete")
+        confirmDelete.toolTip = "Click again to stop and delete this recording"
+        grip.toolTip = "Drag to move"
         for (button, action) in [(pause, #selector(pauseTapped)), (resume, #selector(resumeTapped)), (restart, #selector(restartTapped)),
-                                 (confirmRestart, #selector(confirmTapped)), (stop, #selector(stopTapped))] as [(NSButton, Selector)] {
+                                 (confirmRestart, #selector(confirmRestartTapped)), (delete, #selector(deleteTapped)),
+                                 (confirmDelete, #selector(confirmDeleteTapped)), (stop, #selector(stopTapped))] as [(NSButton, Selector)] {
             button.target = self
             button.action = action
         }
         microphone.isHidden = true
-        [indicator, time, microphone, divider, pause, resume, restart, confirmRestart, stop].forEach(addSubview)
+        [stop, indicator, time, microphone, divider, pause, resume, restart, confirmRestart, delete, confirmDelete, grip].forEach(addSubview)
         apply(RecordingStatus(phase: .idle, seconds: 0))
     }
 
@@ -156,17 +204,22 @@ final class RecordingBarView: NSView {
 
     @objc private func pauseTapped() { onPause() }
     @objc private func resumeTapped() { onResume() }
-    @objc private func restartTapped() { setRestartArmed(true) }
-    @objc private func confirmTapped() {
-        setRestartArmed(false)
+    @objc private func restartTapped() { arm(.restart) }
+    @objc private func confirmRestartTapped() {
+        arm(nil)
         onRestart()
     }
+    @objc private func deleteTapped() { arm(.delete) }
+    @objc private func confirmDeleteTapped() {
+        arm(nil)
+        onDelete()
+    }
 
-    private func setRestartArmed(_ armed: Bool) {
+    private func arm(_ next: Armed?) {
         disarm?.cancel()
-        isRestartArmed = armed
-        if armed {
-            let work = DispatchWorkItem { [weak self] in self?.setRestartArmed(false) }
+        armed = next
+        if next != nil {
+            let work = DispatchWorkItem { [weak self] in self?.arm(nil) }
             disarm = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
         }
@@ -179,25 +232,26 @@ final class RecordingBarView: NSView {
         let look = RecordingBarLook.of(status.phase)
         self.look = look
         lastStatus = status
-        if !look.canRestart, isRestartArmed { isRestartArmed = false }
-        indicator.symbol = look.indicator
+        if !look.canDiscard, armed != nil { armed = nil }
+        indicator.symbol = look.stopSymbol
         // dangerText keeps 3:1 against the bar over any screen content; dangerSolid measured 2.72:1 over white.
-        indicator.color = look.indicatorIsDanger ? DS.Color.dangerText : DS.Color.textSecondary
+        indicator.color = look.stopIsDanger ? DS.Color.dangerText : (look.canStop ? DS.Color.textSecondary : DS.Color.textDisabled)
         time.stringValue = status.timeText
         time.textColor = look.timeIsMuted ? DS.Color.textSecondary : DS.Color.textPrimary
-        time.setAccessibilityLabel(status.spoken)
+        let spoken = look.stopTitle == "Cancel" ? "Cancel recording. \(status.spoken)" : "Stop recording. \(status.spoken)"
+        stop.setAccessibilityLabel(spoken)
+        stop.toolTip = look.stopTitle == "Cancel" ? "Cancel recording" : "Stop recording"
+        stop.isEnabled = look.canStop
         pause.isHidden = look.showsResume
         resume.isHidden = !look.showsResume
         pause.isEnabled = look.canPause
         resume.isEnabled = look.canPause
-        restart.isEnabled = look.canRestart
-        restart.isHidden = isRestartArmed
-        confirmRestart.isHidden = !isRestartArmed
-        if stop.title != look.stopTitle {
-            stop.title = look.stopTitle
-            stop.setAccessibilityLabel(look.stopTitle)
-        }
-        stop.isEnabled = look.canStop
+        restart.isEnabled = look.canDiscard
+        delete.isEnabled = look.canDiscard
+        restart.isHidden = armed == .restart
+        confirmRestart.isHidden = armed != .restart
+        delete.isHidden = armed == .delete
+        confirmDelete.isHidden = armed != .delete
         layoutBar()
     }
 
@@ -207,39 +261,42 @@ final class RecordingBarView: NSView {
         return ceil(max(("00:00" as NSString).size(withAttributes: attributes).width, (time.stringValue as NSString).size(withAttributes: attributes).width))
     }
 
-    var fittingWidth: CGFloat {
-        DS.Space.s12 + DS.Size.iconLarge + DS.Space.s6 + timeWidth + DS.Space.s8 + microphoneWidth + 1 + DS.Space.s8
-            + DS.Size.control + DS.Space.s6 + restartWidth + DS.Space.s6 + stop.intrinsicContentSize.width + DS.Space.s4
-    }
-
+    private var stopWidth: CGFloat { DS.Space.s8 + DS.Size.iconLarge + DS.Space.s6 + timeWidth + DS.Space.s8 }
     private var microphoneWidth: CGFloat { showsMicrophone ? MicrophoneSlotView.width + DS.Space.s8 : 0 }
+    private var restartWidth: CGFloat { armed == .restart ? confirmRestart.intrinsicContentSize.width : DS.Size.control }
+    private var deleteWidth: CGFloat { armed == .delete ? confirmDelete.intrinsicContentSize.width : DS.Size.control }
 
-    private var restartWidth: CGFloat { isRestartArmed ? confirmRestart.intrinsicContentSize.width : DS.Size.control
+    var fittingWidth: CGFloat {
+        DS.Space.s4 + stopWidth + DS.Space.s4 + microphoneWidth + 1 + DS.Space.s8
+            + DS.Size.control + DS.Space.s4 + restartWidth + DS.Space.s4 + deleteWidth + DS.Space.s4 + RecordingBarGrip.width + DS.Space.s4
     }
 
     private func layoutBar() {
-        let h = Self.height, mid = h / 2
-        var x = DS.Space.s12
+        let h = Self.height, mid = h / 2, c = DS.Size.control
+        var x = DS.Space.s4
+        stop.frame = CGRect(x: x, y: mid - c / 2, width: stopWidth, height: c)
+        x += DS.Space.s8
         indicator.frame = CGRect(x: x, y: mid - DS.Size.iconLarge / 2, width: DS.Size.iconLarge, height: DS.Size.iconLarge)
         x += DS.Size.iconLarge + DS.Space.s6
         let line = DS.Text.bodyStrong.lineHeight
         time.frame = CGRect(x: x, y: mid - line / 2, width: timeWidth, height: line)
-        x += timeWidth + DS.Space.s8
+        x = stop.frame.maxX + DS.Space.s4
         if showsMicrophone {
             microphone.frame = CGRect(x: x, y: mid - DS.Size.controlSmall / 2, width: MicrophoneSlotView.width, height: DS.Size.controlSmall)
             x += MicrophoneSlotView.width + DS.Space.s8
         }
         divider.frame = CGRect(x: x, y: mid - DS.Space.s8, width: 1, height: DS.Space.s16)
         x += 1 + DS.Space.s8
-        let c = DS.Size.control
         pause.frame = CGRect(x: x, y: mid - c / 2, width: c, height: c)
         resume.frame = pause.frame
-        x += c + DS.Space.s6
+        x += c + DS.Space.s4
         restart.frame = CGRect(x: x, y: mid - c / 2, width: c, height: c)
         confirmRestart.frame = CGRect(x: x, y: mid - c / 2, width: confirmRestart.intrinsicContentSize.width, height: c)
-        x += restartWidth + DS.Space.s6
-        let w = stop.intrinsicContentSize.width
-        stop.frame = CGRect(x: x, y: mid - c / 2, width: w, height: c)
+        x += restartWidth + DS.Space.s4
+        delete.frame = CGRect(x: x, y: mid - c / 2, width: c, height: c)
+        confirmDelete.frame = CGRect(x: x, y: mid - c / 2, width: confirmDelete.intrinsicContentSize.width, height: c)
+        x += deleteWidth + DS.Space.s4
+        grip.frame = CGRect(x: x, y: mid - c / 2, width: RecordingBarGrip.width, height: c)
         setFrameSize(NSSize(width: fittingWidth, height: h))
         if let window, window.contentView === self, window.frame.size != frame.size { window.setContentSize(frame.size) }
     }
@@ -373,6 +430,7 @@ final class RecordingControls {
         view.onPause = { [unowned self] in recording.pause() }
         view.onResume = { [unowned self] in recording.resume() }
         view.onRestart = { [unowned self] in recording.restart() }
+        view.onDelete = { [unowned self] in recording.discard() }
         view.onStop = { [unowned self] in recording.stop() }
         view.showsMicrophone = recording.hearsMicrophone
         view.apply(status)

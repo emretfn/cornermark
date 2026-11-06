@@ -10,13 +10,14 @@ enum PermissionAnswer: String, Equatable {
 }
 
 extension RecordingSource {
-    /// Whether the settings ask for this source. Clicks and keys count as on when either is shown.
+    /// Whether the settings ask for this source.
     func isWanted(in p: RecordingPreferences) -> Bool {
         switch self {
         case .microphone: return p.audio.microphone
         case .systemAudio: return p.audio.systemAudio
         case .camera: return p.camera.isVisible
-        case .input: return p.showsInput
+        case .clicks: return p.clicks.isVisible
+        case .keystrokes: return p.keystrokes.isVisible
         }
     }
 
@@ -25,9 +26,8 @@ extension RecordingSource {
         case .microphone: p.audio.microphone = on
         case .systemAudio: p.audio.systemAudio = on
         case .camera: p.camera.isVisible = on
-        case .input:
-            p.clicks.isVisible = on
-            p.keystrokes.isVisible = on
+        case .clicks: p.clicks.isVisible = on
+        case .keystrokes: p.keystrokes.isVisible = on
         }
     }
 
@@ -37,7 +37,7 @@ extension RecordingSource {
         case .microphone: return "Turn on Cornermark in System Settings > Privacy & Security > Microphone."
         case .systemAudio: return "Turn on Cornermark in System Settings > Privacy & Security > Screen & System Audio Recording."
         case .camera: return "Turn on Cornermark in System Settings > Privacy & Security > Camera."
-        case .input: return "Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it."
+        case .clicks, .keystrokes: return "Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it."
         }
     }
 }
@@ -57,6 +57,12 @@ final class RecordingSourceToggles {
     private var asking: Set<RecordingSource> = []
     /// Called once an answer from macOS changes what the panel shows.
     var onChange: () -> Void = {}
+    /// True while a microphone or camera prompt is open, false once every answer is back. The overlay steps aside for the prompt.
+    var onAsking: (Bool) -> Void = { _ in }
+    /// Called just before Input Monitoring is requested. macOS sends no answer for it and the permission works only after Cornermark
+    /// reopens, so the overlay closes first instead of waiting over the prompt.
+    var onInputRequest: () -> Void = {}
+    static let waitingNote = "Waiting for permission. Answer the macOS prompt to go on."
 
     init(env: AppEnvironment, settings: SettingsStore) {
         self.env = env
@@ -69,7 +75,7 @@ final class RecordingSourceToggles {
         case .systemAudio: return nil
         case .microphone: return PermissionAnswer(env.microphoneAccess())
         case .camera: return PermissionAnswer(env.cameraAccess())
-        case .input:
+        case .clicks, .keystrokes:
             // macOS reads Input Monitoring as allowed or not, so whether it was asked is remembered here.
             if env.hasInputPermission() { return .allowed }
             return env.defaults.bool(forKey: Self.inputAskedKey) ? .denied : .notAsked
@@ -79,6 +85,7 @@ final class RecordingSourceToggles {
     var state: RecordingSources {
         let prefs = settings.value.recording
         let on = Set(RecordingSource.allCases.filter { $0.isWanted(in: prefs) && (answer($0) ?? .allowed) == .allowed })
+        if !asking.isEmpty { return RecordingSources(on: on, pending: asking, note: .waiting(Self.waitingNote)) }
         if let refused { return RecordingSources(on: on, note: .blocked(refused.deniedNote)) }
         if let waiting = RecordingSource.allCases.first(where: { $0.isWanted(in: prefs) && !on.contains($0) }) {
             let text = answer(waiting) == .denied ? waiting.deniedNote : "Turn on \(waiting.name) to allow access."
@@ -100,13 +107,23 @@ final class RecordingSourceToggles {
             write(source, false, refused: source)
         case .notAsked:
             guard !asking.contains(source) else { return }
-            asking.insert(source)
             Log.shell.notice("recording panel asks for access source=\(source.rawValue, privacy: .public)")
+            if source == .clicks || source == .keystrokes {
+                onInputRequest()
+                env.defaults.set(true, forKey: Self.inputAskedKey)
+                let granted = env.requestInputPermission()
+                Log.shell.notice("recording panel access answer source=\(source.rawValue, privacy: .public) granted=\(granted, privacy: .public)")
+                return write(source, granted, refused: granted ? nil : source)
+            }
+            asking.insert(source)
+            if asking.count == 1 { onAsking(true) }
+            onChange()
             request(source) { [weak self] granted in
                 guard let self else { return }
                 asking.remove(source)
                 Log.shell.notice("recording panel access answer source=\(source.rawValue, privacy: .public) granted=\(granted, privacy: .public)")
                 write(source, granted, refused: granted ? nil : source)
+                if asking.isEmpty { onAsking(false) }
                 onChange()
             }
         }
@@ -125,10 +142,7 @@ final class RecordingSourceToggles {
         switch source {
         case .microphone: env.requestMicrophoneAccess(done)
         case .camera: env.requestCameraAccess(done)
-        case .input:
-            env.defaults.set(true, forKey: Self.inputAskedKey)
-            done(env.requestInputPermission())
-        case .systemAudio: done(true)
+        case .clicks, .keystrokes, .systemAudio: done(true)
         }
     }
 }

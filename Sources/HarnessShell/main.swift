@@ -32,12 +32,17 @@ let followExport = ProcessInfo.processInfo.environment["CORNERMARK_FOLLOW_EXPORT
 let manualZoomFilming = ProcessInfo.processInfo.environment["CORNERMARK_MANUAL_ZOOM_FILM"]
 let shortcutsFilming = ProcessInfo.processInfo.environment["CORNERMARK_SHORTCUTS_FILM"]
 let panelSourcesFilming = ProcessInfo.processInfo.environment["CORNERMARK_PANEL_SOURCES_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming, panelSourcesFilming].allSatisfy { $0 == nil } ? 420 : 900)) {
+let panelRenders = ProcessInfo.processInfo.environment["CORNERMARK_PANEL_RENDERS"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming, panelSourcesFilming, panelRenders].allSatisfy { $0 == nil } ? 420 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let panelRenders {
+        let ok = await PanelRenders.run(out: URL(fileURLWithPath: panelRenders, isDirectory: true))
+        filmDone(ok)
+    }
     if let panelSourcesFilming {
         let ok = await PanelSourcesFilm.run(out: URL(fileURLWithPath: panelSourcesFilming, isDirectory: true))
         filmDone(ok)

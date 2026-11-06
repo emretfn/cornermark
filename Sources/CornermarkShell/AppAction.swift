@@ -7,11 +7,11 @@ import UniformTypeIdentifiers
 enum ActionID: String, CaseIterable {
     case allInOne, area, window, fullscreen, previousArea, scrolling, ocr, timer, recordScreen
     case restoreOverlay, hideOverlays, history, settings, checkForUpdates, whatsNew, openFile, quit
-    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording, editRecording, recordingCamera
+    case record, stopRecording, recordTestWindow, pauseRecording, resumeRecording, restartRecording, discardRecording, editRecording, recordingCamera
 }
 
 /// What the recording controls do to a recording that is under way.
-enum RecordingControl: Equatable { case pause, resume, restart }
+enum RecordingControl: Equatable { case pause, resume, restart, discard }
 
 /// One row per user intent. The menu, the global hotkeys and the URL scheme all read this table.
 struct ActionSpec {
@@ -55,6 +55,7 @@ enum ActionTable {
         ActionSpec(id: .pauseRecording, title: "Pause Recording", symbol: "pause.fill", hotKey: nil, urlPath: "record/pause", menuGroup: nil),
         ActionSpec(id: .resumeRecording, title: "Resume Recording", symbol: "play.fill", hotKey: nil, urlPath: "record/resume", menuGroup: nil),
         ActionSpec(id: .restartRecording, title: "Restart Recording", symbol: "arrow.counterclockwise", hotKey: nil, urlPath: "record/restart", menuGroup: nil),
+        ActionSpec(id: .discardRecording, title: "Delete Recording", symbol: "trash", hotKey: nil, urlPath: "record/discard", menuGroup: nil),
         ActionSpec(id: .recordingCamera, title: "Camera Full Screen", symbol: "arrow.up.left.and.arrow.down.right", hotKey: nil, urlPath: "record/camera", menuGroup: nil),
         ActionSpec(id: .recordTestWindow, title: "Show Recording Test Window", symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
         ActionSpec(id: .editRecording, title: "Edit Recording", symbol: "slider.horizontal.3", hotKey: nil, urlPath: "edit-recording", menuGroup: nil),
@@ -112,6 +113,7 @@ enum AppAction: Equatable {
         case .controlRecording(.pause): return .pauseRecording
         case .controlRecording(.resume): return .resumeRecording
         case .controlRecording(.restart): return .restartRecording
+        case .controlRecording(.discard): return .discardRecording
         case .changeCamera: return .recordingCamera
         case .openRecordingTestWindow, .filmVideoEditor: return .recordTestWindow
         case .openRecording, .exportRecording: return .editRecording
@@ -143,6 +145,7 @@ enum AppAction: Equatable {
         case .pauseRecording: return .controlRecording(.pause)
         case .resumeRecording: return .controlRecording(.resume)
         case .restartRecording: return .controlRecording(.restart)
+        case .discardRecording: return .controlRecording(.discard)
         case .recordingCamera: return .changeCamera(.toggleFullScreen)
         case .openFile, .record, .editRecording: return nil
         }

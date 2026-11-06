@@ -27,6 +27,11 @@ public final class IconButton: Pressable {
         didSet { needsDisplay = true }
     }
 
+    /// Draws a small check in the corner while selected, so a toggle that is on shows it in shape as well as in fill.
+    public var marksSelection = false {
+        didSet { needsDisplay = true }
+    }
+
     public var isSelected = false {
         didSet {
             setAccessibilityValue(isSelected ? "Selected" : "Not selected")
@@ -61,7 +66,15 @@ public final class IconButton: Pressable {
         if let border = look.border { Paint.strokeInside(path, border) }
         // A circle has less room than a rounded square, so the same glyph needs a smaller size to keep clear of its edge.
         Paint.symbol(symbol, in: bounds, pointSize: glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize), look.text)
+        guard marksSelection, isSelected, state != .disabled else { return }
+        let d = Self.markDiameter
+        let mark = CGRect(x: bounds.maxX - d - 1, y: isFlipped ? bounds.maxY - d - 1 : bounds.minY + 1, width: d, height: d)
+        Paint.fill(NSBezierPath(ovalIn: mark), DS.Color.bgInverse)
+        Paint.symbol("checkmark", in: mark, pointSize: Self.markGlyph, DS.Color.onInverse)
     }
+
+    static let markDiameter: CGFloat = 11
+    static let markGlyph: CGFloat = 6
 
     func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, selection: selection, state) }
 
