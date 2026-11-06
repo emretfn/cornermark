@@ -149,6 +149,7 @@ func checkVideoEditor() async throws {
     try await checkVideoEditorSaving(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorClips(w, folder: folder, videoHash: videoHash)
     try await checkVideoBackground(w, folder: folder)
+    try await checkVideoAspect(w, folder: folder)
     try await checkVideoEditorPerformance(folder: folder)
     try await checkVideoEditorLiveCut(folder: folder)
 }
