@@ -144,10 +144,16 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         backgroundPanel.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
 
+        // The canvas never mirrors, but where it sits between the bars does. Constraints between views of different directions
+        // resolve their leading and trailing edges by the first view's direction, so the canvas hangs in a host that mirrors.
+        let canvasHost = NSView()
+        canvasHost.translatesAutoresizingMaskIntoConstraints = false
+        canvasHost.addSubview(scroll)
+
         let content = NSView()
         window.contentView = content
         titleBar.translatesAutoresizingMaskIntoConstraints = false
-        [titleBar, propertyBar, scroll, backgroundPanel, statusBar].forEach(content.addSubview)
+        [titleBar, propertyBar, canvasHost, backgroundPanel, statusBar].forEach(content.addSubview)
         NSLayoutConstraint.activate([
             titleBar.topAnchor.constraint(equalTo: content.topAnchor),
             titleBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -157,13 +163,17 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
             propertyBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             propertyBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
-            scroll.topAnchor.constraint(equalTo: propertyBar.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            scroll.topAnchor.constraint(equalTo: canvasHost.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: canvasHost.bottomAnchor),
+            scroll.leftAnchor.constraint(equalTo: canvasHost.leftAnchor),
+            scroll.rightAnchor.constraint(equalTo: canvasHost.rightAnchor),
+            canvasHost.topAnchor.constraint(equalTo: propertyBar.bottomAnchor),
+            canvasHost.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            canvasHost.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
 
             backgroundPanel.topAnchor.constraint(equalTo: propertyBar.bottomAnchor),
             backgroundPanel.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
-            backgroundPanel.leadingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            backgroundPanel.leadingAnchor.constraint(equalTo: canvasHost.trailingAnchor),
             backgroundPanel.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
             statusBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -172,7 +182,7 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         ])
         panelWidth = backgroundPanel.widthAnchor.constraint(equalToConstant: 0)
         panelWidth.isActive = true
-        let flush = scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor)
+        let flush = canvasHost.trailingAnchor.constraint(equalTo: content.trailingAnchor)
         flush.priority = .defaultLow
         flush.isActive = true
     }
@@ -301,10 +311,9 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         row.translatesAutoresizingMaskIntoConstraints = false
         titleBar.addSubview(row)
         // The window buttons stay at the physical left, so the room kept for them is the left inset whichever way the row reads.
-        let rtl = L10n.isRightToLeft
         NSLayoutConstraint.activate([
-            row.leftAnchor.constraint(equalTo: titleBar.leftAnchor, constant: rtl ? DS.Space.s12 : titleLeading),
-            row.rightAnchor.constraint(equalTo: titleBar.rightAnchor, constant: rtl ? -titleLeading : -DS.Space.s12),
+            row.leftAnchor.constraint(equalTo: titleBar.leftAnchor, constant: titleLeading),
+            row.rightAnchor.constraint(equalTo: titleBar.rightAnchor, constant: -DS.Space.s12),
             row.centerYAnchor.constraint(equalTo: titleBar.centerYAnchor),
         ])
     }
