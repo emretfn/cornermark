@@ -213,6 +213,22 @@ func checkRecordingAudio() async throws {
     _ = await waitUntil(10) { q.recording.phase == .idle }
     check(q.controls.barView == nil && q.recording.microphone == nil, "the meter goes with the bar")
 
+    section("a microphone that is slow to open")
+    let slow = try SoundWorld(realtime: true)
+    let slowWorld = slow.world
+    defer { slowWorld.cleanup() }
+    slowWorld.env.microphoneSource = { (_: String?) -> AudioSource? in SlowMicrophone(opening: 1.5, then: ScriptedAudioSource(pattern: .voice(silent: 0..<2))) }
+    slowWorld.settings.update { $0.recording.audio.microphone = true }
+    let sc = slowWorld.coordinator
+    guard sc.handle(url: URL(string: "\(URLCommand.scheme)://record?\(area)&style=video")!), await waitUntil(5, { sc.recording.phase == .recording }) else {
+        return check(false, "a recording with a slow microphone starts")
+    }
+    let falseAlarm = await waitUntil(3.5) { sc.recording.microphone?.isSilent == true }
+    check(!falseAlarm, "a microphone that takes 1.5 s to open and then sends 2 s of quiet never counts as silent: the wait starts once it is open",
+          detail: "silent at video \(sc.recording.seconds)")
+    sc.recording.stop()
+    _ = await waitUntil(10) { sc.recording.phase == .idle }
+
     section("sound of an isolated instance")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("CornermarkHarness-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -233,4 +249,18 @@ func checkRecordingAudio() async throws {
 
 func collectAudioText(_ view: NSView) -> [String] {
     ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap(collectAudioText)
+}
+
+/// A microphone that takes `opening` seconds to start, as a Bluetooth headset does while it switches profile, then sends `inner`.
+final class SlowMicrophone: AudioSource {
+    let opening: Double
+    let inner: AudioSource
+    init(opening: Double, then inner: AudioSource) { self.opening = opening; self.inner = inner }
+
+    func start(_ deliver: @escaping (AudioChunk) -> Void) throws {
+        Thread.sleep(forTimeInterval: opening)
+        try inner.start(deliver)
+    }
+
+    func stop() { inner.stop() }
 }

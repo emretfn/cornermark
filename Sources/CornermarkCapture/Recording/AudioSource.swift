@@ -140,8 +140,13 @@ public final class LiveMicrophoneSource: NSObject, AudioSource, AVCaptureAudioDa
 
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let deliver, let clock = session?.synchronizationClock else { return }
+        if let chunk = Self.chunk(sampleBuffer, clock: clock) { deliver(chunk) }
+    }
+
+    /// One capture buffer as sound on the recording clock. `clock` is the session's synchronization clock, which the buffer is stamped on.
+    static func chunk(_ sample: CMSampleBuffer, clock: CMClockOrTimebase) -> AudioChunk? {
         let host = CMClockGetHostTimeClock()
-        if let chunk = AudioChunk(sampleBuffer, clock: { CMSyncConvertTime($0, from: clock, to: host).seconds }) { deliver(chunk) }
+        return AudioChunk(sample, clock: { CMSyncConvertTime($0, from: clock, to: host).seconds })
     }
 }
 
