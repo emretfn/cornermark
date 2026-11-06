@@ -155,7 +155,6 @@
   "Cancel recording": "Annuler l’enregistrement",
   "Cancel recording. {status}": "Annuler l’enregistrement. {status}",
   "Candy": "Bonbon",
-  "Capture": "Capture",
   "Capture All-in-One": "Capturer tout-en-un",
   "Capture Area": "Capturer une zone",
   "Capture failed": "Échec de la capture",
@@ -426,7 +425,6 @@
   "macOS asks the first time you turn the camera on.": "macOS demande l’autorisation la première fois que vous activez la caméra.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS bloque les captures d’écran tant que vous ne les autorisez pas. Cornermark capture uniquement sur ce Mac, rien n’en sort.",
   "Manual": "Manuel",
-  "Medium": "Moyenne",
   "Microphone": "Micro",
   "Microphone access": "Accès au micro",
   "Microphone level": "Niveau du micro",
@@ -439,7 +437,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Mixe les canaux d’entrée en un seul, pour qu’une voix sur une entrée soit audible des deux côtés.",
   "Mocha": "Moka",
   "Mode": "Mode",
-  "Mono": "Mono",
   "Motion": "Mouvement",
   "Motion blur": "Flou de mouvement",
   "Motion Blur": "Flou de mouvement",
@@ -839,5 +836,13 @@
   "Zooms and pans blur as they move.": "Les zooms et les panoramiques sont flous pendant leur mouvement.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Les zooms et les panoramiques sont flous pendant leur mouvement. Le curseur n’est flou que lorsqu’un zoom l’entraîne.",
   "Zooms, pans and a fast cursor blur as they move.": "Les zooms, les panoramiques et un curseur rapide sont flous pendant leur mouvement.",
-  "Zooms, pans and a fast cursor blur.": "Les zooms, les panoramiques et un curseur rapide sont flous."
+  "Zooms, pans and a fast cursor blur.": "Les zooms, les panoramiques et un curseur rapide sont flous.",
+  "Capture##button": "Capturer",
+  "Capture##item kind": "Capture d’écran",
+  "Capture##settings pane": "Capture",
+  "Delete##key name": "Supprimer",
+  "Medium##quality": "Moyenne",
+  "Medium##size": "Moyenne",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

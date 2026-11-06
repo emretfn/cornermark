@@ -147,7 +147,6 @@
   "Cancel recording": "Kaydı iptal et",
   "Cancel recording. {status}": "Kaydı iptal et. {status}",
   "Candy": "Şeker",
-  "Capture": "Ekran Resmi",
   "Capture All-in-One": "Hepsi Bir Arada Yakala",
   "Capture Area": "Alanı Yakala",
   "Capture failed": "Yakalama başarısız oldu",
@@ -417,7 +416,6 @@
   "macOS asks the first time you turn the camera on.": "Kamerayı ilk kez açtığınızda macOS izin ister.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "Siz izin verene kadar macOS ekran resimlerini engeller. Cornermark yalnızca bu Mac'te yakalama yapar, hiçbir şey bu Mac'in dışına çıkmaz.",
   "Manual": "Manuel",
-  "Medium": "Orta",
   "Microphone": "Mikrofon",
   "Microphone access": "Mikrofon erişimi",
   "Microphone level": "Mikrofon düzeyi",
@@ -430,7 +428,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Giriş kanallarını tek kanalda birleştirir; böylece tek girişten gelen bir ses her iki taraftan da duyulur.",
   "Mocha": "Moka",
   "Mode": "Mod",
-  "Mono": "Mono",
   "Motion": "Hareket",
   "Motion blur": "Hareket bulanıklığı",
   "Motion Blur": "Hareket Bulanıklığı",
@@ -830,5 +827,13 @@
   "Zooms and pans blur as they move.": "Yakınlaştırma ve pan hareketleri sırasında görüntü bulanıklaşır.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Yakınlaştırma ve pan hareketleri sırasında görüntü bulanıklaşır. İmleç yalnızca bir yakınlaştırma onu taşıdığında bulanıklaşır.",
   "Zooms, pans and a fast cursor blur as they move.": "Yakınlaştırmalar, pan hareketleri ve hızlı hareket eden imleç hareket sırasında bulanıklaşır.",
-  "Zooms, pans and a fast cursor blur.": "Yakınlaştırmalar, pan hareketleri ve hızlı hareket eden imleç bulanıklaşır."
+  "Zooms, pans and a fast cursor blur.": "Yakınlaştırmalar, pan hareketleri ve hızlı hareket eden imleç bulanıklaşır.",
+  "Capture##button": "Yakala",
+  "Capture##item kind": "Ekran Resmi",
+  "Capture##settings pane": "Yakalama",
+  "Delete##key name": "Sil",
+  "Medium##quality": "Orta",
+  "Medium##size": "Orta",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

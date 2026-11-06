@@ -155,7 +155,6 @@
   "Cancel recording": "Anulează înregistrarea",
   "Cancel recording. {status}": "Anulează înregistrarea. {status}",
   "Candy": "Bomboană",
-  "Capture": "Captură",
   "Capture All-in-One": "Capturează totul-în-unu",
   "Capture Area": "Capturează o zonă",
   "Capture failed": "Captura a eșuat",
@@ -426,7 +425,6 @@
   "macOS asks the first time you turn the camera on.": "macOS întreabă prima dată când activezi camera.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS blochează capturile de ecran până când le permiți. Cornermark capturează doar pe acest Mac, nimic nu iese de pe el.",
   "Manual": "Manual",
-  "Medium": "Medie",
   "Microphone": "Microfon",
   "Microphone access": "Acces la microfon",
   "Microphone level": "Nivelul microfonului",
@@ -439,7 +437,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Combină canalele de intrare într-unul singur, ca o voce de pe o intrare să se audă din ambele părți.",
   "Mocha": "Mocha",
   "Mode": "Mod",
-  "Mono": "Mono",
   "Motion": "Mișcare",
   "Motion blur": "Estompare de mișcare",
   "Motion Blur": "Estompare de mișcare",
@@ -839,5 +836,13 @@
   "Zooms and pans blur as they move.": "Zoomurile și panoramările se estompează în mișcare.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Zoomurile și panoramările se estompează în mișcare. Cursorul se estompează doar când un zoom îl poartă.",
   "Zooms, pans and a fast cursor blur as they move.": "Zoomurile, panoramările și un cursor rapid se estompează în mișcare.",
-  "Zooms, pans and a fast cursor blur.": "Zoomurile, panoramările și un cursor rapid se estompează."
+  "Zooms, pans and a fast cursor blur.": "Zoomurile, panoramările și un cursor rapid se estompează.",
+  "Capture##button": "Capturează",
+  "Capture##item kind": "Captură de ecran",
+  "Capture##settings pane": "Captură",
+  "Delete##key name": "Ștergere",
+  "Medium##quality": "Medie",
+  "Medium##size": "Medie",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

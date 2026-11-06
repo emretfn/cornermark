@@ -265,7 +265,7 @@ extension HotKey {
     }
 
     private static let spokenKeys: [String: LocalizedText] = [
-        "\u{21A9}": trKey("Return"), "\u{21E5}": trKey("Tab"), "\u{232B}": trKey("Delete"),
+        "\u{21A9}": trKey("Return"), "\u{21E5}": trKey("Tab"), "\u{232B}": trKey("Delete", context: "key name"),
         "\u{2190}": trKey("Left Arrow"), "\u{2192}": trKey("Right Arrow"), "\u{2191}": trKey("Up Arrow"), "\u{2193}": trKey("Down Arrow"),
         "=": trKey("Equals"), "-": trKey("Minus"), "[": trKey("Left Bracket"), "]": trKey("Right Bracket"), ";": trKey("Semicolon"), "'": trKey("Quote"),
         ",": trKey("Comma"), ".": trKey("Period"), "/": trKey("Slash"), "\\": trKey("Backslash"), "`": trKey("Grave"),

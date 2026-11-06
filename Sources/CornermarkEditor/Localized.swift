@@ -50,7 +50,7 @@ extension TextStylePreset {
         case .pill: return tr("Pill")
         case .banner: return tr("Banner")
         case .shadowed: return tr("Shadowed")
-        case .mono: return tr("Mono")
+        case .mono: return tr("Mono", context: "text style")
         }
     }
 }
@@ -74,7 +74,7 @@ enum BackgroundNames {
         "Lavender": trKey("Lavender"), "Mint": trKey("Mint"), "Midnight": trKey("Midnight"), "Candy": trKey("Candy"),
         "Citrus": trKey("Citrus"), "Graphite": trKey("Graphite"), "Dusk": trKey("Dusk"), "Forest": trKey("Forest"),
         "Rose Gold": trKey("Rose Gold"), "Sky": trKey("Sky"), "Ember": trKey("Ember"), "Lagoon": trKey("Lagoon"),
-        "Cotton": trKey("Cotton"), "Slate": trKey("Slate"), "Mocha": trKey("Mocha"), "Mono": trKey("Mono"),
+        "Cotton": trKey("Cotton"), "Slate": trKey("Slate"), "Mocha": trKey("Mocha"), "Mono": trKey("Mono", context: "gradient name"),
     ]
 
     static func title(_ name: String) -> String { titles[name]?.text ?? name }

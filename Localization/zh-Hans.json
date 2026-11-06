@@ -139,7 +139,6 @@
   "Cancel recording": "取消录制",
   "Cancel recording. {status}": "取消录制。{status}",
   "Candy": "糖果",
-  "Capture": "截取",
   "Capture All-in-One": "多合一截取",
   "Capture Area": "截取区域",
   "Capture failed": "截取失败",
@@ -408,7 +407,6 @@
   "macOS asks the first time you turn the camera on.": "第一次打开摄像头时 macOS 会询问。",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "在你允许之前，macOS 会阻止截屏。Cornermark 仅在这台 Mac 上截取，不会传出任何内容。",
   "Manual": "手动",
-  "Medium": "中",
   "Microphone": "麦克风",
   "Microphone access": "麦克风访问权限",
   "Microphone level": "麦克风电平",
@@ -421,7 +419,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "将输入声道混合为一个，使一侧输入的声音从两侧播放。",
   "Mocha": "摩卡",
   "Mode": "模式",
-  "Mono": "单色",
   "Motion": "运动",
   "Motion blur": "动态模糊",
   "Motion Blur": "动态模糊",
@@ -821,5 +818,13 @@
   "Zooms and pans blur as they move.": "缩放和平移在移动时会产生模糊。",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "缩放和平移在移动时会产生模糊。光标仅在被缩放带动时才会模糊。",
   "Zooms, pans and a fast cursor blur as they move.": "缩放、平移和快速移动的光标在移动时会产生模糊。",
-  "Zooms, pans and a fast cursor blur.": "缩放、平移和快速移动的光标会产生模糊。"
+  "Zooms, pans and a fast cursor blur.": "缩放、平移和快速移动的光标会产生模糊。",
+  "Capture##button": "截取",
+  "Capture##item kind": "截屏",
+  "Capture##settings pane": "截图",
+  "Delete##key name": "删除",
+  "Medium##quality": "中",
+  "Medium##size": "中",
+  "Mono##gradient name": "单色",
+  "Mono##text style": "等宽"
 }

@@ -102,8 +102,16 @@ public enum L10n {
             // The pseudo language renders the English through `transform`, never a catalog, so a harness check
             // reads the same text whatever the translations say.
             guard let pseudo = state.pseudo else { return (state.catalog.entries[key], state.language, state.locale) }
-            return (.text(pseudo(key)), state.language, state.locale)
+            return (.text(pseudo(englishText(key))), state.language, state.locale)
         }
+    }
+
+    /// Joins an English string and the context that tells its senses apart into one catalog key.
+    public static let contextSeparator = "##"
+
+    /// The English a key shows: the key itself, without a context.
+    public static func englishText(_ key: String) -> String {
+        key.range(of: contextSeparator).map { String(key[..<$0.lowerBound]) } ?? key
     }
 
     /// Fills `{name}` placeholders. Numbers are written the way `locale` writes them.
@@ -130,8 +138,14 @@ public enum L10n {
 /// `swift run L10nCheck` can find it; values go into `{name}` placeholders through `args`.
 public func tr(_ english: String, _ args: [String: Any] = [:]) -> String {
     let (entry, _, locale) = L10n.lookup(english)
-    guard case .text(let translated)? = entry else { return L10n.fill(english, args, locale: locale) }
+    guard case .text(let translated)? = entry else { return L10n.fill(L10n.englishText(english), args, locale: locale) }
     return L10n.fill(translated, args, locale: locale)
+}
+
+/// For an English string with more than one sense, such as "Capture" as a button and as a settings pane:
+/// `context` names this sense, so each sense gets its own translation. Both must be string literals.
+public func tr(_ english: String, context: String, _ args: [String: Any] = [:]) -> String {
+    tr(english + L10n.contextSeparator + context, args)
 }
 
 /// A counted string. `one` and `other` are the English forms; `{count}` is written in the current locale.
@@ -160,3 +174,6 @@ public struct LocalizedText: Hashable, Sendable {
 
 /// Marks `english` for translation without translating it yet. Read it with `.text`.
 public func trKey(_ english: String) -> LocalizedText { LocalizedText(key: english) }
+
+/// `trKey` for one sense of an English string with several; see `tr(_:context:_:)`.
+public func trKey(_ english: String, context: String) -> LocalizedText { LocalizedText(key: english + L10n.contextSeparator + context) }

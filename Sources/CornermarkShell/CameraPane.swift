@@ -29,7 +29,7 @@ extension CameraBubble.Size {
     var title: String {
         switch self {
         case .small: return tr("Small")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "size")
         case .large: return tr("Large")
         }
     }

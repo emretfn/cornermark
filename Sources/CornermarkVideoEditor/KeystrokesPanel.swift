@@ -16,7 +16,7 @@ final class KeystrokesPanel: SettingsPanel {
     static func title(_ size: KeystrokeDisplay.Size) -> String {
         switch size {
         case .small: return tr("Small")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "size")
         case .large: return tr("Large")
         }
     }

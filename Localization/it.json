@@ -155,7 +155,6 @@
   "Cancel recording": "Annulla registrazione",
   "Cancel recording. {status}": "Annulla registrazione. {status}",
   "Candy": "Caramella",
-  "Capture": "Cattura",
   "Capture All-in-One": "Cattura tutto in uno",
   "Capture Area": "Cattura area",
   "Capture failed": "Cattura non riuscita",
@@ -426,7 +425,6 @@
   "macOS asks the first time you turn the camera on.": "macOS lo chiede la prima volta che attivi la videocamera.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS blocca le istantanee finché non le consenti. Cornermark cattura solo su questo Mac, niente ne esce.",
   "Manual": "Manuale",
-  "Medium": "Media",
   "Microphone": "Microfono",
   "Microphone access": "Accesso al microfono",
   "Microphone level": "Livello del microfono",
@@ -439,7 +437,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Unisce i canali di ingresso in uno solo, così una voce su un ingresso si sente da entrambi i lati.",
   "Mocha": "Moka",
   "Mode": "Modalità",
-  "Mono": "Mono",
   "Motion": "Movimento",
   "Motion blur": "Sfocatura di movimento",
   "Motion Blur": "Sfocatura di movimento",
@@ -839,5 +836,13 @@
   "Zooms and pans blur as they move.": "Zoom e panoramiche si sfocano mentre si muovono.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Zoom e panoramiche si sfocano mentre si muovono. Il cursore si sfoca solo quando uno zoom lo trascina.",
   "Zooms, pans and a fast cursor blur as they move.": "Zoom, panoramiche e un cursore veloce si sfocano mentre si muovono.",
-  "Zooms, pans and a fast cursor blur.": "Zoom, panoramiche e un cursore veloce si sfocano."
+  "Zooms, pans and a fast cursor blur.": "Zoom, panoramiche e un cursore veloce si sfocano.",
+  "Capture##button": "Cattura",
+  "Capture##item kind": "Istantanea",
+  "Capture##settings pane": "Cattura",
+  "Delete##key name": "Cancella",
+  "Medium##quality": "Media",
+  "Medium##size": "Media",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

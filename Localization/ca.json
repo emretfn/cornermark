@@ -155,7 +155,6 @@
   "Cancel recording": "Cancel·la la gravació",
   "Cancel recording. {status}": "Cancel·la la gravació. {status}",
   "Candy": "Caramel",
-  "Capture": "Captura",
   "Capture All-in-One": "Captura tot en un",
   "Capture Area": "Captura una àrea",
   "Capture failed": "Error de captura",
@@ -426,7 +425,6 @@
   "macOS asks the first time you turn the camera on.": "El macOS ho pregunta la primera vegada que actives la càmera.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "El macOS bloqueja les captures de pantalla fins que les permets. El Cornermark només captura en aquest Mac; no en surt res.",
   "Manual": "Manual",
-  "Medium": "Mitjana",
   "Microphone": "Micròfon",
   "Microphone access": "Accés al micròfon",
   "Microphone level": "Nivell del micròfon",
@@ -439,7 +437,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Barreja els canals d’entrada en un de sol, perquè una veu en una entrada soni pels dos costats.",
   "Mocha": "Moca",
   "Mode": "Mode",
-  "Mono": "Mono",
   "Motion": "Moviment",
   "Motion blur": "Desenfocament de moviment",
   "Motion Blur": "Desenfocament de moviment",
@@ -839,5 +836,13 @@
   "Zooms and pans blur as they move.": "Els zooms i les panoràmiques es desenfoquen quan es mouen.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Els zooms i les panoràmiques es desenfoquen quan es mouen. El cursor només es desenfoca quan un zoom l’arrossega.",
   "Zooms, pans and a fast cursor blur as they move.": "Els zooms, les panoràmiques i un cursor ràpid es desenfoquen quan es mouen.",
-  "Zooms, pans and a fast cursor blur.": "Els zooms, les panoràmiques i un cursor ràpid es desenfoquen."
+  "Zooms, pans and a fast cursor blur.": "Els zooms, les panoràmiques i un cursor ràpid es desenfoquen.",
+  "Capture##button": "Captura",
+  "Capture##item kind": "Captura de pantalla",
+  "Capture##settings pane": "Captura",
+  "Delete##key name": "Retrocés",
+  "Medium##quality": "Mitjana",
+  "Medium##size": "Mitjana",
+  "Mono##gradient name": "Monocrom",
+  "Mono##text style": "Monoespaiat"
 }

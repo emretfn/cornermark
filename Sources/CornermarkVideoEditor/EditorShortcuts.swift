@@ -243,7 +243,7 @@ public struct EditorChord: Hashable, Sendable {
         switch key {
         case .space: words.append(tr("Space"))
         case .escape: words.append(tr("Escape"))
-        case .delete: words.append(tr("Delete"))
+        case .delete: words.append(tr("Delete", context: "key name"))
         case .forwardDelete: words.append(tr("Forward Delete"))
         case .left: words.append(tr("Left Arrow"))
         case .right: words.append(tr("Right Arrow"))

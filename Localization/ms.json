@@ -139,7 +139,6 @@
   "Cancel recording": "Batalkan rakaman",
   "Cancel recording. {status}": "Batalkan rakaman. {status}",
   "Candy": "Gula-gula",
-  "Capture": "Tangkap",
   "Capture All-in-One": "Tangkap Semua-dalam-Satu",
   "Capture Area": "Tangkap Kawasan",
   "Capture failed": "Tangkapan gagal",
@@ -408,7 +407,6 @@
   "macOS asks the first time you turn the camera on.": "macOS akan bertanya pada kali pertama anda menghidupkan kamera.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS menyekat tangkapan skrin sehingga anda membenarkannya. Cornermark menangkap pada Mac ini sahaja, tiada apa-apa yang keluar daripadanya.",
   "Manual": "Manual",
-  "Medium": "Sederhana",
   "Microphone": "Mikrofon",
   "Microphone access": "Akses mikrofon",
   "Microphone level": "Aras mikrofon",
@@ -421,7 +419,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Mencampurkan saluran input menjadi satu, jadi suara pada satu input dimainkan dari kedua-dua belah.",
   "Mocha": "Moka",
   "Mode": "Mod",
-  "Mono": "Mono",
   "Motion": "Gerakan",
   "Motion blur": "Kabur gerakan",
   "Motion Blur": "Kabur Gerakan",
@@ -821,5 +818,13 @@
   "Zooms and pans blur as they move.": "Zum dan anjakan menjadi kabur semasa bergerak.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Zum dan anjakan menjadi kabur semasa bergerak. Kursor hanya kabur apabila dibawa oleh zum.",
   "Zooms, pans and a fast cursor blur as they move.": "Zum, anjakan dan kursor yang laju menjadi kabur semasa bergerak.",
-  "Zooms, pans and a fast cursor blur.": "Zum, anjakan dan kursor yang laju menjadi kabur."
+  "Zooms, pans and a fast cursor blur.": "Zum, anjakan dan kursor yang laju menjadi kabur.",
+  "Capture##button": "Tangkap",
+  "Capture##item kind": "Tangkapan Skrin",
+  "Capture##settings pane": "Tangkapan",
+  "Delete##key name": "Padam",
+  "Medium##quality": "Sederhana",
+  "Medium##size": "Sederhana",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

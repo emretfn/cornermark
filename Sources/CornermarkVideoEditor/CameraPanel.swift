@@ -25,7 +25,7 @@ final class CameraPanel: SettingsPanel {
     static func title(_ size: CameraBubble.Size) -> String {
         switch size {
         case .small: return tr("Small")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "size")
         case .large: return tr("Large")
         }
     }

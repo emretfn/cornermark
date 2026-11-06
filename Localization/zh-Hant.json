@@ -139,7 +139,6 @@
   "Cancel recording": "取消錄製",
   "Cancel recording. {status}": "取消錄製。{status}",
   "Candy": "糖果",
-  "Capture": "擷取",
   "Capture All-in-One": "多合一擷取",
   "Capture Area": "擷取區域",
   "Capture failed": "擷取失敗",
@@ -408,7 +407,6 @@
   "macOS asks the first time you turn the camera on.": "第一次開啟相機時，macOS 會詢問你。",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "在你允許之前，macOS 會阻擋截圖。Cornermark 只在這部 Mac 上擷取，不會傳出任何內容。",
   "Manual": "手動",
-  "Medium": "中",
   "Microphone": "麥克風",
   "Microphone access": "麥克風取用權限",
   "Microphone level": "麥克風音量大小",
@@ -421,7 +419,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "將輸入聲道混合為一個，讓一側輸入的聲音從兩側播放。",
   "Mocha": "摩卡",
   "Mode": "模式",
-  "Mono": "單色",
   "Motion": "動態",
   "Motion blur": "動態模糊",
   "Motion Blur": "動態模糊",
@@ -821,5 +818,13 @@
   "Zooms and pans blur as they move.": "縮放和平移在移動時會產生模糊。",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "縮放和平移在移動時會產生模糊。游標只有在被縮放帶動時才會模糊。",
   "Zooms, pans and a fast cursor blur as they move.": "縮放、平移和快速移動的游標在移動時會產生模糊。",
-  "Zooms, pans and a fast cursor blur.": "縮放、平移和快速移動的游標會產生模糊。"
+  "Zooms, pans and a fast cursor blur.": "縮放、平移和快速移動的游標會產生模糊。",
+  "Capture##button": "擷取",
+  "Capture##item kind": "截圖",
+  "Capture##settings pane": "擷取畫面",
+  "Delete##key name": "刪除",
+  "Medium##quality": "中",
+  "Medium##size": "中",
+  "Mono##gradient name": "單色",
+  "Mono##text style": "等寬"
 }

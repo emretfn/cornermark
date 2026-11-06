@@ -84,7 +84,7 @@ extension ExportQuality {
     var localizedTitle: String {
         switch self {
         case .low: return tr("Low")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "quality")
         case .high: return tr("High")
         }
     }
@@ -123,7 +123,7 @@ extension BuiltinBackground {
         case "Cotton": return tr("Cotton")
         case "Slate": return tr("Slate")
         case "Mocha": return tr("Mocha")
-        case "Mono": return tr("Mono")
+        case "Mono": return tr("Mono", context: "gradient name")
         default: return name
         }
     }

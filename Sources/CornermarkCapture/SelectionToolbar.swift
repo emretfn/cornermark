@@ -16,7 +16,7 @@ final class SelectionToolbar: Surface {
     private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
     private let widthField = TextInput(placeholder: tr("W"), monospaced: true, centered: true)
     private let heightField = TextInput(placeholder: tr("H"), monospaced: true, centered: true)
-    private let captureButton = Button(title: tr("Capture"), variant: .primary, size: .large)
+    private let captureButton = Button(title: tr("Capture", context: "button"), variant: .primary, size: .large)
     private var leftToRight = LeftToRightFrames()
 
     init(frame frameRect: NSRect) {

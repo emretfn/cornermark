@@ -139,7 +139,6 @@
   "Cancel recording": "Batalkan rekaman",
   "Cancel recording. {status}": "Batalkan rekaman. {status}",
   "Candy": "Permen",
-  "Capture": "Tangkap",
   "Capture All-in-One": "Tangkap Semua-dalam-Satu",
   "Capture Area": "Tangkap Area",
   "Capture failed": "Tangkapan gagal",
@@ -408,7 +407,6 @@
   "macOS asks the first time you turn the camera on.": "macOS akan bertanya saat pertama kali Anda menyalakan kamera.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS memblokir jepretan layar hingga Anda mengizinkannya. Cornermark hanya menangkap di Mac ini, tidak ada yang keluar darinya.",
   "Manual": "Manual",
-  "Medium": "Sedang",
   "Microphone": "Mikrofon",
   "Microphone access": "Akses mikrofon",
   "Microphone level": "Level mikrofon",
@@ -421,7 +419,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Menggabungkan saluran input menjadi satu, sehingga suara di satu input terdengar dari kedua sisi.",
   "Mocha": "Moka",
   "Mode": "Mode",
-  "Mono": "Mono",
   "Motion": "Gerakan",
   "Motion blur": "Buram gerak",
   "Motion Blur": "Buram Gerak",
@@ -821,5 +818,13 @@
   "Zooms and pans blur as they move.": "Zoom dan geseran menjadi buram saat bergerak.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Zoom dan geseran menjadi buram saat bergerak. Kursor hanya buram saat dibawa oleh zoom.",
   "Zooms, pans and a fast cursor blur as they move.": "Zoom, geseran, dan kursor yang cepat menjadi buram saat bergerak.",
-  "Zooms, pans and a fast cursor blur.": "Zoom, geseran, dan kursor yang cepat menjadi buram."
+  "Zooms, pans and a fast cursor blur.": "Zoom, geseran, dan kursor yang cepat menjadi buram.",
+  "Capture##button": "Tangkap",
+  "Capture##item kind": "Jepretan Layar",
+  "Capture##settings pane": "Tangkapan",
+  "Delete##key name": "Hapus",
+  "Medium##quality": "Sedang",
+  "Medium##size": "Sedang",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

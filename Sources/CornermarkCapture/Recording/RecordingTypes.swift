@@ -16,7 +16,7 @@ public enum VideoQuality: String, Codable, CaseIterable, Sendable {
     public var title: String {
         switch self {
         case .high: return tr("High")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "quality")
         case .low: return tr("Low")
         }
     }

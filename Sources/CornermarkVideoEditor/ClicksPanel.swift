@@ -54,7 +54,7 @@ final class ClicksPanel: NSView {
     static func title(_ size: ClickHighlight.Size) -> String {
         switch size {
         case .small: return tr("Small")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "size")
         case .large: return tr("Large")
         }
     }

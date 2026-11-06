@@ -116,3 +116,14 @@ final class EmbeddedCatalogTests: XCTestCase {
         XCTAssertEqual(tr("General"), "General")
     }
 }
+
+final class ContextTests: XCTestCase {
+    override func tearDown() { L10n.setLanguage(.en) }
+
+    func testEachSenseHasItsOwnTranslationAndEnglishIsUnchanged() throws {
+        XCTAssertEqual(tr("Capture", context: "button"), "Capture")
+        XCTAssertEqual(trKey("Capture", context: "button").text, "Capture")
+        L10n.setPseudoLanguage(.ar) { "‹\($0)›" }
+        XCTAssertEqual(tr("Capture", context: "button"), "‹Capture›")
+    }
+}

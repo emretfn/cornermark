@@ -155,7 +155,6 @@
   "Cancel recording": "Cancelar grabación",
   "Cancel recording. {status}": "Cancelar grabación. {status}",
   "Candy": "Caramelo",
-  "Capture": "Captura",
   "Capture All-in-One": "Capturar todo en uno",
   "Capture Area": "Capturar área",
   "Capture failed": "Error de captura",
@@ -426,7 +425,6 @@
   "macOS asks the first time you turn the camera on.": "macOS lo pregunta la primera vez que activas la cámara.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS bloquea las capturas de pantalla hasta que las permitas. Cornermark captura solo en este Mac; nada sale de él.",
   "Manual": "Manual",
-  "Medium": "Mediana",
   "Microphone": "Micrófono",
   "Microphone access": "Acceso al micrófono",
   "Microphone level": "Nivel del micrófono",
@@ -439,7 +437,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Mezcla los canales de entrada en uno, para que una voz en una entrada suene por ambos lados.",
   "Mocha": "Moca",
   "Mode": "Modo",
-  "Mono": "Mono",
   "Motion": "Movimiento",
   "Motion blur": "Desenfoque de movimiento",
   "Motion Blur": "Desenfoque de movimiento",
@@ -839,5 +836,13 @@
   "Zooms and pans blur as they move.": "Los zooms y las panorámicas se desenfocan al moverse.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Los zooms y las panorámicas se desenfocan al moverse. El cursor solo se desenfoca cuando un zoom lo arrastra.",
   "Zooms, pans and a fast cursor blur as they move.": "Los zooms, las panorámicas y un cursor rápido se desenfocan al moverse.",
-  "Zooms, pans and a fast cursor blur.": "Los zooms, las panorámicas y un cursor rápido se desenfocan."
+  "Zooms, pans and a fast cursor blur.": "Los zooms, las panorámicas y un cursor rápido se desenfocan.",
+  "Capture##button": "Capturar",
+  "Capture##item kind": "Captura de pantalla",
+  "Capture##settings pane": "Captura",
+  "Delete##key name": "Eliminar",
+  "Medium##quality": "Media",
+  "Medium##size": "Mediano",
+  "Mono##gradient name": "Monocromo",
+  "Mono##text style": "Monoespaciado"
 }

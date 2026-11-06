@@ -269,7 +269,7 @@ final class QuickAccessPane: SettingsPane {
 
 final class CapturePane: SettingsPane {
     override var paneID: String { "capture" }
-    override var paneTitle: String { tr("Capture") }
+    override var paneTitle: String { tr("Capture", context: "settings pane") }
     override var symbol: String { "camera.viewfinder" }
     private let shadow = Form.checkbox(id: "capture.shadow")
     private let timer = Form.stepper(range: 1...60, id: "capture.timer")
@@ -520,7 +520,7 @@ extension ClickHighlight.Size {
     var title: String {
         switch self {
         case .small: return tr("Small")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "size")
         case .large: return tr("Large")
         }
     }
@@ -539,7 +539,7 @@ extension KeystrokeDisplay.Size {
     var title: String {
         switch self {
         case .small: return tr("Small")
-        case .medium: return tr("Medium")
+        case .medium: return tr("Medium", context: "size")
         case .large: return tr("Large")
         }
     }

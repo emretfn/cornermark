@@ -163,7 +163,6 @@
   "Cancel recording": "Скасувати запис",
   "Cancel recording. {status}": "Скасувати запис. {status}",
   "Candy": "Цукерка",
-  "Capture": "Знімок",
   "Capture All-in-One": "Знімок «Усе в одному»",
   "Capture Area": "Зняти область",
   "Capture failed": "Не вдалося зробити знімок",
@@ -435,7 +434,6 @@
   "macOS asks the first time you turn the camera on.": "macOS запитає, коли ви вперше ввімкнете камеру.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "macOS блокує знімки екрана, доки ви їх не дозволите. Cornermark знімає лише на цьому Mac, і ніщо не виходить за його межі.",
   "Manual": "Вручну",
-  "Medium": "Середній",
   "Microphone": "Мікрофон",
   "Microphone access": "Доступ до мікрофона",
   "Microphone level": "Рівень мікрофона",
@@ -448,7 +446,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Зводить вхідні канали в один, тож голос з одного входу звучить з обох боків.",
   "Mocha": "Мокко",
   "Mode": "Режим",
-  "Mono": "Моно",
   "Motion": "Рух",
   "Motion blur": "Розмиття в русі",
   "Motion Blur": "Розмиття в русі",
@@ -848,5 +845,13 @@
   "Zooms and pans blur as they move.": "Наближення й панорамування розмиваються в русі.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Наближення й панорамування розмиваються в русі. Курсор розмивається, лише коли його переносить наближення.",
   "Zooms, pans and a fast cursor blur as they move.": "Наближення, панорамування й швидкий курсор розмиваються в русі.",
-  "Zooms, pans and a fast cursor blur.": "Наближення, панорамування й швидкий курсор розмиваються."
+  "Zooms, pans and a fast cursor blur.": "Наближення, панорамування й швидкий курсор розмиваються.",
+  "Capture##button": "Зняти",
+  "Capture##item kind": "Знімок",
+  "Capture##settings pane": "Знімки екрана",
+  "Delete##key name": "Видалити",
+  "Medium##quality": "Середній",
+  "Medium##size": "Середній",
+  "Mono##gradient name": "Моно",
+  "Mono##text style": "Моно"
 }

@@ -58,6 +58,7 @@ func unescape(_ literal: String, at site: String) -> String? {
 let lit = #""((?:[^"\\\n]|\\.)*)""#
 let anyCall = try! NSRegularExpression(pattern: #"\b(tr|trKey|trPlural)\("#)
 let textCall = try! NSRegularExpression(pattern: #"\b(?:tr|trKey)\(\s*"# + lit)
+let contextCall = try! NSRegularExpression(pattern: #"\b(?:tr|trKey)\(\s*"# + lit + #"\s*,\s*context:\s*"# + lit)
 let pluralCall = try! NSRegularExpression(pattern: #"\btrPlural\(\s*one:\s*"# + lit + #"\s*,\s*other:\s*"# + lit)
 
 func scan() -> Found {
@@ -82,7 +83,14 @@ func scan() -> Found {
                     found.entries[key] = source
                     found.sites[key] = found.sites[key] ?? site
                 }
-                for m in textCall.matches(in: line, range: range) {
+                let contextual = contextCall.matches(in: line, range: range)
+                for m in contextual {
+                    matched += 1
+                    if let english = unescape(ns.substring(with: m.range(at: 1)), at: site),
+                       let context = unescape(ns.substring(with: m.range(at: 2)), at: site) { record(english + L10n.contextSeparator + context, .text) }
+                }
+                let contextStarts = Set(contextual.map(\.range.location))
+                for m in textCall.matches(in: line, range: range) where !contextStarts.contains(m.range.location) {
                     matched += 1
                     if let key = unescape(ns.substring(with: m.range(at: 1)), at: site) { record(key, .text) }
                 }
@@ -117,7 +125,7 @@ func englishCatalog(_ found: Found) -> [String: Any] {
     var out: [String: Any] = [:]
     for (key, source) in found.entries {
         switch source {
-        case .text: out[key] = key
+        case .text: out[key] = L10n.englishText(key)
         case .plural(let one): out[key] = ["one": one, "other": key]
         }
     }
@@ -139,7 +147,7 @@ func check(_ language: Language, _ found: Found) -> [String: Any]? {
     var missing = 0
     for (key, source) in found.entries.sorted(by: { $0.key < $1.key }) {
         guard let value = dict[key] else { missing += 1; problem("\(language.rawValue): missing \"\(key)\""); continue }
-        let expected = placeholders(key)
+        let expected = placeholders(L10n.englishText(key))
         switch source {
         case .text:
             guard let s = value as? String else { problem("\(language.rawValue): \"\(key)\" must be a string"); continue }

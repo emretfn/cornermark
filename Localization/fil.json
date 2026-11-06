@@ -147,7 +147,6 @@
   "Cancel recording": "Kanselahin ang recording",
   "Cancel recording. {status}": "Kanselahin ang recording. {status}",
   "Candy": "Kendi",
-  "Capture": "Kunan",
   "Capture All-in-One": "Kunan ang All-in-One",
   "Capture Area": "Kunan ang area",
   "Capture failed": "Nabigo ang pagkuha",
@@ -417,7 +416,6 @@
   "macOS asks the first time you turn the camera on.": "Magtatanong ang macOS sa unang pagkakataong i-on mo ang camera.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "Hinaharangan ng macOS ang mga screenshot hangga't hindi mo pinapayagan. Kumukuha lang ang Cornermark sa Mac na ito, walang lumalabas dito.",
   "Manual": "Mano-mano",
-  "Medium": "Katamtaman",
   "Microphone": "Mikropono",
   "Microphone access": "Access sa mikropono",
   "Microphone level": "Level ng mikropono",
@@ -430,7 +428,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Pinagsasama ang mga input channel sa isa, kaya ang boses sa isang input ay maririnig sa magkabilang panig.",
   "Mocha": "Mocha",
   "Mode": "Mode",
-  "Mono": "Mono",
   "Motion": "Galaw",
   "Motion blur": "Motion blur",
   "Motion Blur": "Motion blur",
@@ -830,5 +827,13 @@
   "Zooms and pans blur as they move.": "Lumalabo ang mga zoom at pan habang gumagalaw.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Lumalabo ang mga zoom at pan habang gumagalaw. Lumalabo lang ang cursor kapag dala ito ng zoom.",
   "Zooms, pans and a fast cursor blur as they move.": "Lumalabo ang mga zoom, pan at mabilis na cursor habang gumagalaw.",
-  "Zooms, pans and a fast cursor blur.": "Lumalabo ang mga zoom, pan at mabilis na cursor."
+  "Zooms, pans and a fast cursor blur.": "Lumalabo ang mga zoom, pan at mabilis na cursor.",
+  "Capture##button": "Kunan",
+  "Capture##item kind": "Screenshot",
+  "Capture##settings pane": "Pagkuha",
+  "Delete##key name": "Delete",
+  "Medium##quality": "Katamtaman",
+  "Medium##size": "Katamtaman",
+  "Mono##gradient name": "Mono",
+  "Mono##text style": "Mono"
 }

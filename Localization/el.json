@@ -147,7 +147,6 @@
   "Cancel recording": "Ακύρωση εγγραφής",
   "Cancel recording. {status}": "Ακύρωση εγγραφής. {status}",
   "Candy": "Καραμέλα",
-  "Capture": "Λήψη",
   "Capture All-in-One": "Λήψη «Όλα σε ένα»",
   "Capture Area": "Λήψη περιοχής",
   "Capture failed": "Η λήψη απέτυχε",
@@ -417,7 +416,6 @@
   "macOS asks the first time you turn the camera on.": "Το macOS ρωτά την πρώτη φορά που ενεργοποιείτε την κάμερα.",
   "macOS blocks screenshots until you allow them. Cornermark captures on this Mac only, nothing leaves it.": "Το macOS μπλοκάρει τα στιγμιότυπα οθόνης μέχρι να τα επιτρέψετε. Το Cornermark κάνει λήψεις μόνο σε αυτό το Mac και τίποτα δεν φεύγει από αυτό.",
   "Manual": "Χειροκίνητο",
-  "Medium": "Μεσαίο",
   "Microphone": "Μικρόφωνο",
   "Microphone access": "Πρόσβαση στο μικρόφωνο",
   "Microphone level": "Στάθμη μικροφώνου",
@@ -430,7 +428,6 @@
   "Mixes the input channels into one, so a voice on one input plays from both sides.": "Αναμειγνύει τα κανάλια εισόδου σε ένα, ώστε μια φωνή σε μία είσοδο να ακούγεται και από τις δύο πλευρές.",
   "Mocha": "Μόκα",
   "Mode": "Λειτουργία",
-  "Mono": "Mono",
   "Motion": "Κίνηση",
   "Motion blur": "Θόλωμα κίνησης",
   "Motion Blur": "Θόλωμα κίνησης",
@@ -830,5 +827,13 @@
   "Zooms and pans blur as they move.": "Τα ζουμ και οι μετατοπίσεις θολώνουν καθώς κινούνται.",
   "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it.": "Τα ζουμ και οι μετατοπίσεις θολώνουν καθώς κινούνται. Ο δρομέας θολώνει μόνο όταν τον μετακινεί ένα ζουμ.",
   "Zooms, pans and a fast cursor blur as they move.": "Τα ζουμ, οι μετατοπίσεις και ένας γρήγορος δρομέας θολώνουν καθώς κινούνται.",
-  "Zooms, pans and a fast cursor blur.": "Τα ζουμ, οι μετατοπίσεις και ένας γρήγορος δρομέας θολώνουν."
+  "Zooms, pans and a fast cursor blur.": "Τα ζουμ, οι μετατοπίσεις και ένας γρήγορος δρομέας θολώνουν.",
+  "Capture##button": "Λήψη",
+  "Capture##item kind": "Στιγμιότυπο οθόνης",
+  "Capture##settings pane": "Λήψη",
+  "Delete##key name": "Διαγραφή",
+  "Medium##quality": "Μεσαία",
+  "Medium##size": "Μεσαίο",
+  "Mono##gradient name": "Μονόχρωμο",
+  "Mono##text style": "Σταθερού πλάτους"
 }

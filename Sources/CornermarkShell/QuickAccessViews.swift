@@ -115,7 +115,7 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
     func relocalize() {
         // A GIF's info line already starts with its noun.
         let spoken = card.info.replacingOccurrences(of: "  \u{00B7}  ", with: ", ")
-        let kind = card.record.video?.format.noun ?? tr("Capture")
+        let kind = card.record.video?.format.noun ?? tr("Capture", context: "item kind")
         setAccessibilityLabel(card.record.video?.format == .gif ? spoken : tr("{kind}, {details}", ["kind": kind, "details": spoken]))
         for (action, button) in buttons { button.rename(action.title) }
         applyLanguageDirection()
