@@ -194,18 +194,17 @@ final class ZoomTargetView: NSView {
         onChange(zoom.center, .ended)
     }
 
+    /// The arrows move the target 1% of the picture a press, 10% with Shift. The keys come from `EditorShortcuts`.
     override func keyDown(with event: NSEvent) {
-        let mods = event.modifierFlags.intersection([.option, .command, .shift, .control])
-        guard let zoom, mods.subtracting(.shift).isEmpty else { return super.keyDown(with: event) }
-        let step = mods.contains(.shift) ? 10 * Self.step : Self.step
+        guard let zoom, let press = EditorShortcuts.match(event, in: .zoomTarget), press.command == .moveTarget else { return super.keyDown(with: event) }
+        let step = press.enlarged ? 10 * Self.step : Self.step
         // Starting from the centre the frame shows, so a press always moves the frame it can see.
         let c = ZoomCamera.reachable(zoom.center, scale: zoom.scale)
-        switch event.keyCode {
-        case 123: send(c.x - step, c.y, .key)
-        case 124: send(c.x + step, c.y, .key)
-        case 125: send(c.x, c.y + step, .key)
-        case 126: send(c.x, c.y - step, .key)
-        default: super.keyDown(with: event)
+        switch press.keyIndex {
+        case 0: send(c.x - step, c.y, .key)
+        case 1: send(c.x + step, c.y, .key)
+        case 2: send(c.x, c.y - step, .key)
+        default: send(c.x, c.y + step, .key)
         }
     }
 }

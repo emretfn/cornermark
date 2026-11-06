@@ -30,12 +30,17 @@ let blurFilming = ProcessInfo.processInfo.environment["CORNERMARK_BLUR_FILM"]
 let followFilming = ProcessInfo.processInfo.environment["CORNERMARK_FOLLOW_FILM"]
 let followExport = ProcessInfo.processInfo.environment["CORNERMARK_FOLLOW_EXPORT"]
 let manualZoomFilming = ProcessInfo.processInfo.environment["CORNERMARK_MANUAL_ZOOM_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming].allSatisfy { $0 == nil } ? 420 : 900)) {
+let shortcutsFilming = ProcessInfo.processInfo.environment["CORNERMARK_SHORTCUTS_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, blurFilming, followFilming, followExport, manualZoomFilming, shortcutsFilming].allSatisfy { $0 == nil } ? 420 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let shortcutsFilming {
+        let ok = await VideoShortcutsFilm.run(out: URL(fileURLWithPath: shortcutsFilming, isDirectory: true))
+        filmDone(ok)
+    }
     if let blurFilming {
         let ok = await VideoMotionBlurFilm.run(out: URL(fileURLWithPath: blurFilming, isDirectory: true))
         filmDone(ok)
@@ -156,6 +161,7 @@ Task { @MainActor in
         try await checkVideoManualZoom()
         try await checkVideoAfterRecording()
         try await checkVideoMotionBlur()
+        try await checkVideoShortcuts()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

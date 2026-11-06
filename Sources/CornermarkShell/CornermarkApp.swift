@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkDesign
+import CornermarkVideoEditor
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -97,38 +98,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Accessory apps still need an Edit menu for Cmd+C/V in text fields and Cmd+W in windows.
     private func installMainMenu() {
+        let main = MainMenu.make(openVideo: #selector(openVideo), target: self)
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = main.items.last?.submenu
+    }
+}
+
+/// The app's menu bar. The video editor's items take their keys from `EditorShortcuts`, the table Settings lists.
+@MainActor
+enum MainMenu {
+    static func make(openVideo: Selector, target: AnyObject) -> NSMenu {
         let main = NSMenu()
-        let appItem = NSMenuItem()
-        main.addItem(appItem)
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Cornermark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appItem.submenu = appMenu
-        let fileItem = NSMenuItem()
-        main.addItem(fileItem)
-        let file = NSMenu(title: "File")
-        file.addItem(withTitle: "Open Video\u{2026}", action: #selector(openVideo), keyEquivalent: "o").target = self
+        func submenu(_ title: String) -> NSMenu {
+            let item = NSMenuItem()
+            main.addItem(item)
+            let menu = NSMenu(title: title)
+            item.submenu = menu
+            return menu
+        }
+        func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ command: EditorCommand) -> NSMenuItem {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            if let (key, mask) = EditorShortcuts.shortcut(for: command).keys.first?.menuKey {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = mask
+            }
+            return item
+        }
+        submenu("").addItem(withTitle: "Quit Cornermark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let file = submenu("File")
+        add(file, "Open Video\u{2026}", openVideo, .openVideo).target = target
         file.addItem(.separator())
-        file.addItem(withTitle: "Save", action: Selector(("saveDocument:")), keyEquivalent: "s")
-        file.addItem(withTitle: "Save As\u{2026}", action: Selector(("saveDocumentAs:")), keyEquivalent: "S")
-        fileItem.submenu = file
-        let editItem = NSMenuItem()
-        main.addItem(editItem)
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        _ = add(file, "Save", Selector(("saveDocument:")), .save)
+        _ = add(file, "Save As\u{2026}", Selector(("saveDocumentAs:")), .saveAs)
+        file.addItem(.separator())
+        _ = add(file, "Export\u{2026}", Selector(("exportVideo:")), .export)
+        _ = add(file, "Export Current Frame as Image", Selector(("exportCurrentFrame:")), .exportFrame)
+        let edit = submenu("Edit")
+        _ = add(edit, "Undo", Selector(("undo:")), .undo)
+        _ = add(edit, "Redo", Selector(("redo:")), .redo)
         edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editItem.submenu = edit
-        let windowItem = NSMenuItem()
-        main.addItem(windowItem)
-        let window = NSMenu(title: "Window")
-        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        windowItem.submenu = window
-        NSApp.mainMenu = main
-        NSApp.windowsMenu = window
+        submenu("Window").addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        return main
     }
 }
 

@@ -31,7 +31,7 @@ final class ZoomPanel: NSStackView {
     /// What each mode does, under the mode menu.
     static func modeNote(_ mode: ZoomMode) -> String {
         switch mode {
-        case .followCursor: return "The camera holds while the pointer stays near the middle of the view, then drifts to follow it."
+        case .followCursor: return "The camera holds while the cursor stays near the middle of the view, then drifts to follow it."
         case .manual: return "The camera holds the spot framed below. Drag the frame or use the arrow keys to move it."
         }
     }

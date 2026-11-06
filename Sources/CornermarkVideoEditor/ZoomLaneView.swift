@@ -75,19 +75,15 @@ final class ZoomLaneView: NSView {
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath.continuous(bounds, radius: DS.Radius.sm).fill() }
 
+    /// The arrows pick the previous or next zoom; with Option they move the picked zoom, with Option-Command its end, 0.1 s a press or a
+    /// second with Shift. The keys come from `EditorShortcuts`.
     override func keyDown(with event: NSEvent) {
-        let mods = event.modifierFlags.intersection([.option, .command, .shift, .control])
-        let direction: Double
-        switch event.keyCode {
-        case 123: direction = -1
-        case 124: direction = 1
-        default: return super.keyDown(with: event)
-        }
-        let step = (mods.contains(.shift) ? 1.0 : 0.1) * direction
-        switch mods.subtracting(.shift) {
-        case []: onKey(.pick(Int(direction)))
-        case .option: onKey(.move(by: step))
-        case [.option, .command]: onKey(.resizeEnd(by: step))
+        guard let press = EditorShortcuts.match(event, in: .zoomLane) else { return super.keyDown(with: event) }
+        let step = (press.enlarged ? 1.0 : 0.1) * (press.forward ? 1 : -1)
+        switch press.command {
+        case .pickZoom: onKey(.pick(press.forward ? 1 : -1))
+        case .moveZoom: onKey(.move(by: step))
+        case .resizeZoom: onKey(.resizeEnd(by: step))
         default: super.keyDown(with: event)
         }
     }

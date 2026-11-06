@@ -281,7 +281,9 @@ private func checkSettingsLayout(_ w: World, _ sw: SettingsWindowController) thr
 
     for pane in sw.panes {
         let page = pane.view
-        check(page.frame.width == 560 && page.frame.height > 200 && page.frame.height < 1400, "\(pane.paneTitle): the page is 560 wide with a fitted height", detail: "\(page.frame.size)")
+        // Shortcuts also lists every video editor key, so its page is the one long enough to scroll well past the window.
+        let tallest: CGFloat = pane is ShortcutsPane ? 2600 : 1400
+        check(page.frame.width == 560 && page.frame.height > 200 && page.frame.height < tallest, "\(pane.paneTitle): the page is 560 wide with a fitted height", detail: "\(page.frame.size)")
         let found = cards(in: page)
         check(!found.isEmpty && found.allSatisfy { $0.frame.width == 512 && $0.convert($0.bounds, to: page).minX == 24 }, "\(pane.paneTitle): every card is 512 wide on the s24 inset",
               detail: "\(found.map { $0.convert($0.bounds, to: page) })")

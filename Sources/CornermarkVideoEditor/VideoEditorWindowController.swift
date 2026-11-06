@@ -38,6 +38,19 @@ public enum ExportEvent: Equatable {
     case notSaved(String)
 }
 
+public struct FrameExport: Equatable {
+    public var image: CGImage
+    /// Seconds into the finished video.
+    public var outputTime: Double
+    /// Pixels per recorded point, so the picture keeps the recording's density.
+    public var pointScale: Double
+}
+
+public enum FrameExportEvent: Equatable {
+    case finished(FrameExport)
+    case failed(String)
+}
+
 public enum VideoEditorError: Error, Equatable {
     case noProject(String)
     case noVideo(String)
@@ -51,12 +64,16 @@ final class VideoEditorWindow: NSWindow {
     @objc(redo:) func redoEdit(_ sender: Any?) { editor?.redo() }
     @objc(saveDocument:) func saveDocument(_ sender: Any?) { editor?.save() }
     @objc(saveDocumentAs:) func saveDocumentAs(_ sender: Any?) { editor?.chooseAndSaveAs() }
+    @objc(exportVideo:) func exportVideo(_ sender: Any?) { editor?.perform(.export) }
+    @objc(exportCurrentFrame:) func exportCurrentFrame(_ sender: Any?) { editor?.perform(.exportFrame) }
 
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case Selector(("undo:")): return editor?.canUndo ?? false
         case Selector(("redo:")): return editor?.canRedo ?? false
         case Selector(("saveDocument:")), Selector(("saveDocumentAs:")): return editor != nil
+        case Selector(("exportVideo:")): return editor.map { !$0.state.isPreviewOnly } ?? false
+        case Selector(("exportCurrentFrame:")): return editor != nil
         default: return super.validateMenuItem(item)
         }
     }
@@ -100,6 +117,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// Where a finished export is written.
     public var exportFolder: () -> URL = { FileManager.default.temporaryDirectory }
     public var onExport: (ExportEvent) -> Void = { _ in }
+    /// Called with the picture Export Current Frame drew, or why it could not.
+    public var onExportFrame: (FrameExportEvent) -> Void = { _ in }
+    /// The latest Export Current Frame, for a check to wait on.
+    public private(set) var frameJob: Task<Void, Never>?
     /// Asks for a picture to put behind the recording and hands back its file, or nothing when the viewer cancels.
     public var chooseImage: (NSWindow?, @escaping (URL?) -> Void) -> Void = { window, done in
         let panel = NSOpenPanel()
@@ -788,38 +809,35 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         refresh()
     }
 
-    struct Chord: Hashable {
-        var keyCode: UInt16
-        var modifiers: NSEvent.ModifierFlags.RawValue = 0
-        static func command(_ keyCode: UInt16, shift: Bool = false) -> Chord {
-            Chord(keyCode: keyCode, modifiers: (shift ? [.command, .shift] : NSEvent.ModifierFlags.command).rawValue)
-        }
+    func handleKey(_ event: NSEvent) -> Bool {
+        // A field being typed in keeps Space, Delete and Esc, so Delete takes back a digit instead of a clip.
+        if event.modifierFlags.intersection([.command, .control, .option]).isEmpty, window?.firstResponder is NSText { return false }
+        guard let press = EditorShortcuts.match(event, in: .window) else { return false }
+        return perform(press.command)
     }
 
-    static let keys: [Chord: (VideoEditorWindowController) -> Bool] = [
-        Chord(keyCode: 49): { $0.togglePlayback(); return true },
-        Chord(keyCode: 53): { $0.escape() },
-        .command(11): { $0.splitSelection(); return true },
-        .command(2): {
-            guard let id = $0.state.selectedZoom else { return false }
-            $0.duplicateZoom(id)
-            return true
-        },
-        Chord(keyCode: 51): { $0.deleteSelection(); return true },
-        Chord(keyCode: 117): { $0.deleteSelection(); return true },
-        Chord(keyCode: 6): { $0.addZoomAtPlayhead(); return true },
-        .command(6): { $0.undo(); return true },
-        .command(6, shift: true): { $0.redo(); return true },
-        .command(1): { $0.save(); return true },
-        .command(1, shift: true): { $0.chooseAndSaveAs(); return true },
-    ]
-
-    func handleKey(_ event: NSEvent) -> Bool {
-        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
-        // A field being typed in keeps Space, Delete and Esc, so Delete takes back a digit instead of a clip.
-        if mods.isEmpty, window?.firstResponder is NSText { return false }
-        guard let action = Self.keys[Chord(keyCode: event.keyCode, modifiers: mods.rawValue)] else { return false }
-        return action(self)
+    /// Runs a command the window answers. The timeline and the zoom lane answer their own keys from the same table.
+    @discardableResult
+    public func perform(_ command: EditorCommand) -> Bool {
+        switch command {
+        case .playPause: togglePlayback()
+        case .escape: return escape()
+        case .fullScreen: setPreviewOnly(!state.isPreviewOnly)
+        case .split: splitSelection()
+        case .delete: deleteSelection()
+        case .addZoom: addZoomAtPlayhead()
+        case .duplicateZoom:
+            guard let id = state.selectedZoom else { return false }
+            duplicateZoom(id)
+        case .undo: undo()
+        case .redo: redo()
+        case .save: save()
+        case .saveAs: chooseAndSaveAs()
+        case .export: openExport()
+        case .exportFrame: exportFrame()
+        case .step, .jump, .trimStart, .trimEnd, .pickZoom, .moveZoom, .resizeZoom, .moveTarget, .openVideo: return false
+        }
+        return true
     }
 
     private func escape() -> Bool {
@@ -909,6 +927,25 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         Task { [weak self] in
             let result = await job.result
             self?.exportEnded(result)
+        }
+    }
+
+    /// Draws the frame at the playhead the way export would, sharp and at the original size, and hands it to `onExportFrame`.
+    public func exportFrame() {
+        let project = state.project, video = videoURL, t = state.transport.time(at: clock())
+        let source = project.source
+        let pointScale = source.pixelWidth > 0 ? Double(source.pixelWidth) / max(source.pointWidth, 1) : 1
+        frameJob = Task { [weak self] in
+            let result: FrameExportEvent
+            do {
+                let image = try await VideoExporter.frame(project: project, video: video, at: t)
+                result = .finished(FrameExport(image: image, outputTime: t, pointScale: pointScale))
+            } catch {
+                result = .failed(String(describing: error))
+            }
+            guard let self else { return }
+            if case .finished = result { announce("Frame exported") } else { announce("Could not export the frame") }
+            onExportFrame(result)
         }
     }
 
