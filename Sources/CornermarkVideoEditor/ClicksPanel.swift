@@ -12,9 +12,9 @@ final class ClicksPanel: NSView {
     private let ripple = Checkbox(title: "Ripple")
     private let rippleNote = NSTextField(wrappingLabelWithString: "A ring marks each click, in the color and size below.")
     private let color = Select()
-    private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth)
-    private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth)
-    private let motion = Segments(labels: ["Grow", "Still"], width: SettingsPanel.controlWidth)
+    private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth, style: .track)
+    private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth, style: .track)
+    private let motion = Segments(labels: ["Grow", "Still"], width: SettingsPanel.controlWidth, style: .track)
     private var ringLabels: [NSTextField] = []
     private var cursor = CursorSettings()
     private var clicks = ClickHighlight()

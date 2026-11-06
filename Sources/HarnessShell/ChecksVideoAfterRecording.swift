@@ -183,7 +183,10 @@ func checkVideoAfterRecording() async throws {
         if abs(seg.intrinsicContentSize.width - SettingsPanel.controlWidth) > 1 { tight.append("\(id) is \(seg.intrinsicContentSize.width) wide") }
         for i in 0..<seg.segmentCount {
             let text = NSAttributedString(string: seg.label(forSegment: i) ?? "", attributes: DS.Text.label.attributes(color: .black)).size().width
-            let tile = seg.width(forSegment: i) - (i < seg.segmentCount - 1 ? DS.Space.s4 : 0)
+            // A track's first and last choices also own its inset; separate tiles own the gap after them.
+            let last = seg.segmentCount - 1
+            let owned = (seg as? Segments)?.style == .track ? (i == 0 || i == last ? DS.Space.s2 : 0) : (i < last ? DS.Space.s4 : 0)
+            let tile = seg.width(forSegment: i) - owned
             if tile < text + DS.Space.s8 { tight.append("\(id) \(seg.label(forSegment: i) ?? ""): tile \(tile) text \(text)") }
         }
     }

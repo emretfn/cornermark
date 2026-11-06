@@ -6,6 +6,7 @@ import AppKit
 func checkEditorControls() {
     fieldSlider()
     select()
+    segmentTrack()
 }
 
 private final class Counter: NSObject {
@@ -214,4 +215,56 @@ private func select() {
         let got = pixel(rep, x: Int(3 * scale), y: Int(14 * scale))
         check("[\(label)] the field is the neutral bgControl", near(got, resolve(DS.Color.bgControl, appearance)), "\(got.hex)")
     }
+}
+
+private func segmentTrack() {
+    let counter = Counter()
+    let track = Segments(labels: ["White", "Black", "Dot"], width: 144, style: .track)
+    track.selectedSegment = 0
+    track.target = counter
+    track.action = #selector(Counter.fire)
+    track.frame.origin = CGPoint(x: 10, y: 10)
+    let window = hostWindow(track)
+    check("a segment track is control tall and exactly the width it is given", track.intrinsicContentSize == NSSize(width: 144, height: DS.Size.control),
+          "\(track.intrinsicContentSize)")
+    let tiles = (0..<3).map(track.tile)
+    check("the choices touch inside the track's 2 pt inset, on whole points", tiles[0].minX == DS.Space.s2 && tiles[0].maxX == tiles[1].minX && tiles[1].maxX == tiles[2].minX
+          && tiles.allSatisfy { $0.minX == $0.minX.rounded() && $0.height == DS.Size.control - 2 * DS.Space.s2 }, "\(tiles)")
+    check("the thumb rests on the pick", track.thumbRect == tiles[0], "\(String(describing: track.thumbRect))")
+
+    let at = CGPoint(x: tiles[2].midX, y: tiles[2].midY)
+    let point = track.convert(at, to: nil)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+        let e = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                   eventNumber: 0, clickCount: 1, pressure: 1)!
+        type == .leftMouseDown ? track.mouseDown(with: e) : track.mouseUp(with: e)
+    }
+    check("a click picks the choice and sends the action once", track.selectedSegment == 2 && counter.fired == 1, "\(track.selectedSegment) fired \(counter.fired)")
+    let sliding = track.thumbRect
+    check("after a click the thumb starts from the old pick and slides, unless motion is reduced",
+          DS.Motion.isReduced || (sliding.map { $0.minX < tiles[2].minX } ?? false), "\(String(describing: sliding))")
+    let deadline = Date().addingTimeInterval(1)
+    while Date() < deadline, track.thumbRect != tiles[2] { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    check("within the base duration the thumb comes to rest on the new pick", track.thumbRect == tiles[2], "\(String(describing: track.thumbRect))")
+    track.selectedSegment = 1
+    check("a pick from code moves the thumb at once", track.thumbRect == tiles[1])
+    check("on the track the pick reads in textPrimary and the others in textSecondary, never the accent",
+          Segments.trackLook(selected: true, state: .normal).text == DS.Color.textPrimary && Segments.trackLook(selected: false, state: .normal).text == DS.Color.textSecondary)
+
+    for (label, appearance) in [("aqua", NSAppearance.Name.aqua), ("darkAqua", .darkAqua)] {
+        let loose = Segments(labels: ["White", "Black", "Dot"], width: 144, style: .track)
+        loose.selectedSegment = 1
+        let rep = renderedImage(of: loose, appearance: appearance)
+        let scale = CGFloat(rep.pixelsWide) / loose.bounds.width
+        func at(_ x: CGFloat, _ y: CGFloat) -> RGBA { pixel(rep, x: Int(x * scale), y: Int(y * scale)) }
+        let thumb = loose.tile(1)
+        check("[\(label)] the track is bgControl and the thumb bgControlThumb", near(at(1, 14), resolve(DS.Color.bgControl, appearance))
+              && near(at(thumb.minX + 3, 5), resolve(DS.Color.bgControlThumb, appearance)), "\(at(1, 14).hex) \(at(thumb.minX + 3, 5).hex)")
+        loose.isEnabled = false
+        let off = renderedImage(of: loose, appearance: appearance)
+        check("[\(label)] a switched-off track keeps its thumb, flat in bgControlActive", near(pixel(off, x: Int((thumb.minX + 3) * scale), y: Int(5 * scale)),
+              resolve(DS.Color.bgControlActive, appearance)))
+    }
+    let symbols = Segments(symbols: ["circle", "square", "rectangle"], labels: ["Circle", "Square", "Rectangle"], width: 144)
+    check("a symbol track shares its width equally", symbols.style == .track && abs(symbols.tile(0).width - symbols.tile(2).width) <= 2 && symbols.intrinsicContentSize.width == 144 && symbols.intrinsicContentSize.height == DS.Size.control)
 }

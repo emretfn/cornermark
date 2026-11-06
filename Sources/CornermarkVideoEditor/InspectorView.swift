@@ -28,8 +28,8 @@ final class InspectorView: NSView {
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
     private let cursorSize = TrackingSlider()
-    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
-    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
+    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth, style: .track)
+    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth, style: .track)
     private let hideIdle = Checkbox(title: "Hide when not moving")
     private let hideTyping = Checkbox(title: "Hide when typing")
     private var rowLabels: [NSTextField] = []

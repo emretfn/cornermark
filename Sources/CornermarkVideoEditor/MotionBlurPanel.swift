@@ -7,7 +7,7 @@ final class MotionBlurPanel: SettingsPanel {
     /// The key folds one slider drag into one undo step.
     var onChange: (MotionBlur, CoalescingKey?) -> Void = { _, _ in }
     private(set) var blur = MotionBlur()
-    private let scope = Segments(labels: MotionBlur.Scope.allCases.map(MotionBlurPanel.title), width: SettingsPanel.inner)
+    private let scope = Segments(labels: MotionBlur.Scope.allCases.map(MotionBlurPanel.title), width: SettingsPanel.inner, style: .track)
     private var intensity: TrackingSlider!
     private var note: NSTextField!
     private var previewCaption: NSTextField!
