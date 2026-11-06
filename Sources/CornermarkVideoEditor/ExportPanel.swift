@@ -20,7 +20,7 @@ final class ExportPanel: Surface {
     var onCancel: () -> Void = {}
 
     private let title = NSTextField.label("Export", style: DS.Text.heading, color: DS.Color.textPrimary)
-    private let resolution = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let resolution = Select()
     private let quality = Slider()
     private let estimate = NSTextField.label("", style: DS.Text.body, color: DS.Color.textPrimary)
     private let details = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
@@ -83,7 +83,6 @@ final class ExportPanel: Surface {
     }
 
     private func build() {
-        resolution.controlSize = .regular
         resolution.setAccessibilityIdentifier("video.export.resolution")
         resolution.setAccessibilityLabel("Resolution")
         resolution.target = self

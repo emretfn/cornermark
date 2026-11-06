@@ -43,7 +43,7 @@ final class RecordingPanel: Surface {
     private var options: RecordingQuickOptions?
     private let help = IconButton(symbol: "questionmark.circle", label: RecordingHelpWindow.title, size: .large)
     private let targets: [(mode: ToolbarMode, button: IconButton)]
-    private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let aspect = Select()
     private let widthField = TextInput(placeholder: "W", monospaced: true, centered: true)
     private let heightField = TextInput(placeholder: "H", monospaced: true, centered: true)
     private let starts: [(style: RecordingStyle, button: Button)]
@@ -130,9 +130,6 @@ final class RecordingPanel: Surface {
         divider()
 
         for lock in AspectLock.presets { aspect.addItem(withTitle: lock.title) }
-        aspect.controlSize = .small
-        aspect.font = DS.Text.label.font
-        aspect.isBordered = false
         aspect.toolTip = "Aspect ratio"
         aspect.setAccessibilityLabel("Aspect ratio")
         aspect.setAccessibilityIdentifier("cornermark.record.aspect")

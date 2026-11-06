@@ -5,6 +5,7 @@ import AppKit
 /// through the same entry points a person reaches (pointer, keys, VoiceOver) and reads what it then says or draws.
 func checkEditorControls() {
     fieldSlider()
+    select()
 }
 
 private final class Counter: NSObject {
@@ -128,3 +129,89 @@ func near(_ a: RGBA, _ b: RGBA, tolerance: Double = 0.03) -> Bool {
     abs(a.r - b.r) <= tolerance && abs(a.g - b.g) <= tolerance && abs(a.b - b.b) <= tolerance
 }
 
+private func select() {
+    let counter = Counter()
+    let field = Select()
+    for title in ["Auto", "1:1", "16:9", "Grape"] { field.addItem(withTitle: title) }
+    field.menu?.insertItem(.separator(), at: 1)
+    field.selectItem(at: 0)
+    field.target = counter
+    field.action = #selector(Counter.fire)
+    field.frame = CGRect(x: 20, y: 40, width: 140, height: DS.Size.control)
+    let window = hostWindow(field)
+    check("Select is an NSPopUpButton, control tall, so item lookups and tags keep working", (field as AnyObject) is NSPopUpButton && field.intrinsicContentSize.height == DS.Size.control)
+    check("VoiceOver reads Select as a popup button with its value", field.accessibilityRole() == .popUpButton && field.accessibilityValue() as? String == "Auto",
+          "\(String(describing: field.accessibilityRole())) \(String(describing: field.accessibilityValue()))")
+    check("a right click never brings up the system menu", field.menu(for: mouse(.rightMouseDown, at: 5, in: field)) == nil)
+
+    field.keyDown(with: keyEvent(49, " ", window: window))
+    check("Space on the focused field opens its own menu, highlighting the picked item", field.isMenuOpen && field.menuWindow?.list.highlighted == 0 && field.isAccessibilityExpanded())
+    NSApp.sendEvent(keyEvent(125, window: window))
+    check("Down arrow, through the app's event path, skips the separator", field.menuWindow?.list.highlighted == 2, "\(String(describing: field.menuWindow?.list.highlighted))")
+    NSApp.sendEvent(keyEvent(36, "\r", window: window))
+    check("Return picks the highlighted item, closes the menu and sends the action once", !field.isMenuOpen && field.titleOfSelectedItem == "1:1" && counter.fired == 1,
+          "\(field.titleOfSelectedItem ?? "nil") fired \(counter.fired)")
+
+    check("VoiceOver's press opens the menu", field.accessibilityPerformPress() && field.isMenuOpen)
+    NSApp.sendEvent(keyEvent(5, "g", window: window))
+    check("typing a letter jumps to the item it starts", field.menuWindow?.list.highlighted == 4)
+    NSApp.sendEvent(keyEvent(53, "\u{1b}", window: window))
+    check("Esc closes without picking", !field.isMenuOpen && field.titleOfSelectedItem == "1:1" && counter.fired == 1)
+
+    field.performClick(nil)
+    NSApp.sendEvent(keyEvent(119, window: window))
+    NSApp.sendEvent(keyEvent(49, " ", window: window))
+    check("End then Space picks the last item", field.titleOfSelectedItem == "Grape" && counter.fired == 2)
+
+    field.performClick(nil)
+    let other = NSWindow(contentRect: CGRect(x: 400, y: 0, width: 50, height: 50), styleMask: [.borderless], backing: .buffered, defer: false)
+    let outside = NSEvent.mouseEvent(with: .leftMouseDown, location: CGPoint(x: 5, y: 5), modifierFlags: [], timestamp: 0, windowNumber: other.windowNumber,
+                                     context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+    NSApp.sendEvent(outside)
+    check("a click outside closes the menu", !field.isMenuOpen)
+    field.performClick(nil)
+    field.isEnabled = false
+    check("turning the field off closes its menu", !field.isMenuOpen)
+    field.isEnabled = true
+
+    if let list = SelectMenuWindow(rows: [.init(title: "A", image: nil, isEnabled: true, isSeparator: false)], selected: 0, minWidth: 140,
+                                   appearance: NSAppearance(named: .aqua)!).contentView as? SelectMenuList {
+        check("the menu is at least as wide as its field, its rows control tall", list.frame.width >= 140 && list.frame(of: 0).height == DS.Size.control)
+    }
+
+    let screen = CGRect(x: 0, y: 0, width: 800, height: 600)
+    let menu = CGSize(width: 160, height: 150)
+    let low = Select.place(menu, under: CGRect(x: 100, y: 20, width: 120, height: 28), within: screen)
+    check("near the bottom of the screen the menu opens above the field", low.above && low.rect.minY == 52, "\(low.rect)")
+    let right = Select.place(menu, under: CGRect(x: 720, y: 400, width: 70, height: 28), within: screen)
+    check("near the right edge it stays on screen", !right.above && right.rect.maxX <= 800 && right.rect.maxY == 396, "\(right.rect)")
+    let squeezed = Select.place(CGSize(width: 160, height: 590), under: CGRect(x: 10.5, y: 300.25, width: 60, height: 28), within: screen)
+    check("a menu too tall for either side stays inside the screen on whole points", squeezed.rect.minY >= 0 && squeezed.rect.maxY <= 600
+          && squeezed.rect.minX == squeezed.rect.minX.rounded() && squeezed.rect.minY == squeezed.rect.minY.rounded(), "\(squeezed.rect)")
+
+    let dark = Select()
+    dark.addItem(withTitle: "Free")
+    dark.frame = CGRect(x: 0, y: 0, width: 100, height: DS.Size.control)
+    let hud = hostWindow(dark)
+    hud.appearance = NSAppearance(named: .darkAqua)
+    dark.performClick(nil)
+    let name = dark.menuWindow?.appearance?.bestMatch(from: [.aqua, .darkAqua])
+    check("inside an always-dark panel the menu is dark too", name == .darkAqua, "\(String(describing: name))")
+    if let list = dark.menuWindow?.list {
+        let rep = renderedImage(of: list, appearance: .darkAqua)
+        let scale = CGFloat(rep.pixelsWide) / list.bounds.width
+        let got = pixel(rep, x: Int(list.bounds.midX * scale), y: Int(2 * scale))
+        check("[darkAqua] the menu's surface is bgRaised", near(got, resolve(DS.Color.bgRaised, .darkAqua)), "\(got.hex)")
+    }
+    dark.close()
+
+    for (label, appearance) in [("aqua", NSAppearance.Name.aqua), ("darkAqua", .darkAqua)] {
+        let loose = Select()
+        loose.addItem(withTitle: "Follow Cursor")
+        loose.frame = CGRect(x: 0, y: 0, width: 140, height: DS.Size.control)
+        let rep = renderedImage(of: loose, appearance: appearance)
+        let scale = CGFloat(rep.pixelsWide) / loose.bounds.width
+        let got = pixel(rep, x: Int(3 * scale), y: Int(14 * scale))
+        check("[\(label)] the field is the neutral bgControl", near(got, resolve(DS.Color.bgControl, appearance)), "\(got.hex)")
+    }
+}

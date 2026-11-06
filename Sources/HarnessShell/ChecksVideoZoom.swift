@@ -206,6 +206,24 @@ func checkVideoZoom() async throws {
     mode?.selectItem(at: 0)
     if let mode { fire(mode) }
     check(picked()?.mode == .followCursor && note() == ZoomPanel.modeNote(.followCursor), "and that a Follow Cursor zoom keeps the pointer in view", detail: note() ?? "nil")
+    if let select = mode as? Select, let window = editor.window {
+        // The mode is the editor's own select: a focused one takes Space instead of the window's play key, and its menu takes the keys.
+        window.makeFirstResponder(select)
+        let wasPlaying = editor.state.transport.isPlaying
+        window.sendEvent(Synth.keyEvent(window, 49, " "))
+        check(select.isMenuOpen && editor.state.transport.isPlaying == wasPlaying, "Space on the focused mode field opens its menu and does not play")
+        NSApp.sendEvent(Synth.keyEvent(window, 125))
+        NSApp.sendEvent(Synth.keyEvent(window, 36, "\r"))
+        check(!select.isMenuOpen && picked()?.mode == .manual && select.titleOfSelectedItem == "Manual", "Down arrow and Return in the menu pick Manual",
+              detail: "\(String(describing: picked()?.mode))")
+        select.performClick(nil)
+        NSApp.sendEvent(Synth.keyEvent(window, 53, "\u{1b}"))
+        check(!select.isMenuOpen && editor.view(identifier: "video.zoom.panel")?.isHiddenOrHasHiddenAncestor == false && picked() != nil,
+              "Esc closes the menu and goes no further: the zoom stays picked")
+        window.makeFirstResponder(nil)
+    } else {
+        check(false, "the zoom mode is a Select")
+    }
     mode?.selectItem(at: 1)
     if let mode { fire(mode) }
     (editor.view(identifier: "video.zoom.remove") as? NSButton)?.performClick(nil)

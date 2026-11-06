@@ -11,7 +11,7 @@ final class ClicksPanel: NSView {
     private let pressNote = NSTextField(wrappingLabelWithString: "")
     private let ripple = Checkbox(title: "Ripple")
     private let rippleNote = NSTextField(wrappingLabelWithString: "A ring marks each click, in the color and size below.")
-    private let color = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let color = Select()
     private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth)
     private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth)
     private let motion = Segments(labels: ["Grow", "Still"], width: SettingsPanel.controlWidth)
@@ -87,8 +87,6 @@ final class ClicksPanel: NSView {
         ripple.setAccessibilityIdentifier("video.clicks.ripple")
         ripple.target = self
         ripple.action = #selector(rippleChanged)
-        color.controlSize = .small
-        color.font = DS.Text.label.font
         for c in ClickHighlight.Color.allCases {
             color.addItem(withTitle: Self.title(c))
             color.lastItem?.image = Self.swatch(c)

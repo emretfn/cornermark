@@ -815,6 +815,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     func handleKey(_ event: NSEvent) -> Bool {
         // A field being typed in keeps Space, Delete and Esc, so Delete takes back a digit instead of a clip.
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty, window?.firstResponder is NSText { return false }
+        // A focused Select opens with Space, the way a field takes its own keys.
+        if event.keyCode == 49, window?.firstResponder is Select { return false }
         guard let press = EditorShortcuts.match(event, in: .window) else { return false }
         return perform(press.command)
     }

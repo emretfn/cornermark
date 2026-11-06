@@ -44,7 +44,7 @@ final class BackgroundPanel: NSView {
     }
     private var sliders: [SliderRow] = []
     private let frameNote = NSTextField(wrappingLabelWithString: "")
-    private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let aspect = Select()
     private let aspectWidth = TextInput(placeholder: "W", size: .small, monospaced: true, centered: true)
     private let aspectHeight = TextInput(placeholder: "H", size: .small, monospaced: true, centered: true)
     private var customRow = NSView()
@@ -322,8 +322,6 @@ final class BackgroundPanel: NSView {
     }
 
     private func aspectRow() -> NSView {
-        aspect.controlSize = .small
-        aspect.font = DS.Text.label.font
         aspect.setAccessibilityIdentifier("video.background.aspect")
         aspect.setAccessibilityLabel("Ratio")
         aspect.toolTip = "The finished video's shape"

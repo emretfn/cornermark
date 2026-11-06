@@ -18,7 +18,7 @@ final class ZoomPanel: NSStackView {
     var onChange: (Change) -> Void = { _ in }
 
     private let slider = Slider()
-    private let mode = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let mode = Select()
     private let modeNote = NSTextField(wrappingLabelWithString: ZoomPanel.modeNote(.followCursor))
     let target = ZoomTargetView()
     let animationSettings = Button(title: "Animation Settings", variant: .secondary, size: .small, symbol: "slider.horizontal.3")
@@ -75,8 +75,6 @@ final class ZoomPanel: NSStackView {
         slider.action = #selector(sliderMoved)
 
         for m in ZoomMode.allCases { mode.addItem(withTitle: m.title) }
-        mode.controlSize = .small
-        mode.font = DS.Text.label.font
         mode.setAccessibilityLabel("Zoom mode")
         mode.setAccessibilityIdentifier("video.zoom.mode")
         mode.target = self
