@@ -174,22 +174,11 @@ final class PointerPath: Sendable {
     }
 
     /// The exact state `tau` seconds after `state`, while the spring's target runs in a straight line from `a` toward `b`.
-    /// With target `g + s·τ`, the error from the target settles as `-2s/ω + (A + Bτ)·e^(-ωτ)`, so no step size can go unstable.
     /// Past the last sample `a == b` and the target stands still.
     private static func advance(_ state: Spring, from a: PointerSample, to b: PointerSample, by tau: Double) -> Spring {
-        let w = CursorTrack.springRate
-        let span = b.t - a.t
-        let decay = exp(-w * tau)
-        func axis(_ x: Double, _ v: Double, _ g0: Double, _ g1: Double) -> (Double, Double) {
-            let slope = span > 0 ? (g1 - g0) / span : 0
-            let u0 = x - g0 + 2 * slope / w
-            let rate = v - slope + w * u0
-            let u = (u0 + rate * tau) * decay
-            let du = (rate - w * (u0 + rate * tau)) * decay
-            return (g0 + slope * tau + u - 2 * slope / w, slope + du)
-        }
-        let (x, vx) = axis(state.x, state.vx, a.x, b.x)
-        let (y, vy) = axis(state.y, state.vy, a.y, b.y)
+        let w = CursorTrack.springRate, span = b.t - a.t
+        let (x, vx) = CriticalSpring.advance(state.x, state.vx, from: a.x, to: b.x, over: span, by: tau, rate: w)
+        let (y, vy) = CriticalSpring.advance(state.y, state.vy, from: a.y, to: b.y, over: span, by: tau, rate: w)
         return Spring(x: x, y: y, vx: vx, vy: vy)
     }
 

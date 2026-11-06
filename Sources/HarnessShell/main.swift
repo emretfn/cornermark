@@ -26,7 +26,9 @@ let backgroundFilming = ProcessInfo.processInfo.environment["CORNERMARK_BACKGROU
 let afterFilming = ProcessInfo.processInfo.environment["CORNERMARK_AFTER_FILM"]
 let projectFilming = ProcessInfo.processInfo.environment["CORNERMARK_PROJECT_FILM"]
 let aspectFilming = ProcessInfo.processInfo.environment["CORNERMARK_ASPECT_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming].allSatisfy { $0 == nil } ? 300 : 900)) {
+let followFilming = ProcessInfo.processInfo.environment["CORNERMARK_FOLLOW_FILM"]
+let followExport = ProcessInfo.processInfo.environment["CORNERMARK_FOLLOW_EXPORT"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming, followFilming, followExport].allSatisfy { $0 == nil } ? 300 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -47,6 +49,14 @@ Task { @MainActor in
     if let zoomCurve {
         let ok = await ZoomCurveExport.run(folder: URL(fileURLWithPath: zoomCurve, isDirectory: true),
                                            spec: ProcessInfo.processInfo.environment["CORNERMARK_ZOOMS"] ?? "1-4@2")
+        filmDone(ok)
+    }
+    if let followFilming {
+        let ok = await VideoFollowFilm.run(out: URL(fileURLWithPath: followFilming, isDirectory: true))
+        filmDone(ok)
+    }
+    if let followExport {
+        let ok = await FollowExport.run(folder: URL(fileURLWithPath: followExport, isDirectory: true))
         filmDone(ok)
     }
     if let zoomFilming {

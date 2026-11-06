@@ -188,7 +188,13 @@ func checkVideoZoom() async throws {
     mode?.selectItem(at: 1)
     if let mode { fire(mode) }
     check(picked()?.mode == .manual, "the mode menu sets the mode")
-    check((editor.view(identifier: "video.zoom.modeNote") as? NSTextField)?.stringValue == ZoomPanel.modeNote, "the panel says where the camera aims")
+    let note = { (editor.view(identifier: "video.zoom.modeNote") as? NSTextField)?.stringValue }
+    check(note() == ZoomPanel.modeNote(.manual), "the panel says a Manual zoom stays where it was added", detail: note() ?? "nil")
+    mode?.selectItem(at: 0)
+    if let mode { fire(mode) }
+    check(picked()?.mode == .followCursor && note() == ZoomPanel.modeNote(.followCursor), "and that a Follow Cursor zoom keeps the pointer in view", detail: note() ?? "nil")
+    mode?.selectItem(at: 1)
+    if let mode { fire(mode) }
     (editor.view(identifier: "video.zoom.remove") as? NSButton)?.performClick(nil)
     check(zooms() == [[0.5, 2], [2, 4]] && title?.stringValue == EditorSection.cursor.title, "Remove Zoom in the panel removes it and the panel returns")
     editor.undo()
@@ -249,7 +255,7 @@ func checkVideoZoom() async throws {
         editor.seek(to: t)
         await decoder?.prepare(frameState(project, outputTime: t).sourceTime)
         editor.tick()
-        check(editor.previewState?.crop == ZoomCamera.rect(project.edits.zooms, at: t), String(format: "at %.1f s the preview shows the crop frameState gives", t),
+        check(editor.previewState?.crop == ZoomCamera.rect(project, at: t), String(format: "at %.1f s the preview shows the crop frameState gives", t),
               detail: "\(String(describing: editor.previewState?.crop))")
     }
     editor.seek(to: 2)
@@ -271,9 +277,16 @@ func checkVideoZoom() async throws {
         let times = [30, 81, 120, 159, 234, 249, 300, 339, 372].map { Double($0) / 60 }
         let rows = await measureParity(editor, frames: decoder, clock: clock, export: out, plan: report.plan, project: project, times: times)
         for r in rows {
-            let cam = ZoomCamera.rect(project.edits.zooms, at: r.time)
+            let cam = ZoomCamera.rect(project, at: r.time)
             print(String(format: "PARITY zoom t=%.2f scale=%.3f preview-vs-drawn %@ | preview-vs-file %@", r.time, cam.scale, r.drawn.description, r.encoded.description))
         }
+        // Both zooms follow the cursor, so a measured moment at a held level has the camera drifting after the recorded pointer.
+        let drifting = times.filter { t in
+            let a = ZoomCamera.rect(project, at: t), b = ZoomCamera.rect(project, at: t + 1.0 / 60)
+            return a.width == b.width && a.width < 1 && hypot(b.x - a.x, b.y - a.y) > 1e-4 && a != ZoomCamera.rect(project.edits.zooms, at: t)
+        }
+        print("FOLLOW parity moments with the camera drifting: \(drifting.map { String(format: "%.2f", $0) })")
+        check(!drifting.isEmpty, "a measured moment has the camera drifting after the pointer, away from the stored center", detail: "\(drifting)")
         check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
               "zoomed export frames draw what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
         check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoomed file frames match the preview within compression loss",
@@ -287,6 +300,8 @@ func checkVideoZoom() async throws {
     framed.padding = 48; framed.shadow = 70; framed.cornerRadius = 20
     editor.setBackground(framed)
     editor.setKeystrokes(KeystrokeDisplay(isVisible: true, keys: .shortcuts, position: .center, size: .large, theme: .light))
+    // The first zoom holds its stored spot, which leaves the badge's cell out of the view; the second follows the pointer.
+    if let id = near?.id { editor.setZoomMode(.manual, of: id) }
     let combined = editor.state.project
     let combinedOut = w.root.appendingPathComponent("zoomed-framed.mp4")
     let combinedReport = try await VideoExporter.export(project: combined, video: editor.videoURL, settings: ExportSettings(), to: combinedOut)
@@ -356,6 +371,7 @@ func checkVideoZoom() async throws {
     } else { check(false, "the harness decoder is known") }
     editor.setBackground(VideoBackground())
     editor.setCursor(plainCursor)
+    if let id = near?.id { editor.setZoomMode(.followCursor, of: id) }
 
     if let dir = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_EXPORT"] {
         let copy = URL(fileURLWithPath: dir).appendingPathComponent("zoom-export.mp4")
