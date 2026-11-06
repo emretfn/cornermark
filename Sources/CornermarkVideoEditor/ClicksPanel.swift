@@ -8,9 +8,9 @@ final class ClicksPanel: NSView {
 
     private let note = NSTextField(wrappingLabelWithString: "")
     private let press = Checkbox(title: "Press effect")
-    private let pressNote = NSTextField(wrappingLabelWithString: "")
+    private let pressNote = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
     private let ripple = Checkbox(title: "Ripple")
-    private let rippleNote = NSTextField(wrappingLabelWithString: "A ring marks each click, in the color and size below.")
+    private let rippleNote = NSTextField.label("A ring marks each click.", style: DS.Text.caption, color: DS.Color.textSecondary)
     private let color = Select()
     private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth, style: .track)
     private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth, style: .track)
@@ -37,14 +37,16 @@ final class ClicksPanel: NSView {
         style.selectedSegment = ClickHighlight.Style.allCases.firstIndex(of: clicks.style) ?? 0
         motion.selectedSegment = clicks.animates ? 0 : 1
         press.isEnabled = hasClicks && cursor.isVisible
-        pressNote.stringValue = cursor.isVisible || !hasClicks ? "The pointer shrinks for a moment at each click."
+        pressNote.stringValue = cursor.isVisible || !hasClicks ? "The pointer shrinks at each click."
+            : "Turn on Show cursor to use it."
+        pressNote.toolTip = cursor.isVisible || !hasClicks ? "The pointer shrinks for a moment at each click."
             : "Turn on Show cursor in the Cursor section to use the press effect."
         ripple.isEnabled = hasClicks
         let ringOn = hasClicks && clicks.isVisible
         for control in [color, size, style, motion] as [NSControl] { control.isEnabled = ringOn }
         for label in ringLabels { label.textColor = ringOn ? DS.Color.textSecondary : DS.Color.textDisabled }
         for caption in [pressNote, rippleNote] { caption.textColor = hasClicks ? DS.Color.textSecondary : DS.Color.textDisabled }
-        press.setAccessibilityHelp(hasClicks ? pressNote.stringValue : note.stringValue)
+        press.setAccessibilityHelp(hasClicks ? pressNote.toolTip : note.stringValue)
         ripple.setAccessibilityHelp(hasClicks ? rippleNote.stringValue : note.stringValue)
     }
 
@@ -124,14 +126,14 @@ final class ClicksPanel: NSView {
         let content = NSStackView(views: [note, press, pressNote, ripple, rippleNote, rule] + rows)
         content.orientation = .vertical
         content.alignment = .leading
-        content.spacing = DS.Space.s12
+        content.spacing = DS.Space.s8
         content.edgeInsets = NSEdgeInsets(top: 0, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
-        content.setCustomSpacing(DS.Space.s16, after: note)
-        content.setCustomSpacing(DS.Space.s4, after: press)
-        content.setCustomSpacing(DS.Space.s16, after: pressNote)
-        content.setCustomSpacing(DS.Space.s4, after: ripple)
-        content.setCustomSpacing(DS.Space.s16, after: rippleNote)
-        content.setCustomSpacing(DS.Space.s16, after: rule)
+        content.setCustomSpacing(DS.Space.s12, after: note)
+        content.setCustomSpacing(0, after: press)
+        content.setCustomSpacing(DS.Space.s8, after: pressNote)
+        content.setCustomSpacing(0, after: ripple)
+        content.setCustomSpacing(DS.Space.s12, after: rippleNote)
+        content.setCustomSpacing(DS.Space.s12, after: rule)
         let indent = DS.Size.iconLarge + DS.Space.s8
         for v in [note, rule] + rows as [NSView] {
             v.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -2 * DS.Space.s16).isActive = true

@@ -88,8 +88,8 @@ final class BackgroundPanel: NSView {
             row.slider.doubleValue = row.read(background)
         }
         frameNote.stringValue = background.aspect == .auto
-            ? "Pick a background to frame the recording."
-            : "Black bars fill the rest of the video. Pick a background to frame the recording."
+            ? "Pick a background to frame the video."
+            : "Black bars fill the rest of the video."
         frameNote.isHidden = framed
         showAspect(background.aspect)
     }

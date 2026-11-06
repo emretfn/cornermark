@@ -19,15 +19,23 @@ final class ZoomPanel: NSStackView {
 
     private let slider = Slider()
     private let mode = Select()
-    private let modeNote = NSTextField(wrappingLabelWithString: ZoomPanel.modeNote(.followCursor))
+    private let modeNote = NSTextField.label(ZoomPanel.modeNote(.followCursor), style: DS.Text.caption, color: DS.Color.textSecondary)
     let target = ZoomTargetView()
     let animationSettings = Button(title: "Animation Settings", variant: .secondary, size: .small, symbol: "slider.horizontal.3")
     private let applyToAll = Button(title: "Apply Level to All", variant: .secondary, size: .small)
     private let remove = Button(title: "Remove Zoom", variant: .dangerGhost, size: .small)
     private var zoom: Zoom?
 
-    /// What each mode does, under the mode menu.
+    /// What each mode does, in one line under the mode menu.
     static func modeNote(_ mode: ZoomMode) -> String {
+        switch mode {
+        case .followCursor: return "Holds still, then drifts after the cursor."
+        case .manual: return "Holds the spot framed below."
+        }
+    }
+
+    /// The whole story, for the tooltip and VoiceOver.
+    static func modeDetail(_ mode: ZoomMode) -> String {
         switch mode {
         case .followCursor: return "The camera holds while the cursor stays near the middle of the view, then drifts to follow it."
         case .manual: return "The camera holds the spot framed below. Drag the frame or use the arrow keys to move it."
@@ -46,6 +54,8 @@ final class ZoomPanel: NSStackView {
         slider.doubleValue = zoom.scale
         mode.selectItem(at: ZoomMode.allCases.firstIndex(of: zoom.mode) ?? 0)
         modeNote.stringValue = Self.modeNote(zoom.mode)
+        modeNote.toolTip = Self.modeDetail(zoom.mode)
+        mode.setAccessibilityHelp(Self.modeDetail(zoom.mode))
         target.zoom = zoom
         target.isHidden = zoom.mode != .manual
         // A hidden picture leaves the stack, so the note keeps the gap the picture would have had below it.
@@ -56,7 +66,7 @@ final class ZoomPanel: NSStackView {
     private func build() {
         orientation = .vertical
         alignment = .leading
-        spacing = DS.Space.s12
+        spacing = DS.Space.s8
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Zoom settings")
@@ -79,8 +89,7 @@ final class ZoomPanel: NSStackView {
         mode.setAccessibilityIdentifier("video.zoom.mode")
         mode.target = self
         mode.action = #selector(modePicked)
-        modeNote.font = DS.Text.caption.font
-        modeNote.textColor = DS.Color.textSecondary
+        modeNote.lineBreakMode = .byTruncatingTail
         modeNote.setAccessibilityIdentifier("video.zoom.modeNote")
 
         target.onChange = { [unowned self] in onChange(.center($0, $1)) }

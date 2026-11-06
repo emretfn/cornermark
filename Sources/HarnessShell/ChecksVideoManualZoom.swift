@@ -79,7 +79,9 @@ func checkVideoManualZoom() async throws {
     content.layoutSubtreeIfNeeded()
     let note = (editor.view(identifier: "video.zoom.modeNote") as? NSTextField)?.stringValue
     check(picked()?.mode == .manual && !target.isHiddenOrHasHiddenAncestor, "choosing Manual shows the target")
-    check(note == ZoomPanel.modeNote(.manual) && note?.contains("Drag the frame") == true, "the note says how to pick the spot", detail: note ?? "nil")
+    let help = (editor.view(identifier: "video.zoom.mode") as? NSControl)?.accessibilityHelp()
+    check(note == ZoomPanel.modeNote(.manual) && help?.contains("Drag the frame") == true, "the note says what Manual does; its help says how to pick the spot",
+          detail: "\(note ?? "nil") | \(help ?? "nil")")
     await editor.zoomTargetSettled()
     let mid = frameState(editor.state.project, outputTime: 2.5).sourceTime
     check(target.picture != nil && (target.picture?.width ?? 0) >= 400, "the target shows the recording at the zoom's middle, sharp enough for the panel",

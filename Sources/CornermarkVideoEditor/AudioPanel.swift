@@ -32,7 +32,7 @@ final class AudioPanel: SettingsPanel {
             views += [toggle, levelRow]
         }
         add(views)
-        if let mic = rows[.microphone] { stack.setCustomSpacing(DS.Space.s24, after: mic.levelRow) }
+        if let mic = rows[.microphone] { stack.setCustomSpacing(DS.Space.s16, after: mic.levelRow) }
         setAccessibilityIdentifier("video.audio")
     }
 

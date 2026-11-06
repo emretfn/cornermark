@@ -20,7 +20,17 @@ final class MotionBlurPanel: SettingsPanel {
         }
     }
 
+    /// The one line under the scope.
     static func explanation(_ scope: MotionBlur.Scope) -> String {
+        switch scope {
+        case .off: return "Every frame is sharp."
+        case .zooms: return "Zooms and pans blur as they move."
+        case .zoomsAndCursor: return "Zooms, pans and a fast cursor blur."
+        }
+    }
+
+    /// The whole story, for the tooltip and VoiceOver.
+    static func detail(_ scope: MotionBlur.Scope) -> String {
         switch scope {
         case .off: return "Every frame is sharp."
         case .zooms: return "Zooms and pans blur as they move. The cursor blurs only when a zoom carries it."
@@ -28,13 +38,14 @@ final class MotionBlurPanel: SettingsPanel {
         }
     }
 
-    static let previewNote = "What was recorded stays sharp. The preview shows blur while paused, and the export always includes it."
+    static let previewNote = "The preview shows blur while paused."
+    static let previewDetail = "What was recorded stays sharp. The preview shows blur while paused, and the export always includes it."
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         scope.setAccessibilityIdentifier("video.blur.scope")
         scope.setAccessibilityLabel("Motion blur")
-        for (i, s) in MotionBlur.Scope.allCases.enumerated() { scope.setToolTip(Self.explanation(s), forSegment: i) }
+        for (i, s) in MotionBlur.Scope.allCases.enumerated() { scope.setToolTip(Self.detail(s), forSegment: i) }
         scope.target = self
         scope.action = #selector(picked)
         intensity = slider(id: "video.blur.intensity", label: "Intensity", range: MotionBlur.shutterRange, action: #selector(slid))
@@ -44,10 +55,10 @@ final class MotionBlurPanel: SettingsPanel {
         intensityRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
         note = caption(Self.explanation(blur.scope), id: "video.blur.note")
         previewCaption = caption(Self.previewNote, id: "video.blur.preview")
+        previewCaption.toolTip = Self.previewDetail
         add([scope, note, intensityRow, previewCaption])
-        stack.setCustomSpacing(DS.Space.s8, after: scope)
+        stack.setCustomSpacing(DS.Space.s4, after: scope)
         stack.setCustomSpacing(DS.Space.s16, after: note)
-        stack.setCustomSpacing(DS.Space.s16, after: intensityRow)
         setAccessibilityIdentifier("video.blur")
     }
 
@@ -59,6 +70,8 @@ final class MotionBlurPanel: SettingsPanel {
         intensity.doubleValue = blur.shutterAngle
         intensity.setAccessibilityValueDescription("\(Int(blur.shutterAngle.rounded())) degrees")
         note.stringValue = Self.explanation(blur.scope)
+        note.toolTip = Self.detail(blur.scope)
+        scope.setAccessibilityHelp(Self.detail(blur.scope))
         let on = blur.scope != .off
         intensity.isEnabled = on
         // It describes blur that is on; with blur off it would promise blur the export does not have.

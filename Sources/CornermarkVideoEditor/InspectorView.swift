@@ -191,15 +191,15 @@ final class InspectorView: NSView {
         title.setAccessibilityRole(.staticText)
         body.orientation = .vertical
         body.alignment = .leading
-        body.spacing = DS.Space.s12
+        body.spacing = DS.Space.s8
         body.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
         for v in [title, showCursor, sizeRow, styleRow, motionRow, ruleSlot, hideIdle, hideTyping, emptyNote, zoomPanel] as [NSView] { body.addArrangedSubview(v) }
         for v in [sizeRow, styleRow, motionRow, ruleSlot, emptyNote, zoomPanel] {
             v.widthAnchor.constraint(equalTo: body.widthAnchor, constant: -2 * DS.Space.s16).isActive = true
         }
-        body.setCustomSpacing(DS.Space.s16, after: title)
-        body.setCustomSpacing(DS.Space.s16, after: motionRow)
-        body.setCustomSpacing(DS.Space.s16, after: ruleSlot)
+        body.setCustomSpacing(DS.Space.s12, after: title)
+        body.setCustomSpacing(DS.Space.s12, after: motionRow)
+        body.setCustomSpacing(DS.Space.s12, after: ruleSlot)
         let filler = NSView()
         filler.setContentHuggingPriority(.defaultLow, for: .vertical)
         body.addArrangedSubview(filler)

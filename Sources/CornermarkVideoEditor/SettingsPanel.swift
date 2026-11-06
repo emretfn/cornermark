@@ -17,7 +17,7 @@ class SettingsPanel: NSView {
         super.init(frame: frameRect)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = DS.Space.s12
+        stack.spacing = DS.Space.s8
         stack.edgeInsets = NSEdgeInsets(top: 0, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -45,11 +45,10 @@ class SettingsPanel: NSView {
         for v in fullWidth { v.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true }
     }
 
+    /// One line of `caption` under a control. The full explanation goes in the control's help, so the panel stays compact.
     func caption(_ text: String, id: String) -> NSTextField {
-        let field = NSTextField(wrappingLabelWithString: text)
-        field.font = DS.Text.caption.font
-        field.textColor = DS.Color.textSecondary
-        field.preferredMaxLayoutWidth = Self.inner
+        let field = NSTextField.label(text, style: DS.Text.caption, color: DS.Color.textSecondary)
+        field.lineBreakMode = .byTruncatingTail
         field.setAccessibilityIdentifier(id)
         return field
     }

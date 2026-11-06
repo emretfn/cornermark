@@ -225,7 +225,7 @@ Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` i
 
 **Kırpma.** Vizör karesi gibi çizilir: köşelerde L biçimli köşebentler, kenar ortalarında kısa çubuklar, ince çerçeve. Üçte bir ızgarası yalnızca sürüklerken görünür. Boyut kutunun sol üstünde yazar, sığmazsa dışına çıkar. Oranlar çubukta doğrudan görünür. Kırpma sırasında görünümün birincil eylemi `Apply` olur, `Copy` ikincile döner.
 
-**Yan panel.** Bütün içerik tek sağ kenarda biter. Etiket sütunu 64 noktadır, kontrol kalan genişliği doldurur. Bölümler arasında kenardan kenara ayraç bulunur. Arka plan seçimi tek bir ızgaradır, küçük görseller yalnızca dolguyu gösterir.
+**Yan panel.** Bütün içerik tek sağ kenarda biter. Panel sıkıdır: kontrol satırları 28 nokta, satır araları 8 noktadır; gruplar arası en az iki katıdır: ayraçlı gruplarda ayracın iki yanında 12, ayraçsızda 16 nokta ve açıklamalar tek satır `caption` olur. Açıklamanın tamamı kontrolün ipucunda ve VoiceOver yardımında durur. Etiket sütunu 64 noktadır, kontrol kalan genişliği doldurur. Bölümler arasında kenardan kenara ayraç bulunur. Arka plan seçimi tek bir ızgaradır, küçük görseller yalnızca dolguyu gösterir.
 
 **Ayarlar.** Sistem sekmeleri yerine solda kenar çubuğu, sağda kaydırılabilir içerik. Ayarlar gruplu kartlardadır: başlık solda, kontrol sağda, satırlar arasında ayraç. Açıklamalar başlığın altında küçük yazılır.
 
