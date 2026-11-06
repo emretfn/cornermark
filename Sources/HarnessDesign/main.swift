@@ -14,6 +14,7 @@ checkElevation()
 checkComponents()
 checkEditorControls()
 checkDirection()
+checkLabelAlignment()
 renderSpecimens()
 
 if SilentNoResponder.isSilent {

@@ -1,5 +1,8 @@
 import AppKit
 import CornermarkL10n
+import ObjectiveC
+
+private nonisolated(unsafe) var naturalAlignmentKey: UInt8 = 0
 
 /// A view whose content is a picture of something (a screenshot, the canvas) and must never be mirrored.
 /// `applyLanguageDirection()` leaves it and its subviews left to right.
@@ -31,6 +34,18 @@ extension NSView {
             flipped.append(self)
             needsLayout = true
             needsDisplay = true
+        }
+        // A control's natural alignment stays left in an app that launched left to right, whatever its direction or base
+        // writing direction says (measured), so a right-to-left language turns natural into right, and back again after.
+        if let control = self as? NSControl {
+            let mirrored = objc_getAssociatedObject(control, &naturalAlignmentKey) != nil
+            if resolved == .rightToLeft, control.alignment == .natural {
+                control.alignment = .right
+                objc_setAssociatedObject(control, &naturalAlignmentKey, true, .OBJC_ASSOCIATION_RETAIN)
+            } else if resolved == .leftToRight, mirrored {
+                if control.alignment == .right { control.alignment = .natural }
+                objc_setAssociatedObject(control, &naturalAlignmentKey, nil, .OBJC_ASSOCIATION_RETAIN)
+            }
         }
         for sub in subviews { sub.setDirection(resolved, flipped: &flipped) }
     }
