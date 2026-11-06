@@ -133,8 +133,8 @@ public struct RecordedVideo: Codable, Hashable, Sendable {
 
     public init(location: URL, format: Format, duration: Double) { self.location = location; self.format = format; self.duration = duration }
 
-    /// The file a player opens.
-    public var file: URL { format == .project ? location.appendingPathComponent(RecordingProjectFile.videoName) : location }
+    /// The file a player opens. A project names its video in its project file.
+    public var file: URL { format == .project ? RecordingProjectFile.videoFile(in: location) : location }
 
     /// The H.264 file the recorder writes. A GIF is made from a hidden video beside it once the recording ends.
     public var film: URL {

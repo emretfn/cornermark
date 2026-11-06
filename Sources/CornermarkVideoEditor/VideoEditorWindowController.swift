@@ -47,11 +47,14 @@ final class VideoEditorWindow: NSWindow {
     // The window answers the Edit menu's Undo and Redo before its controller would, so it hands them to the editor's history.
     @objc(undo:) func undoEdit(_ sender: Any?) { editor?.undo() }
     @objc(redo:) func redoEdit(_ sender: Any?) { editor?.redo() }
+    @objc(saveDocument:) func saveDocument(_ sender: Any?) { editor?.save() }
+    @objc(saveDocumentAs:) func saveDocumentAs(_ sender: Any?) { editor?.chooseAndSaveAs() }
 
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case Selector(("undo:")): return editor?.canUndo ?? false
         case Selector(("redo:")): return editor?.canRedo ?? false
+        case Selector(("saveDocument:")), Selector(("saveDocumentAs:")): return editor != nil
         default: return super.validateMenuItem(item)
         }
     }
@@ -63,19 +66,35 @@ final class VideoEditorWindow: NSWindow {
     }
 }
 
-/// Opens a recording's project folder: settings on the left, the preview with playback in the middle, the timeline below.
-/// The source video is only read. Edits are written to the project file when the window closes.
+/// Opens a project: settings on the left, the preview with playback in the middle, the timeline below. The source video is only read.
+/// Edits are written to the project file by Save, before an export, and when the window closes, so closing never asks and never loses them.
 @MainActor
 public final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
-    public let folder: URL
+    /// The project's folder. Save As moves the editor to the copy.
+    public private(set) var folder: URL
     public private(set) var state: VideoEditorState
-    public enum Closed: Equatable {
+    public enum SaveResult: Equatable {
         case unchanged, saved
         case failed(String)
     }
 
     /// Called once as the window closes, after the project file was written if it changed.
-    public var onClose: (Closed) -> Void = { _ in }
+    public var onClose: (SaveResult) -> Void = { _ in }
+    /// Called after Save, and after a close the window refused because the edits could not be written.
+    public var onSave: (SaveResult) -> Void = { _ in }
+    /// Called after Save As wrote the copy, with the folder the editor left and the one it now edits.
+    public var onSaveAs: (_ from: URL, _ to: URL) -> Void = { _, _ in }
+    /// Asks where Save As writes, offering `name`, and hands back the package to write, or nothing when the viewer cancels.
+    public var chooseSaveLocation: (NSWindow?, String, @escaping (URL?) -> Void) -> Void = { window, name, done in
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [VideoEditorWindowController.packageType]
+        panel.nameFieldStringValue = name
+        panel.canCreateDirectories = true
+        guard let window else { return done(panel.runModal() == .OK ? panel.url : nil) }
+        panel.beginSheetModal(for: window) { done($0 == .OK ? panel.url : nil) }
+    }
+
+    public nonisolated static let packageType = UTType(exportedAs: "local.emretufan.cornermark.video-project", conformingTo: .package)
     /// Where a finished export is written.
     public var exportFolder: () -> URL = { FileManager.default.temporaryDirectory }
     public var onExport: (ExportEvent) -> Void = { _ in }
@@ -89,6 +108,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     private var saved: RecordingProject
+    /// Whether Save has written this session, so the header can say the edits are saved rather than say nothing.
+    private var hasSaved = false
     private var history: UndoHistory<RecordingProject.Edits>
     /// The added background picture as last read, keyed by its file name.
     private var backgroundPicture: (file: String?, image: CGImage?) = (nil, nil)
@@ -143,7 +164,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         super.init(window: window)
         window.editor = self
         window.delegate = self
-        window.title = folder.lastPathComponent
+        window.title = RecordingProjectFile.displayName(of: folder)
         window.minSize = NSSize(width: 900, height: 600)
         window.isReleasedWhenClosed = false
         window.backgroundColor = DS.Color.bgSurface
@@ -650,6 +671,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         Chord(keyCode: 6): { $0.addZoomAtPlayhead(); return true },
         .command(6): { $0.undo(); return true },
         .command(6, shift: true): { $0.redo(); return true },
+        .command(1): { $0.save(); return true },
+        .command(1, shift: true): { $0.chooseAndSaveAs(); return true },
     ]
 
     func handleKey(_ event: NSEvent) -> Bool {
@@ -730,7 +753,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             do { try saveProject() } catch { return onExport(.notSaved(error.localizedDescription)) }
         }
         let project = state.project, settings = state.exportSettings, video = videoURL
-        let output = Self.uniqueFile(in: exportFolder(), name: folder.lastPathComponent)
+        let output = Self.uniqueFile(in: exportFolder(), name: RecordingProjectFile.displayName(of: folder))
         state.export = .exporting(0)
         refresh()
         onExport(.started(ExportPlan(project: project, settings: settings, sourceBytes: sourceBytes)))
@@ -864,10 +887,14 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         inspector.backgroundPanel.videoSize = CGSize(width: size.width, height: size.height)
         let zooms = state.project.edits.zooms
         inspector.show(state.section, cursor: state.project.edits.cursor, background: background, picture: backgroundPicture.image,
-                       zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count)
+                       zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count,
+                       origin: state.project.source.origin, hasAudio: frames.hasAudio)
         timeline.zoomLane.zooms = zooms
         timeline.zoomLane.selection = state.selectedZoom
         header.show(state.export)
+        let edited = state.project != saved
+        header.show(document: edited ? .edited : hasSaved ? .saved : .unchanged)
+        window?.isDocumentEdited = edited
         exportPanel.show(state.export, settings: state.exportSettings, project: state.project, sourceBytes: sourceBytes)
         updateTransportBar(state.transport.time(at: clock()))
     }
@@ -892,6 +919,57 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     // MARK: Window
 
+    // MARK: Saving
+
+    /// Writes the edits to the project file now. Undo and redo keep working across it.
+    @discardableResult
+    public func save() -> SaveResult {
+        let result = writeIfChanged()
+        refresh()
+        // The header's word changes without moving focus, so VoiceOver hears the outcome too.
+        if case .failed = result { announce("Could not save the edits") } else { announce("Saved") }
+        onSave(result)
+        return result
+    }
+
+    /// Asks where to write a copy of the project, then writes it there and goes on editing the copy.
+    public func chooseAndSaveAs() {
+        chooseSaveLocation(window, RecordingProjectFile.displayName(of: folder)) { [weak self] url in
+            guard let self, let url else { return }
+            do { try saveAs(to: url) } catch { onSave(.failed(error.localizedDescription)) }
+        }
+    }
+
+    /// Copies the project, edits included, to the package `target` and edits the copy from now on. The project it leaves keeps what
+    /// was last saved there.
+    public func saveAs(to target: URL) throws {
+        var target = target.standardizedFileURL
+        if target.pathExtension.lowercased() != RecordingProjectFile.packageExtension {
+            target = target.appendingPathExtension(RecordingProjectFile.packageExtension)
+        }
+        let from = folder, here = folder.standardizedFileURL.resolvingSymlinksInPath().path
+        let there = target.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().appendingPathComponent(target.lastPathComponent).path
+        guard there != here else { save(); return }
+        guard !there.hasPrefix(here + "/") else { throw CocoaError(.fileWriteInvalidFileName) }
+        try RecordingProjectFile.copy(state.project, from: from, to: target)
+        // Named the way the app names an open project, so opening the copy again finds this editor.
+        let resolved = target.standardizedFileURL.resolvingSymlinksInPath()
+        folder = resolved
+        saved = state.project
+        hasSaved = true
+        window?.title = RecordingProjectFile.displayName(of: resolved)
+        refresh()
+        onSaveAs(from, resolved)
+    }
+
+    /// A close the viewer asked for stays open when the edits cannot be written, so they are never lost to a folder that cannot be written.
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard case .failed = writeIfChanged() else { return true }
+        refresh()
+        onSave(.failed("the project file could not be written"))
+        return false
+    }
+
     public func windowWillClose(_ notification: Notification) {
         preparation?.cancel()
         exportJob?.cancel()
@@ -899,18 +977,23 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         displayLink = nil
         state.transport.pause(now: clock())
         frames.follow(sourceTime: state.transport.time(at: clock()), playing: false)
-        guard state.project != saved else { return onClose(.unchanged) }
+        onClose(writeIfChanged())
+    }
+
+    private func writeIfChanged() -> SaveResult {
+        guard state.project != saved else { return .unchanged }
         do {
             try saveProject()
-            onClose(.saved)
+            return .saved
         } catch {
-            onClose(.failed(error.localizedDescription))
+            return .failed(error.localizedDescription)
         }
     }
 
     private func saveProject() throws {
         try RecordingProjectFile.write(state.project, to: folder)
         saved = state.project
+        hasSaved = true
     }
 
     public func windowDidExitFullScreen(_ notification: Notification) {

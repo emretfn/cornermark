@@ -124,7 +124,8 @@ public enum VideoExporter {
         let writer = try AVAssetWriter(outputURL: partial, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
         let folder = video.deletingLastPathComponent()
-        let mix = try await AudioMixReader(files: project.source.audioFiles.map { folder.appendingPathComponent($0) }, clips: project.timeline.clips,
+        // A video opened from a file carries its sound in its own file; a recording's video has none, so it adds nothing to the mix.
+        let mix = try await AudioMixReader(files: [video] + project.source.audioFiles.map { folder.appendingPathComponent($0) }, clips: project.timeline.clips,
                                            duration: plan.duration)
         defer { mix?.cancel() }
         do {

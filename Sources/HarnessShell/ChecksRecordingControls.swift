@@ -124,7 +124,7 @@ func checkRecordingControls() async throws {
     try m.source?.advance(12)
     check(m.link("record/stop"), "stop")
     check(await waitUntil { m.phase == .idle && w.store.list().count == 2 }, "finishes the restarted take")
-    if let video = w.store.list().compactMap(\.video).first(where: { $0.location.lastPathComponent.hasSuffix(" 2") }), let facts = await fileFacts(video.file) {
+    if let video = w.store.list().compactMap(\.video).first(where: { RecordingProjectFile.displayName(of: $0.location).hasSuffix(" 2") }), let facts = await fileFacts(video.file) {
         check(facts.frames == 12 && facts.width == 320, "the file holds only the 12 frames after the restart", detail: "\(facts)")
     } else { check(false, "the restarted take is listed") }
     check(c.controls.rememberedOrigin == dragged, "the place the bar was dragged to is kept for the next recording", detail: "\(String(describing: c.controls.rememberedOrigin))")

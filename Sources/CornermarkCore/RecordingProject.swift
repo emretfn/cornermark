@@ -48,6 +48,14 @@ public struct RecordingProject: Codable, Equatable, Sendable {
     public static let currentVersion = 1
 
     public struct Source: Codable, Equatable, Sendable {
+        /// Where the video came from, which decides the tracks a project can have.
+        public enum Origin: String, Codable, Sendable {
+            /// Recorded for editing, with the pointer, clicks and keys as tracks of their own.
+            case recording
+            /// Opened from a video file. Whatever was filmed is in the picture, so it has no tracks beside it.
+            case file
+        }
+
         /// File name inside the project folder.
         public var video: String
         public var pixelWidth: Int
@@ -61,15 +69,16 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         /// File names inside the project folder of the sound tracks, each as long as the video and on its timeline. Nil when not recorded.
         public var microphone: String?
         public var systemAudio: String?
+        public var origin: Origin
         /// The camera's file inside the project folder, on the same timeline as `video`. Nil when the camera was off.
         public var camera: String?
 
         public init(video: String = RecordingProjectFile.videoName, pixelWidth: Int = 0, pixelHeight: Int = 0,
                     pointWidth: Double = 0, pointHeight: Double = 0, fps: Int = 60, duration: Double = 0,
-                    microphone: String? = nil, systemAudio: String? = nil, camera: String? = nil) {
+                    microphone: String? = nil, systemAudio: String? = nil, camera: String? = nil, origin: Origin = .recording) {
             self.video = video; self.pixelWidth = pixelWidth; self.pixelHeight = pixelHeight
             self.pointWidth = pointWidth; self.pointHeight = pointHeight; self.fps = fps; self.duration = duration
-            self.microphone = microphone; self.systemAudio = systemAudio; self.camera = camera
+            self.microphone = microphone; self.systemAudio = systemAudio; self.camera = camera; self.origin = origin
         }
 
         /// The sound tracks there are, microphone first.
@@ -87,8 +96,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             microphone = try? c.decodeIfPresent(String.self, forKey: .microphone)
             systemAudio = try? c.decodeIfPresent(String.self, forKey: .systemAudio)
             camera = (try? c.decodeIfPresent(String.self, forKey: .camera)) ?? nil
+            origin = (try? c.decodeIfPresent(Origin.self, forKey: .origin)) ?? .recording
         }
-        private enum Keys: String, CodingKey { case video, pixelWidth, pixelHeight, pointWidth, pointHeight, fps, duration, microphone, systemAudio, camera }
+        private enum Keys: String, CodingKey { case video, pixelWidth, pixelHeight, pointWidth, pointHeight, fps, duration, microphone, systemAudio, camera, origin }
     }
 
     /// What happened while recording, on the video's timeline.
@@ -135,11 +145,11 @@ public struct RecordingProject: Codable, Equatable, Sendable {
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
-            cursor = try c.decodeIfPresent(CursorSettings.self, forKey: .cursor) ?? CursorSettings()
+            cursor = (try? c.decodeIfPresent(CursorSettings.self, forKey: .cursor)) ?? CursorSettings()
             clicks = (try? c.decodeIfPresent(ClickHighlight.self, forKey: .clicks)) ?? ClickHighlight()
             keystrokes = (try? c.decodeIfPresent(KeystrokeDisplay.self, forKey: .keystrokes)) ?? KeystrokeDisplay()
             camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
-            clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
+            clips = ((try? c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)) ?? nil)?.compactMap(\.value) ?? []
             zooms = (((try? c.decodeIfPresent([Lossy<Zoom>].self, forKey: .zooms)) ?? nil)?.compactMap(\.value) ?? []).sorted { $0.start < $1.start }
             background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
         }
@@ -173,13 +183,40 @@ private struct Lossy<Value: Decodable>: Decodable {
     init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
 }
 
-/// A recording's folder: the source video next to the project JSON.
+/// A project is a folder that holds `project.json`, the source video it names, and the files its edits add. A new one is a package,
+/// a folder named `<name>.cornermarkvideo` that Finder shows as one document. A plain folder from before packages opens the same way.
 public enum RecordingProjectFile {
     public static let videoName = "screen.mp4"
     public static let microphoneName = "mic.m4a"
     public static let systemAudioName = "system.m4a"
     public static let projectName = "project.json"
     public static let cameraName = "camera.mp4"
+    public static let packageExtension = "cornermarkvideo"
+
+    /// The name a person reads: the folder's name without the package extension.
+    public static func displayName(of folder: URL) -> String {
+        folder.pathExtension.lowercased() == packageExtension ? folder.deletingPathExtension().lastPathComponent : folder.lastPathComponent
+    }
+
+    /// The source video of the project in `folder`, as its project file names it.
+    public static func videoFile(in folder: URL) -> URL {
+        folder.appendingPathComponent((try? read(from: folder).source.video) ?? videoName)
+    }
+
+    /// Copies the project in `folder` to the package `target` with `project` as its project file, and leaves `folder` as it is.
+    /// The files are cloned where the disk can, so the copy of the video takes no room until one of them changes.
+    public static func copy(_ project: RecordingProject, from folder: URL, to target: URL) throws {
+        let fm = FileManager.default
+        let staging = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).\(packageExtension)", isDirectory: true)
+        try fm.copyItem(at: folder, to: staging)
+        do {
+            try write(project, to: staging)
+            if fm.fileExists(atPath: target.path) { _ = try fm.replaceItemAt(target, withItemAt: staging) } else { try fm.moveItem(at: staging, to: target) }
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
+    }
 
     public static func write(_ project: RecordingProject, to folder: URL) throws {
         let encoder = JSONEncoder()

@@ -65,6 +65,7 @@ $V/link.sh open docs/screenshots/capture.png
 | `restore-overlay` | `hud No closed overlay to restore` |
 | `hide-overlays` | `handled URL` only, which proves delivery and nothing else |
 | `open <image>` | `handled URL`, plus a new record in `<root>/History/index.json` |
+| `open <video.mov or .mp4>` | `video opened from file file=<name> project=<name>.cornermarkvideo`, then `video editor opened`, plus the package in `<root>/saved/` |
 | `unknown-link` | `ignored URL` with `unknownPath`, which proves delivery |
 | `record/test-window` | `test window id=<n> ... visible=true appActive=false` |
 | `record window=<n>` | `recording started ... source=screen` |
