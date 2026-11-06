@@ -391,10 +391,9 @@ func checkVideoZoom() async throws {
             return fx >= state.crop.x && fx <= state.crop.x + state.crop.width && fy >= state.crop.y && fy <= state.crop.y + state.crop.height
         }, "the pointer is inside the zoomed view at each measured moment")
         check(times.contains { (1.01...1.99).contains(frameState(combined, outputTime: $0).crop.scale) }, "one measured moment is partway through a zoom")
-        // The preview lays the badge's glyphs with a layer and export with a bitmap, so their edges differ a little more than the picture's.
-        check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.005 && $0.drawn.psnr > 34 },
+        check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
               "zoom, background, pointer and badge: the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
-        check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 34 }, "zoom, background, pointer and badge: the file's frames match the preview within compression loss",
+        check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoom, background, pointer and badge: the file's frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     } else { check(false, "the harness decoder is known") }
     editor.setBackground(VideoBackground())

@@ -254,6 +254,9 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         animationTop.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 10)
         animationPanelTop = animationTop
         preview.pointSize = CGSize(width: max(state.project.source.pointWidth, 1), height: max(state.project.source.pointHeight, 1))
+        let source = state.project.source
+        preview.pixelSize = CGSize(width: source.pixelWidth > 0 ? Double(source.pixelWidth) : preview.pointSize.width,
+                                   height: source.pixelHeight > 0 ? Double(source.pixelHeight) : preview.pointSize.height)
         timeline.timeline = state.project.timeline
         timeline.frameStep = 1 / Double(max(state.project.source.fps, 1))
         timeline.aspect = state.project.source.pointHeight > 0 ? CGFloat(state.project.source.pointWidth / state.project.source.pointHeight) : 16 / 9
