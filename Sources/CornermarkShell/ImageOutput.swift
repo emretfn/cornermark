@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCore
+import CornermarkL10n
 
 enum ImageOutput {
     /// PNG for apps that take it, TIFF for the ones that only know NSImage.
@@ -20,7 +21,8 @@ enum ImageOutput {
     /// `0:07`, `12:30`, `1:02:03`. Seconds round down, so a video never reads longer than it is.
     static func durationText(_ seconds: Double) -> String {
         let s = max(0, Int(seconds.isFinite ? seconds : 0))
-        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+        let n = { Numerals.text($0, minimumDigits: 2) }
+        return s >= 3600 ? "\(Numerals.text(s / 3600)):\(n((s / 60) % 60)):\(n(s % 60))" : "\(Numerals.text(s / 60)):\(n(s % 60))"
     }
 
     static func copy(text: String, to pasteboard: NSPasteboard) {
@@ -61,7 +63,9 @@ enum ImageOutput {
         return url
     }
 
-    static func dimensionText(_ size: CGSize) -> String { "\(Int(size.width)) \u{00D7} \(Int(size.height))" }
+    static func dimensionText(_ size: CGSize) -> String {
+        tr("{width} \u{00D7} {height}", ["width": Numerals.text(Int(size.width)), "height": Numerals.text(Int(size.height))])
+    }
 
-    static func byteText(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+    static func byteText(_ bytes: Int64) -> String { bytes.formatted(.byteCount(style: .file).locale(L10n.locale)) }
 }
