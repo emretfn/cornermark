@@ -12,9 +12,11 @@ final class InspectorView: NSView {
     var onCursor: (CursorSettings) -> Void = { _ in }
     var onCursorSizeEnd: () -> Void = {}
     let zoomPanel = ZoomPanel()
+    var onClicks: (ClickHighlight) -> Void = { _ in }
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
     let backgroundPanel = BackgroundPanel()
+    let clicksPanel = ClicksPanel()
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
@@ -40,7 +42,7 @@ final class InspectorView: NSView {
     static let sizeRange = 0.5...4.0
 
     /// A picked zoom takes the panel over from the section, and the rail then marks none.
-    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?, zoom: Zoom? = nil, zoomCount: Int = 0,
+    func show(_ section: EditorSection, cursor: CursorSettings, clicks: ClickHighlight, hasClicks: Bool, background: VideoBackground, picture: CGImage?, zoom: Zoom? = nil, zoomCount: Int = 0,
               origin: RecordingProject.Source.Origin = .recording, hasAudio: Bool = false) {
         self.cursor = cursor
         for (s, b) in railButtons { b.isSelected = zoom == nil && s == section }
@@ -54,6 +56,8 @@ final class InspectorView: NSView {
         emptyNote.stringValue = note
         backgroundPanel.isHidden = section != .background || zoom != nil
         backgroundPanel.show(background, picture: picture)
+        clicksPanel.isHidden = section != .clicks || zoom != nil || !note.isEmpty
+        clicksPanel.show(cursor: cursor, clicks: clicks, hasClicks: hasClicks)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
         cursorSizeValue.stringValue = String(format: "%.1f\u{00D7}", cursor.scale)
@@ -88,6 +92,7 @@ final class InspectorView: NSView {
         if origin == .file {
             switch section {
             case .cursor: return "This video was opened from a file, so it has no pointer track. Its pointer is part of the picture, and zooms still work. Record for Editing to change the pointer afterwards."
+            case .clicks: return "This video was opened from a file, so no clicks were recorded with it."
             case .keystrokes: return "This video was opened from a file, so no keystrokes were recorded with it."
             case .audio: return hasAudio ? "This video plays and exports with its own sound." : "This video has no sound."
             case .camera: return "This video has no camera."
@@ -95,7 +100,7 @@ final class InspectorView: NSView {
             }
         }
         switch section {
-        case .cursor: return ""
+        case .cursor, .clicks: return ""
         case .keystrokes: return "This recording has no keystrokes."
         case .audio: return "This recording has no sound."
         case .camera: return "This recording has no camera."
@@ -197,7 +202,10 @@ final class InspectorView: NSView {
         let divider = Separator(axis: .vertical)
         let edge = Separator(axis: .vertical)
         backgroundPanel.isHidden = true
-        for v in [rail, divider, body, edge, rule, backgroundPanel] as [NSView] {
+        clicksPanel.isHidden = true
+        clicksPanel.onCursor = { [unowned self] in onCursor($0) }
+        clicksPanel.onClicks = { [unowned self] in onClicks($0) }
+        for v in [rail, divider, body, edge, rule, backgroundPanel, clicksPanel] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -217,6 +225,9 @@ final class InspectorView: NSView {
             backgroundPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
             backgroundPanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
             backgroundPanel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            clicksPanel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: DS.Space.s16),
+            clicksPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            clicksPanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
             edge.leadingAnchor.constraint(equalTo: body.trailingAnchor),
             edge.trailingAnchor.constraint(equalTo: trailingAnchor),
             edge.topAnchor.constraint(equalTo: topAnchor),

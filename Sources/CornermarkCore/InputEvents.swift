@@ -230,6 +230,17 @@ public enum InputOverlay {
 
 extension RecordingProject {
     public func inputOverlay(at sourceTime: Double) -> InputOverlayState {
-        InputOverlay.state(clicks: events.clicks, keys: events.keys, highlight: edits.clicks, keystrokes: edits.keystrokes, at: sourceTime)
+        var state = InputOverlay.state(clicks: [], keys: events.keys, highlight: edits.clicks, keystrokes: edits.keystrokes, at: sourceTime)
+        state.rings = clickRings(at: sourceTime)
+        return state
+    }
+
+    public func clickRings(at sourceTime: Double) -> [ClickRing] {
+        guard edits.clicks.isVisible else { return [] }
+        let first = CursorTrack.firstIndex(events.clicks, from: sourceTime - ClickHighlight.lifetime)
+        return events.clicks[first...].prefix { $0.t <= sourceTime }.compactMap { click in
+            let at = CursorTrack.anchor(click, in: self)
+            return InputOverlay.ring(ClickEvent(t: click.t, x: at.x, y: at.y), edits.clicks, at: sourceTime)
+        }
     }
 }

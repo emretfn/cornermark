@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import CornermarkCore
+import CornermarkDesign
 import VideoToolbox
 
 public struct ExportReport: Equatable, Sendable {
@@ -32,14 +33,14 @@ public enum ExportError: Error, Equatable {
     case writer(String)
 }
 
-/// Draws one frame of the finished video: the background, then the source picture and the pointer `frameState` places, clipped
-/// to the recording's rounded frame, in the recording's points with y down, the way the preview's layers do.
 public struct ExportFrameRenderer: @unchecked Sendable {
     public let width: Int
     public let height: Int
     /// The recorded area in points, the unit of pointer positions.
     public let pointSize: CGSize
     public let canvas: VideoCanvas
+    let highlight: ClickHighlight
+    let keystrokes: KeystrokeDisplay
     /// The fill and shadow, made once: the recording is opaque, so nothing behind it changes from frame to frame.
     let backdrop: CGImage?
 
@@ -48,6 +49,8 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         width = plan.width; height = plan.height
         pointSize = CGSize(width: max(project.source.pointWidth, 1), height: max(project.source.pointHeight, 1))
         canvas = project.canvas
+        highlight = project.edits.clicks
+        keystrokes = project.edits.keystrokes
         backdrop = VideoBackdrop.image(canvas, width: plan.width, height: plan.height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
     }
 
@@ -76,7 +79,7 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         }
         // The crop zooms the recording inside the frame, and the frame's clip cuts what falls outside it.
         if let source { ctx.draw(source, in: Self.pictureRect(state.crop, in: frame)) }
-        // The camera bubble is an overlay on the frame, so it ignores the crop. The pointer is in recording points and follows it.
+        // The camera bubble is an overlay on the frame, so it ignores the crop. Rings and the pointer are in recording points and follow it.
         if let placed = state.camera, let camera {
             ctx.saveGState()
             ctx.translateBy(x: frame.minX, y: frame.maxY)
@@ -84,12 +87,15 @@ public struct ExportFrameRenderer: @unchecked Sendable {
             CameraBubblePainter.draw(camera, placed, in: ctx)
             ctx.restoreGState()
         }
-        if let cursor = state.cursor {
+        if state.cursor != nil || !state.input.isEmpty {
             let crop = state.crop
             ctx.translateBy(x: frame.minX, y: frame.maxY)
             ctx.scaleBy(x: frame.width / (pointSize.width * crop.width), y: -frame.height / (pointSize.height * crop.height))
             ctx.translateBy(x: -pointSize.width * crop.x, y: -pointSize.height * crop.y)
-            PointerShape.draw(cursor, in: ctx)
+            if !state.input.isEmpty {
+                InputOverlayPainter.draw(state.input, area: pointSize, highlight: highlight, keystrokes: keystrokes, ink: .design, in: ctx)
+            }
+            if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
         }
         ctx.restoreGState()
     }

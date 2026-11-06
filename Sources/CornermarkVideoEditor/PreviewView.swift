@@ -15,7 +15,8 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera() } } }
+    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera(); placeRings() } } }
+    var highlight = ClickHighlight() { didSet { if oldValue != highlight { placeRings() } } }
     /// Where the recording sits on the finished video.
     var canvas: VideoCanvas? { didSet { if oldValue != canvas { needsLayout = true } } }
     /// The picture the background shows when its fill is an added image.
@@ -36,6 +37,7 @@ final class PreviewView: NSView {
     private let picture = CALayer()
     private let pointer = CAShapeLayer()
     private var pointerStyle = CursorStyle.white
+    private var rings: [RingLayer] = []
     /// The camera's shadow, and inside it the clipped picture, drawn as `CameraBubblePainter` draws it in export.
     private let cameraHolder = CALayer()
     private let cameraPicture = CALayer()
@@ -104,6 +106,7 @@ final class PreviewView: NSView {
         placeCrop()
         placeCursor()
         placeCamera()
+        placeRings()
     }
 
     /// Where the recording sits in the view, in the view's bottom-left coordinates, after the last layout.
@@ -167,6 +170,27 @@ final class PreviewView: NSView {
         pointerStyle = style
     }
 
+    private func placeRings() {
+        withoutAnimation {
+            let placed = pointSize.width > 0 && pointSize.height > 0 ? state?.input.rings ?? [] : []
+            while rings.count < placed.count {
+                let ring = RingLayer()
+                picture.insertSublayer(ring, below: pointer)
+                rings.append(ring)
+            }
+            let size = picture.bounds.size
+            let crop = state?.crop ?? .full
+            let kx = size.width / (pointSize.width * crop.width), ky = size.height / (pointSize.height * crop.height)
+            for (i, layer) in rings.enumerated() {
+                guard i < placed.count else { layer.isHidden = true; continue }
+                layer.isHidden = false
+                layer.show(placed[i], highlight)
+                layer.position = CGPoint(x: (placed[i].x - crop.x * pointSize.width) * kx, y: size.height - (placed[i].y - crop.y * pointSize.height) * ky)
+                layer.setAffineTransform(CGAffineTransform(scaleX: kx, y: ky))
+            }
+        }
+    }
+
     /// Camera rects count from the area's top-left corner with y down, like pointer samples.
     private func placeCamera() {
         withoutAnimation {
@@ -198,5 +222,34 @@ final class PreviewView: NSView {
         CATransaction.setDisableActions(true)
         body()
         CATransaction.commit()
+    }
+}
+
+private final class RingLayer: CALayer {
+    private let halo = CAShapeLayer()
+    private let line = CAShapeLayer()
+
+    override init() {
+        super.init()
+        allowsGroupOpacity = true
+        for l in [halo, line] { addSublayer(l) }
+        line.fillColor = nil
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+    required init?(coder: NSCoder) { fatalError("RingLayer is created in code") }
+
+    func show(_ ring: ClickRing, _ h: ClickHighlight) {
+        let width = InputOverlayPainter.ringLineWidth(h)
+        let path = CGPath(ellipseIn: CGRect(x: -ring.radius, y: -ring.radius, width: ring.radius * 2, height: ring.radius * 2), transform: nil)
+        let color = InputOverlayInk.design.click(h.color)
+        opacity = Float(ring.opacity)
+        halo.path = path
+        halo.fillColor = h.style == .filled ? color.copy(alpha: InputOverlayPainter.ringFillAlpha) : nil
+        halo.strokeColor = InputOverlayInk.design.halo
+        halo.lineWidth = InputOverlayPainter.ringHaloWidth(h)
+        line.path = path
+        line.strokeColor = color
+        line.lineWidth = width
     }
 }
