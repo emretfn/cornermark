@@ -18,11 +18,13 @@ let filmingControls = ProcessInfo.processInfo.environment["CORNERMARK_CONTROLS_F
 let filmingGifs = ProcessInfo.processInfo.environment["CORNERMARK_GIF_FILM"]
 let filmingInput = ProcessInfo.processInfo.environment["CORNERMARK_INPUT_FILM"]
 let trimFilming = ProcessInfo.processInfo.environment["CORNERMARK_TRIM_FILM"]
+let zoomFilming = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_FILM"]
+let zoomCurve = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_CURVE"]
 let cursorFilming = ProcessInfo.processInfo.environment["CORNERMARK_CURSOR_FILM"]
 let cameraFilming = ProcessInfo.processInfo.environment["CORNERMARK_CAMERA_FILM"]
 let backgroundFilming = ProcessInfo.processInfo.environment["CORNERMARK_BACKGROUND_FILM"]
 let aspectFilming = ProcessInfo.processInfo.environment["CORNERMARK_ASPECT_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, cursorFilming, backgroundFilming, cameraFilming, aspectFilming].allSatisfy { $0 == nil } ? 180 : 900)) {
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, aspectFilming].allSatisfy { $0 == nil } ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -30,6 +32,15 @@ DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, e
 Task { @MainActor in
     if let aspectFilming {
         let ok = await VideoAspectFilm.run(out: URL(fileURLWithPath: aspectFilming, isDirectory: true))
+        filmDone(ok)
+    }
+    if let zoomCurve {
+        let ok = await ZoomCurveExport.run(folder: URL(fileURLWithPath: zoomCurve, isDirectory: true),
+                                           spec: ProcessInfo.processInfo.environment["CORNERMARK_ZOOMS"] ?? "1-4@2")
+        filmDone(ok)
+    }
+    if let zoomFilming {
+        let ok = await VideoZoomFilm.run(out: URL(fileURLWithPath: zoomFilming, isDirectory: true))
         filmDone(ok)
     }
     if let cursorFilming {
@@ -110,6 +121,7 @@ Task { @MainActor in
         try await checkRecordingAudio()
         try await checkVideoEditor()
         try await checkVideoExport()
+        try await checkVideoZoom()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

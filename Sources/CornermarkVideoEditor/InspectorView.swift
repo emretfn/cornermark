@@ -11,6 +11,7 @@ final class InspectorView: NSView {
     var onSelect: (EditorSection) -> Void = { _ in }
     var onCursor: (CursorSettings) -> Void = { _ in }
     var onCursorSizeEnd: () -> Void = {}
+    let zoomPanel = ZoomPanel()
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
     let backgroundPanel = BackgroundPanel()
@@ -38,15 +39,18 @@ final class InspectorView: NSView {
     /// Sliders work in this range. A stored size outside it is kept until the slider moves.
     static let sizeRange = 0.5...4.0
 
-    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?) {
+    /// A picked zoom takes the panel over from the section, and the rail then marks none.
+    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?, zoom: Zoom? = nil, zoomCount: Int = 0) {
         self.cursor = cursor
-        for (s, b) in railButtons { b.isSelected = s == section }
-        title.stringValue = section.title
-        let isCursor = section == .cursor
+        for (s, b) in railButtons { b.isSelected = zoom == nil && s == section }
+        title.stringValue = zoom == nil ? section.title : "Zoom"
+        zoomPanel.isHidden = zoom == nil
+        if let zoom { zoomPanel.show(zoom, count: zoomCount) }
+        let isCursor = section == .cursor && zoom == nil
         cursorRows.forEach { $0.isHidden = !isCursor }
-        emptyNote.isHidden = isCursor || section == .background
+        emptyNote.isHidden = isCursor || zoom != nil || section == .background
         emptyNote.stringValue = Self.note(section)
-        backgroundPanel.isHidden = section != .background
+        backgroundPanel.isHidden = section != .background || zoom != nil
         backgroundPanel.show(background, picture: picture)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
@@ -167,8 +171,8 @@ final class InspectorView: NSView {
         body.alignment = .leading
         body.spacing = DS.Space.s12
         body.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
-        for v in [title, showCursor, sizeRow, styleRow, motionRow, ruleSlot, hideIdle, hideTyping, emptyNote] as [NSView] { body.addArrangedSubview(v) }
-        for v in [sizeRow, styleRow, motionRow, ruleSlot, emptyNote] {
+        for v in [title, showCursor, sizeRow, styleRow, motionRow, ruleSlot, hideIdle, hideTyping, emptyNote, zoomPanel] as [NSView] { body.addArrangedSubview(v) }
+        for v in [sizeRow, styleRow, motionRow, ruleSlot, emptyNote, zoomPanel] {
             v.widthAnchor.constraint(equalTo: body.widthAnchor, constant: -2 * DS.Space.s16).isActive = true
         }
         body.setCustomSpacing(DS.Space.s16, after: title)

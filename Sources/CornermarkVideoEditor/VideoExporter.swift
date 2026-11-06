@@ -74,14 +74,30 @@ public struct ExportFrameRenderer: @unchecked Sendable {
             ctx.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
             ctx.clip()
         }
-        if let source { ctx.draw(source, in: frame) }
-        if state.cursor != nil || (state.camera != nil && camera != nil) {
+        // The crop zooms the recording inside the frame, and the frame's clip cuts what falls outside it.
+        if let source { ctx.draw(source, in: Self.pictureRect(state.crop, in: frame)) }
+        // The camera bubble is an overlay on the frame, so it ignores the crop. The pointer is in recording points and follows it.
+        if let placed = state.camera, let camera {
+            ctx.saveGState()
             ctx.translateBy(x: frame.minX, y: frame.maxY)
             ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
-            if let placed = state.camera, let camera { CameraBubblePainter.draw(camera, placed, in: ctx) }
-            if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
+            CameraBubblePainter.draw(camera, placed, in: ctx)
+            ctx.restoreGState()
+        }
+        if let cursor = state.cursor {
+            let crop = state.crop
+            ctx.translateBy(x: frame.minX, y: frame.maxY)
+            ctx.scaleBy(x: frame.width / (pointSize.width * crop.width), y: -frame.height / (pointSize.height * crop.height))
+            ctx.translateBy(x: -pointSize.width * crop.x, y: -pointSize.height * crop.y)
+            PointerShape.draw(cursor, in: ctx)
         }
         ctx.restoreGState()
+    }
+
+    /// Where the whole recording lands so that `crop` fills `frame`, in y-up coordinates.
+    public static func pictureRect(_ crop: ZoomRect, in frame: CGRect) -> CGRect {
+        let w = frame.width / crop.width, h = frame.height / crop.height
+        return CGRect(x: frame.minX - crop.x * w, y: frame.minY - (1 - crop.y - crop.height) * h, width: w, height: h)
     }
 
     public func image(_ state: FrameState, source: CGImage?, camera: CGImage? = nil) -> CGImage? {
