@@ -1,9 +1,11 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// A thin bar that fills with the microphone's loudness on a decibel scale. It is neutral, because a level is a reading, not a choice.
-/// It rises at once and falls back over about half a second, so a voice reads as a steady movement rather than a flicker.
+/// It rises at once and falls back over about half a second, so a voice reads as a steady movement rather than a flicker. It fills
+/// from the leading edge.
 final class LevelMeterView: NSView {
     static let height: CGFloat = 4
     private(set) var shown: Float = 0
@@ -16,7 +18,7 @@ final class LevelMeterView: NSView {
         super.init(frame: frame)
         setAccessibilityElement(true)
         setAccessibilityRole(.levelIndicator)
-        setAccessibilityLabel("Microphone level")
+        setAccessibilityLabel(tr("Microphone level"))
     }
 
     required init?(coder: NSCoder) { fatalError("LevelMeterView is created in code") }
@@ -27,7 +29,7 @@ final class LevelMeterView: NSView {
         lastUpdate = now
         // Falls a whole meter in 0.6 s.
         shown = max(target, shown - Float(elapsed / 0.6))
-        setAccessibilityValue("\(Int(AudioLevel.decibels(level.rms, floor: -60).rounded())) dB")
+        setAccessibilityValue(tr("{level} dB", ["level": Int(AudioLevel.decibels(level.rms, floor: -60).rounded())]))
         needsDisplay = true
     }
 
@@ -44,7 +46,7 @@ final class LevelMeterView: NSView {
         DS.Color.borderStrong.setFill()
         NSBezierPath(roundedRect: track, xRadius: Self.height / 2, yRadius: Self.height / 2).fill()
         guard shown > 0 else { return }
-        let fill = CGRect(x: track.minX, y: track.minY, width: max(Self.height, track.width * CGFloat(shown)), height: Self.height)
+        let fill = mirrored(CGRect(x: track.minX, y: track.minY, width: max(Self.height, track.width * CGFloat(shown)), height: Self.height))
         DS.Color.bgInverse.setFill()
         NSBezierPath(roundedRect: fill, xRadius: Self.height / 2, yRadius: Self.height / 2).fill()
     }
@@ -55,24 +57,43 @@ final class LevelMeterView: NSView {
 final class MicrophoneSlotView: NSView {
     private let symbol = SymbolGlyphView()
     let meter = LevelMeterView()
-    let silent = Badge(text: "No sound", symbol: "mic.slash.fill", tone: .warning)
+    private(set) var silent = MicrophoneSlotView.silentBadge()
     private(set) var isSilent = false
 
-    static var width: CGFloat { Badge(text: "No sound", symbol: "mic.slash.fill", tone: .warning).intrinsicContentSize.width }
+    static var width: CGFloat { silentBadge().intrinsicContentSize.width }
+
+    /// A badge draws its text once, so a new language gets a new badge.
+    private static func silentBadge() -> Badge {
+        let badge = Badge(text: tr("No sound"), symbol: "mic.slash.fill", tone: .warning)
+        badge.toolTip = tr("No sound from the microphone for 3 seconds. Check that it is not muted and its input volume is up.")
+        badge.setAccessibilityIdentifier("recording.microphoneSilent")
+        badge.setAccessibilityLabel(tr("No sound from the microphone"))
+        badge.setAccessibilityHelp(tr("Check that the microphone is not muted and its input volume is up."))
+        return badge
+    }
 
     override init(frame: NSRect) {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: DS.Size.controlSmall))
         symbol.symbol = "mic.fill"
-        silent.toolTip = "No sound from the microphone for 3 seconds. Check that it is not muted and its input volume is up."
-        silent.setAccessibilityIdentifier("recording.microphoneSilent")
-        silent.setAccessibilityLabel("No sound from the microphone")
-        silent.setAccessibilityHelp("Check that the microphone is not muted and its input volume is up.")
         meter.setAccessibilityIdentifier("recording.microphoneMeter")
         [symbol, meter, silent].forEach(addSubview)
         apply(nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(languageDidChange), name: L10n.didChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("MicrophoneSlotView is created in code") }
+
+    deinit { NotificationCenter.default.removeObserver(self, name: L10n.didChange, object: nil) }
+
+    @objc private func languageDidChange() {
+        let badge = Self.silentBadge()
+        badge.isHidden = silent.isHidden
+        replaceSubview(silent, with: badge)
+        silent = badge
+        meter.setAccessibilityLabel(tr("Microphone level"))
+        applyLanguageDirection(L10n.layoutDirection)
+        layoutSlot()
+    }
 
     func apply(_ status: MicrophoneStatus?) {
         isSilent = status?.isSilent ?? false
@@ -86,9 +107,10 @@ final class MicrophoneSlotView: NSView {
     private func layoutSlot() {
         let h = bounds.height, icon = DS.Size.icon
         // Lined up with the badge's own symbol, so the glyph stays put when the slot swaps.
-        symbol.frame = CGRect(x: DS.Space.s8 + (DS.Size.iconSmall - icon) / 2, y: (h - icon) / 2, width: icon, height: icon)
-        let x = symbol.frame.maxX + DS.Space.s6
-        meter.frame = CGRect(x: x, y: 0, width: bounds.width - x - DS.Space.s4, height: h)
+        let glyph = CGRect(x: DS.Space.s8 + (DS.Size.iconSmall - icon) / 2, y: (h - icon) / 2, width: icon, height: icon)
+        symbol.frame = mirrored(glyph)
+        let x = glyph.maxX + DS.Space.s6
+        meter.frame = mirrored(CGRect(x: x, y: 0, width: bounds.width - x - DS.Space.s4, height: h))
         silent.frame = CGRect(x: 0, y: (h - DS.Size.controlSmall) / 2, width: bounds.width, height: DS.Size.controlSmall)
     }
 }
