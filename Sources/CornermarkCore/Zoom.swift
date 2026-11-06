@@ -78,45 +78,87 @@ public struct Zoom: Codable, Equatable, Sendable, Identifiable {
     private enum Keys: String, CodingKey { case id, start, end, scale, mode, center }
 }
 
-/// How the camera moves into and out of a zoom.
-public enum ZoomCurve {
+/// How the camera moves in one video: how long a move into or out of a zoom takes, and how a zoom that follows the cursor keeps
+/// the pointer in view. One for the whole project, so every zoom of a video moves alike, a zoom hands over to the next on one curve,
+/// and splitting a following zoom changes nothing on screen.
+public struct ZoomAnimation: Codable, Equatable, Sendable {
+    public static let durationRange = 0.3...1.5
+    public static let deadZoneRange = 0.0...0.8
+    public static let driftRateRange = 3.0...16.0
+
     /// Seconds a full move into or out of a zoom takes.
-    public static let duration = 0.78
+    public var duration: Double
+    /// The share of the view's width and height the pointer moves in without moving a following camera. 0.5 is the middle half,
+    /// so the pointer can travel a quarter of the view from its centre in each direction.
+    public var deadZone: Double
+    /// The following camera's natural frequency in radians a second. The camera is a critically damped spring on the point it aims
+    /// for, which at 7 settles 95% of a sudden change in 0.68 s and never overshoots a stop.
+    public var driftRate: Double
+
+    public init(duration: Double = 0.78, deadZone: Double = 0.5, driftRate: Double = 7) {
+        self.duration = Self.clamp(duration, Self.durationRange, 0.78)
+        self.deadZone = Self.clamp(deadZone, Self.deadZoneRange, 0.5)
+        self.driftRate = Self.clamp(driftRate, Self.driftRateRange, 7)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        let d = ZoomAnimation()
+        self.init(duration: (try? c.decodeIfPresent(Double.self, forKey: .duration)) ?? d.duration,
+                  deadZone: (try? c.decodeIfPresent(Double.self, forKey: .deadZone)) ?? d.deadZone,
+                  driftRate: (try? c.decodeIfPresent(Double.self, forKey: .driftRate)) ?? d.driftRate)
+    }
+    private enum Keys: String, CodingKey { case duration, deadZone, driftRate }
+
+    private static func clamp(_ v: Double, _ range: ClosedRange<Double>, _ fallback: Double) -> Double {
+        v.isFinite ? min(max(v, range.lowerBound), range.upperBound) : fallback
+    }
+
     /// A rest at the whole picture shorter than this between two zooms would read as a bounce, so the camera goes from the first
     /// zoom straight to the second.
-    public static let joinGap = 2 * duration
+    public var joinGap: Double { 2 * duration }
 
+    /// Each end of a zoom moves for the full duration, or for half the zoom when it is shorter than two moves.
+    public func ramp(_ zoom: Zoom) -> Double { min(duration, zoom.duration / 2) }
+
+    /// Seconds the following camera takes to settle 95% of a sudden change: (1 + ωt)·e^(−ωt) = 0.05 at ωt ≈ 4.744.
+    public var settleTime: Double { Self.settleProduct / driftRate }
+    public static func driftRate(settling seconds: Double) -> Double { settleProduct / seconds }
+    static let settleProduct = 4.743864518
+}
+
+/// The shape of a move into and out of a zoom.
+public enum ZoomCurve {
     /// Zero speed and zero acceleration at both ends, the fastest point exactly halfway.
     public static func smootherstep(_ u: Double) -> Double {
         let x = min(max(u, 0), 1)
         return x * x * x * (x * (x * 6 - 15) + 10)
     }
-
-    /// Each end of a zoom moves for the full duration, or for half the zoom when it is shorter than two moves.
-    public static func ramp(_ zoom: Zoom) -> Double { min(duration, zoom.duration / 2) }
 }
 
 public enum ZoomCamera {
     /// What the finished video shows at `t` seconds. Pure, so preview and export cannot disagree. A zoom that follows the cursor
     /// aims where `FollowPath` says; the recording's pointer is read through the project's clips.
     public static func rect(_ project: RecordingProject, at t: Double) -> ZoomRect {
-        rect(project.edits.zooms, at: t, follow: FollowPath.of(project))
+        rect(project.edits.zooms, at: t, animation: project.edits.zoomAnimation, follow: FollowPath.of(project))
     }
 
     /// The same with every zoom aimed at its stored center, as when the recording has no pointer to follow.
-    public static func rect(_ zooms: [Zoom], at t: Double) -> ZoomRect { rect(zooms, at: t, follow: nil) }
+    public static func rect(_ zooms: [Zoom], at t: Double, animation: ZoomAnimation = ZoomAnimation()) -> ZoomRect {
+        rect(zooms, at: t, animation: animation, follow: nil)
+    }
 
     /// A zoom's move in happens over its first `ramp` seconds and its move out over its last, so outside every zoom the picture is
     /// whole. A zoom that starts within `joinGap` of the one before moves in from that zoom instead of from the whole picture, and
     /// the one before then holds until it does.
-    static func rect(_ zooms: [Zoom], at t: Double, follow: FollowPath?) -> ZoomRect {
+    static func rect(_ zooms: [Zoom], at t: Double, animation: ZoomAnimation, follow: FollowPath?) -> ZoomRect {
         guard let i = zooms.lastIndex(where: { $0.start <= t }) else { return .full }
         func aim(_ k: Int) -> ZoomRect { target(zooms[k], center: follow?.center(k, at: t)) }
         let zoom = zooms[i]
-        let joinedNext = i + 1 < zooms.count && zooms[i + 1].start - zoom.end < ZoomCurve.joinGap
+        let joinedNext = i + 1 < zooms.count && zooms[i + 1].start - zoom.end < animation.joinGap
         guard t < zoom.end else { return joinedNext ? aim(i) : .full }
-        let joinedPrevious = i > 0 && zoom.start - zooms[i - 1].end < ZoomCurve.joinGap
-        let ramp = ZoomCurve.ramp(zoom)
+        let joinedPrevious = i > 0 && zoom.start - zooms[i - 1].end < animation.joinGap
+        let ramp = animation.ramp(zoom)
         if t < zoom.start + ramp {
             let from = joinedPrevious ? aim(i - 1) : .full
             return blend(from, aim(i), ZoomCurve.smootherstep((t - zoom.start) / ramp))
@@ -133,6 +175,14 @@ public enum ZoomCamera {
         let c = center ?? zoom.center
         func origin(_ v: Double) -> Double { min(max(v - side / 2, 0), 1 - side) }
         return ZoomRect(x: origin(c.x), y: origin(c.y), width: side, height: side)
+    }
+
+    /// The nearest center whose view at `scale` stays inside the picture, so a frame dragged against an edge stops there instead of
+    /// travelling on unseen and needing to be dragged back.
+    public static func reachable(_ c: ZoomPoint, scale: Double) -> ZoomPoint {
+        let half = 0.5 / min(max(scale, Zoom.scaleRange.lowerBound), Zoom.scaleRange.upperBound)
+        func clamp(_ v: Double) -> Double { v.isFinite ? min(max(v, half), 1 - half) : 0.5 }
+        return ZoomPoint(x: clamp(c.x), y: clamp(c.y))
     }
 
     /// The scale goes from `a`'s to `b`'s along `e` by equal ratios, so a move in and a move out are mirror images and the picture

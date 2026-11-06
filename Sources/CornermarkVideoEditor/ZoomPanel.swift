@@ -2,13 +2,15 @@ import AppKit
 import CornermarkCore
 import CornermarkDesign
 
-/// The settings of the zoom picked on the timeline, in place of a section's panel: its level as presets and a slider, its mode,
-/// and the edits that reach beyond it.
+/// The settings of the zoom picked on the timeline, in place of a section's panel: its level as presets and a slider, its mode, the
+/// spot a Manual zoom aims at, and the edits that reach beyond it.
 final class ZoomPanel: NSStackView {
     enum Change: Equatable {
         /// `dragging` is true while the slider moves, so one drag is one undo step.
         case scale(Double, dragging: Bool)
         case mode(ZoomMode)
+        case center(ZoomPoint, ZoomTargetView.Phase)
+        case animationSettings
         case applyToAll
         case remove
     }
@@ -20,6 +22,8 @@ final class ZoomPanel: NSStackView {
     private let value = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let mode = NSPopUpButton(frame: .zero, pullsDown: false)
     private let modeNote = NSTextField(wrappingLabelWithString: ZoomPanel.modeNote(.followCursor))
+    let target = ZoomTargetView()
+    let animationSettings = Button(title: "Animation Settings", variant: .secondary, size: .small, symbol: "slider.horizontal.3")
     private let applyToAll = Button(title: "Apply Level to All", variant: .secondary, size: .small)
     private let remove = Button(title: "Remove Zoom", variant: .dangerGhost, size: .small)
     private var zoom: Zoom?
@@ -28,7 +32,7 @@ final class ZoomPanel: NSStackView {
     static func modeNote(_ mode: ZoomMode) -> String {
         switch mode {
         case .followCursor: return "The camera holds while the cursor stays near the middle of the view, then drifts to follow it."
-        case .manual: return "The camera stays on the spot where the zoom was added."
+        case .manual: return "The camera holds the spot framed below. Drag the frame or use the arrow keys to move it."
         }
     }
 
@@ -46,6 +50,10 @@ final class ZoomPanel: NSStackView {
         value.stringValue = Zoom.percent(zoom.scale)
         mode.selectItem(at: ZoomMode.allCases.firstIndex(of: zoom.mode) ?? 0)
         modeNote.stringValue = Self.modeNote(zoom.mode)
+        target.zoom = zoom
+        target.isHidden = zoom.mode != .manual
+        // A hidden picture leaves the stack, so the note keeps the gap the picture would have had below it.
+        setCustomSpacing(zoom.mode == .manual ? DS.Space.s8 : DS.Space.s16, after: modeNote)
         applyToAll.isEnabled = count > 1
     }
 
@@ -86,6 +94,10 @@ final class ZoomPanel: NSStackView {
         modeNote.textColor = DS.Color.textSecondary
         modeNote.setAccessibilityIdentifier("video.zoom.modeNote")
 
+        target.onChange = { [unowned self] in onChange(.center($0, $1)) }
+        animationSettings.setAccessibilityIdentifier("video.zoom.animationSettings")
+        animationSettings.toolTip = "How every zoom in this video moves in, out and after the pointer"
+        animationSettings.onPress { [unowned self] in onChange(.animationSettings) }
         applyToAll.setAccessibilityIdentifier("video.zoom.applyToAll")
         applyToAll.onPress { [unowned self] in onChange(.applyToAll) }
         remove.setAccessibilityIdentifier("video.zoom.remove")
@@ -95,11 +107,13 @@ final class ZoomPanel: NSStackView {
         let modeRow = row("Mode", [mode])
         let buttons = NSStackView(views: [applyToAll, remove])
         buttons.spacing = DS.Space.s8
-        for v in [levelRow, presets, modeRow, modeNote, buttons] as [NSView] { addArrangedSubview(v) }
+        for v in [levelRow, presets, modeRow, modeNote, target, animationSettings, buttons] as [NSView] { addArrangedSubview(v) }
         setCustomSpacing(DS.Space.s8, after: levelRow)
         setCustomSpacing(DS.Space.s4, after: modeRow)
-        setCustomSpacing(DS.Space.s16, after: modeNote)
-        for v in [levelRow, modeRow, modeNote] { v.widthAnchor.constraint(equalTo: widthAnchor).isActive = true }
+        setCustomSpacing(DS.Space.s8, after: modeNote)
+        setCustomSpacing(DS.Space.s16, after: target)
+        setCustomSpacing(DS.Space.s16, after: animationSettings)
+        for v in [levelRow, modeRow, modeNote, target] { v.widthAnchor.constraint(equalTo: widthAnchor).isActive = true }
         // Five presets need the panel's whole width, so they sit under the level's row rather than in its control column.
         presets.setContentCompressionResistancePriority(.required, for: .horizontal)
     }

@@ -1,14 +1,9 @@
 import Foundation
 
 /// How a zoom that follows the cursor keeps the pointer in view. The camera holds while the pointer moves inside the middle of the
-/// view, and drifts after it once the pointer pushes past that middle, starting and stopping without a jolt.
+/// view, and drifts after it once the pointer pushes past that middle, starting and stopping without a jolt. The project's
+/// `ZoomAnimation` sets the size of that middle and the drift's rate.
 public enum ZoomFollow {
-    /// The share of the view's width and height the pointer moves in without moving the camera: the middle half, so the pointer can
-    /// travel a quarter of the view from its centre in each direction.
-    public static let deadZone = 0.5
-    /// The drift's natural frequency in radians a second. The camera is a critically damped spring on the point it aims for, which
-    /// settles 95% of a sudden change in 0.68 s and never overshoots a stop.
-    public static let driftRate = 7.0
     /// The spacing of the precomputed track, in seconds of the finished video. Between two steps the drift is solved exactly.
     static let step = 1.0 / 240
 }
@@ -17,7 +12,7 @@ public enum ZoomFollow {
 /// since the editor and an export ask for every frame. Every answer depends only on the project and the time asked about, never on
 /// which frames were asked for before, so the preview and the export agree frame by frame at any frame rate.
 ///
-/// The camera aims for a lazy point that stays put while the pointer is within `deadZone` of the view around it and is dragged by
+/// The camera aims for a lazy point that stays put while the pointer is within the animation's `deadZone` of the view around it and is dragged by
 /// the pointer once it reaches that edge. The camera's centre follows the lazy point, held inside the picture, through a critically
 /// damped spring, so its speed changes smoothly even when the pointer jumps at a cut between clips.
 final class FollowPath: Sendable {
@@ -32,6 +27,7 @@ final class FollowPath: Sendable {
         let start: Double
         let end: Double
         let scale: Double
+        let rate: Double
         /// `states[k]` is the state at `start + k * step`.
         let states: [State]
 
@@ -51,8 +47,8 @@ final class FollowPath: Sendable {
             let f = tau / ZoomFollow.step
             let range = bounds
             func clamp(_ v: Double) -> Double { min(max(v, range.lowerBound), range.upperBound) }
-            let (x, vx) = CriticalSpring.advance(a.x, a.vx, from: clamp(a.lx), to: clamp(b.lx), over: ZoomFollow.step, by: tau, rate: ZoomFollow.driftRate)
-            let (y, vy) = CriticalSpring.advance(a.y, a.vy, from: clamp(a.ly), to: clamp(b.ly), over: ZoomFollow.step, by: tau, rate: ZoomFollow.driftRate)
+            let (x, vx) = CriticalSpring.advance(a.x, a.vx, from: clamp(a.lx), to: clamp(b.lx), over: ZoomFollow.step, by: tau, rate: rate)
+            let (y, vy) = CriticalSpring.advance(a.y, a.vy, from: clamp(a.ly), to: clamp(b.ly), over: ZoomFollow.step, by: tau, rate: rate)
             return State(lx: a.lx + (b.lx - a.lx) * f, ly: a.ly + (b.ly - a.ly) * f, x: x, y: y, vx: vx, vy: vy)
         }
     }
@@ -61,17 +57,18 @@ final class FollowPath: Sendable {
     private let tracks: [Track?]
 
     /// `pointer` gives the drawn pointer at a moment of the finished video, as fractions of the recorded area.
-    init(zooms: [Zoom], pointer: (Double) -> (x: Double, y: Double)) {
+    init(zooms: [Zoom], animation: ZoomAnimation = ZoomAnimation(), pointer: (Double) -> (x: Double, y: Double)) {
+        let rate = animation.driftRate
         var tracks: [Track?] = []
         for (i, zoom) in zooms.enumerated() {
             guard zoom.mode == .followCursor else { tracks.append(nil); continue }
             let next = i + 1 < zooms.count ? zooms[i + 1] : nil
             // A zoom the next one moves in from is still aimed at while that move lasts.
-            let end = next.map { $0.start - zoom.end < ZoomCurve.joinGap ? $0.start + ZoomCurve.ramp($0) : zoom.end } ?? zoom.end
+            let end = next.map { $0.start - zoom.end < animation.joinGap ? $0.start + animation.ramp($0) : zoom.end } ?? zoom.end
             let range = Track.bounds(zoom.scale)
             func clamp(_ v: Double) -> Double { min(max(v, range.lowerBound), range.upperBound) }
             var state: State
-            if i > 0, zoom.start - zooms[i - 1].end < ZoomCurve.joinGap, let before = tracks[i - 1] {
+            if i > 0, zoom.start - zooms[i - 1].end < animation.joinGap, let before = tracks[i - 1] {
                 // Following on from a zoom that followed too keeps its drift, so splitting a zoom changes nothing on screen.
                 state = before.state(at: zoom.start)
                 if state.x != clamp(state.x) { state.x = clamp(state.x); state.vx = 0 }
@@ -80,7 +77,7 @@ final class FollowPath: Sendable {
                 let p = pointer(zoom.start)
                 state = State(lx: p.x, ly: p.y, x: clamp(p.x), y: clamp(p.y), vx: 0, vy: 0)
             }
-            let reach = ZoomFollow.deadZone / 2 / min(max(zoom.scale, Zoom.scaleRange.lowerBound), Zoom.scaleRange.upperBound)
+            let reach = animation.deadZone / 2 / min(max(zoom.scale, Zoom.scaleRange.lowerBound), Zoom.scaleRange.upperBound)
             func drag(_ lazy: Double, _ p: Double) -> Double { min(max(lazy, p - reach), p + reach) }
             let count = max(Int(((end - zoom.start) / ZoomFollow.step).rounded(.up)), 1)
             var states = [state]
@@ -89,11 +86,11 @@ final class FollowPath: Sendable {
                 let p = pointer(zoom.start + Double(k) * ZoomFollow.step)
                 let a = states[k - 1]
                 let lx = drag(a.lx, p.x), ly = drag(a.ly, p.y)
-                let (x, vx) = CriticalSpring.advance(a.x, a.vx, from: clamp(a.lx), to: clamp(lx), over: ZoomFollow.step, by: ZoomFollow.step, rate: ZoomFollow.driftRate)
-                let (y, vy) = CriticalSpring.advance(a.y, a.vy, from: clamp(a.ly), to: clamp(ly), over: ZoomFollow.step, by: ZoomFollow.step, rate: ZoomFollow.driftRate)
+                let (x, vx) = CriticalSpring.advance(a.x, a.vx, from: clamp(a.lx), to: clamp(lx), over: ZoomFollow.step, by: ZoomFollow.step, rate: rate)
+                let (y, vy) = CriticalSpring.advance(a.y, a.vy, from: clamp(a.ly), to: clamp(ly), over: ZoomFollow.step, by: ZoomFollow.step, rate: rate)
                 states.append(State(lx: lx, ly: ly, x: x, y: y, vx: vx, vy: vy))
             }
-            tracks.append(Track(start: zoom.start, end: zoom.start + Double(count) * ZoomFollow.step, scale: zoom.scale, states: states))
+            tracks.append(Track(start: zoom.start, end: zoom.start + Double(count) * ZoomFollow.step, scale: zoom.scale, rate: rate, states: states))
         }
         self.tracks = tracks
     }
@@ -117,12 +114,13 @@ final class FollowPath: Sendable {
         let pointer: [PointerSample]
         let motion: CursorMotion
         let zooms: [Zoom]
+        let animation: ZoomAnimation
         let clips: [Clip]
         let source: RecordingProject.Source
 
         init(_ project: RecordingProject) {
             pointer = project.events.pointer; motion = project.edits.cursor.motion; zooms = project.edits.zooms
-            clips = project.edits.clips; source = project.source
+            animation = project.edits.zoomAnimation; clips = project.edits.clips; source = project.source
         }
 
         func build() -> FollowPath? {
@@ -130,7 +128,7 @@ final class FollowPath: Sendable {
             let timeline = ClipTimeline(clips: clips, source: source)
             let w = source.pointWidth, h = source.pointHeight, smooth = motion == .smooth
             // The camera keeps the pointer the viewer sees in view, which under Smooth trails the recorded one.
-            return FollowPath(zooms: zooms) { t in
+            return FollowPath(zooms: zooms, animation: animation) { t in
                 let s = timeline.sourceTime(at: t)
                 let p = smooth ? path.smoothed(at: s) : path.recorded(at: s)
                 return (p.x / w, p.y / h)

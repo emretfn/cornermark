@@ -61,8 +61,9 @@ func editorImage(_ editor: VideoEditorWindowController, dark: Bool = false) -> C
     preview.layoutSubtreeIfNeeded()
     preview.updateLayer()
     layer.render(in: ctx)
-    if let panel = editor.view(identifier: "video.export.panel"), !panel.isHiddenOrHasHiddenAncestor,
-       let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) {
+    for id in ["video.export.panel", "video.zoomAnimation.panel"] {
+        guard let panel = editor.view(identifier: id), !panel.isHiddenOrHasHiddenAncestor,
+              let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) else { continue }
         panel.appearance = window.appearance
         panel.cacheDisplay(in: panel.bounds, to: rep)
         let f = panel.convert(panel.bounds, to: nil)

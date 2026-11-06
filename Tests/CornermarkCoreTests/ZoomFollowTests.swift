@@ -39,11 +39,11 @@ final class ZoomFollowTests: XCTestCase {
         // At 200% the view is half the picture, so the pointer may travel 0.125 of the picture from where the camera aims.
         let wiggle = track { t in t < 1.5 ? (500, 500) : (500 + 110 * sin(7 * (t - 1.5)), 500 + 100 * sin(5 * (t - 1.5))) }
         let p = project(wiggle, [Zoom(start: 1, end: 6, scale: 2)])
-        let held = crop(p, 1 + ZoomCurve.duration)
+        let held = crop(p, 1 + ZoomAnimation().duration)
         XCTAssertEqual(center(held).x, 0.5, accuracy: 1e-12)
         XCTAssertEqual(center(held).y, 0.5, accuracy: 1e-12)
         for k in 0...400 {
-            let t = 1 + ZoomCurve.duration + Double(k) / 400 * (5 - 2 * ZoomCurve.duration)
+            let t = 1 + ZoomAnimation().duration + Double(k) / 400 * (5 - 2 * ZoomAnimation().duration)
             let r = crop(p, t)
             XCTAssertEqual(r.x, held.x, accuracy: 1e-12, "the camera holds at \(t) s while the pointer moves inside the middle of the view")
             XCTAssertEqual(r.y, held.y, accuracy: 1e-12)
@@ -122,7 +122,7 @@ final class ZoomFollowTests: XCTestCase {
             let at = PointerTrack.position(p.events.pointer, at: t) ?? (0, 0)
             return (at.x / 1000, at.y / 1000)
         }
-        let built = shared.map { ZoomCamera.rect(p.edits.zooms, at: $0, follow: fresh) }
+        let built = shared.map { ZoomCamera.rect(p.edits.zooms, at: $0, animation: p.edits.zoomAnimation, follow: fresh) }
         XCTAssertEqual(built, first, "a path built again gives the same answers")
     }
 

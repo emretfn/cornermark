@@ -136,16 +136,18 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         public var clips: [Clip]
         /// Ordered and apart, on the finished video's timeline.
         public var zooms: [Zoom]
+        /// How the camera moves into, out of and inside every zoom.
+        public var zoomAnimation: ZoomAnimation
         public var background: VideoBackground
         public var camera: CameraBubble
         public var audio: AudioEdits
         public var motionBlur: MotionBlur
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = [], zooms: [Zoom] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble(),
+                    clips: [Clip] = [], zooms: [Zoom] = [], zoomAnimation: ZoomAnimation = ZoomAnimation(), background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble(),
                     audio: AudioEdits = AudioEdits(), motionBlur: MotionBlur = MotionBlur()) {
             self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.zooms = zooms.sorted { $0.start < $1.start }
-            self.background = background; self.camera = camera; self.audio = audio; self.motionBlur = motionBlur
+            self.zoomAnimation = zoomAnimation; self.background = background; self.camera = camera; self.audio = audio; self.motionBlur = motionBlur
         }
 
         public init(from decoder: Decoder) throws {
@@ -156,11 +158,12 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
             clips = ((try? c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)) ?? nil)?.compactMap(\.value) ?? []
             zooms = (((try? c.decodeIfPresent([Lossy<Zoom>].self, forKey: .zooms)) ?? nil)?.compactMap(\.value) ?? []).sorted { $0.start < $1.start }
+            zoomAnimation = (try? c.decodeIfPresent(ZoomAnimation.self, forKey: .zoomAnimation)) ?? ZoomAnimation()
             background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
             audio = (try? c.decodeIfPresent(AudioEdits.self, forKey: .audio)) ?? AudioEdits()
             motionBlur = (try? c.decodeIfPresent(MotionBlur.self, forKey: .motionBlur)) ?? MotionBlur()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, zooms, background, camera, audio, motionBlur }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, zooms, zoomAnimation, background, camera, audio, motionBlur }
     }
 
     public var version: Int
