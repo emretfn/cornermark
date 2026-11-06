@@ -1,6 +1,7 @@
 import Carbon.HIToolbox
 import Foundation
 import CornermarkCore
+import CornermarkL10n
 
 /// Everything in the menu bar panel that can be pressed. The identity is also the command the press runs.
 enum PanelItem: Hashable {
@@ -106,14 +107,16 @@ struct MenuPanelModel: Equatable {
 
         let tiles = specs.filter { $0.menuGroup == 0 }.map { spec -> Tile in
             let key = settings.hotKey(for: spec.id)
-            let spoken = key.map { ", " + $0.spokenString } ?? ""
+            func spoken(_ action: String) -> String {
+                key.map { tr("{action}, {shortcut}", ["action": action, "shortcut": $0.spokenString]) } ?? action
+            }
             // While a recording runs, its tile stops it.
             if spec.id == .recordScreen, recording != .idle {
-                return Tile(item: .action(spec.id), symbol: "stop.circle", title: "Stop", shortcut: key?.displayString,
-                            accessibilityLabel: "Stop Recording" + spoken)
+                return Tile(item: .action(spec.id), symbol: "stop.circle", title: tr("Stop"), shortcut: key?.displayString,
+                            accessibilityLabel: spoken(ActionTable.spec(.stopRecording).title))
             }
             return Tile(item: .action(spec.id), symbol: spec.symbol, title: spec.tileTitle, shortcut: key?.displayString,
-                        accessibilityLabel: spec.title + spoken)
+                        accessibilityLabel: spoken(spec.title))
         }
         sections.append(.captures(tiles))
 
@@ -123,30 +126,34 @@ struct MenuPanelModel: Equatable {
             let restart = ActionTable.spec(.restartRecording)
             let discard = ActionTable.spec(.discardRecording)
             var rows = [Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
-                        Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true),
+                        Row(item: .action(restart.id), symbol: restart.symbol, title: tr("Discard and Restart"), isEnabled: true),
                         Row(item: .action(discard.id), symbol: discard.symbol, title: discard.title, isEnabled: true, isDestructive: true)]
             // The camera's bubble never takes the keyboard either, so its click has a row here.
             if let full = cameraFullScreen {
                 rows.append(Row(item: .action(.recordingCamera), symbol: full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                                title: full ? "Shrink Camera to Bubble" : "Fill with Camera", isEnabled: true))
+                                title: full ? tr("Shrink Camera to Bubble") : tr("Fill with Camera"), isEnabled: true))
             }
             // The bar's No sound badge says what, and this row says what to do, where the keyboard can reach it.
             if microphoneSilent {
-                rows.append(Row(item: .action(.settings), symbol: "mic.slash.fill", title: "No sound from the microphone. Check that it is not muted.", isEnabled: false))
+                rows.append(Row(item: .action(.settings), symbol: "mic.slash.fill", title: tr("No sound from the microphone. Check that it is not muted."), isEnabled: false))
             }
             sections.append(.rows(rows))
         }
 
         let newest = Array(recent.sorted { $0.createdAt > $1.createdAt }.prefix(recentLimit))
         if !newest.isEmpty {
-            let items = newest.map { Recent(item: .recent($0.id), record: $0, accessibilityLabel: "\($0.kind.title) \($0.isRecording ? "recording" : "capture"), \(dateText($0.createdAt))") }
-            sections.append(.recent(header: "Recent", all: .action(.history), items))
+            let items = newest.map { record in
+                let args = ["kind": record.kind.title, "date": dateText(record.createdAt)]
+                return Recent(item: .recent(record.id), record: record,
+                              accessibilityLabel: record.isRecording ? tr("{kind} recording, {date}", args) : tr("{kind} capture, {date}", args))
+            }
+            sections.append(.recent(header: tr("Recent"), all: .action(.history), items))
         }
 
         let overlayRows = specs.filter { $0.menuGroup == 1 }.map { spec -> Row in
             switch spec.id {
             case .hideOverlays:
-                return Row(item: .action(spec.id), symbol: overlaysHidden ? "eye" : spec.symbol, title: overlaysHidden ? "Show Overlays" : spec.title, isEnabled: true)
+                return Row(item: .action(spec.id), symbol: overlaysHidden ? "eye" : spec.symbol, title: overlaysHidden ? tr("Show Overlays") : spec.title, isEnabled: true)
             case .restoreOverlay:
                 return Row(item: .action(spec.id), symbol: spec.symbol, title: spec.title, isEnabled: canRestoreOverlay)
             default:
@@ -158,10 +165,10 @@ struct MenuPanelModel: Equatable {
         if !pins.isEmpty {
             let list = pins.map { Pin(id: $0.id, title: $0.title, isLocked: $0.isLocked) }
             let bulk = pins.count > 1
-                ? [Row(item: .unlockAllPins, symbol: "lock.open", title: "Unlock all", isEnabled: true),
-                   Row(item: .closeAllPins, symbol: "xmark", title: "Close all", isEnabled: true)]
+                ? [Row(item: .unlockAllPins, symbol: "lock.open", title: tr("Unlock all"), isEnabled: true),
+                   Row(item: .closeAllPins, symbol: "xmark", title: tr("Close all"), isEnabled: true)]
                 : []
-            sections.append(.pins(header: "Pinned screenshots", list, bulk: bulk))
+            sections.append(.pins(header: tr("Pinned screenshots"), list, bulk: bulk))
         }
 
         sections.append(.footer(footer(specs: specs, update: update, hasRecent: !newest.isEmpty)))
@@ -171,10 +178,10 @@ struct MenuPanelModel: Equatable {
     private static func banner(for update: UpdateState) -> UpdateBanner? {
         switch update {
         case .available(let release):
-            return UpdateBanner(symbol: "arrow.down.circle", title: "Cornermark \(release.version)", detail: "Ready to install",
-                                button: .action(.checkForUpdates), buttonLabel: "Update to Cornermark \(release.version)")
+            return UpdateBanner(symbol: "arrow.down.circle", title: tr("Cornermark {version}", ["version": "\(release.version)"]), detail: tr("Ready to install"),
+                                button: .action(.checkForUpdates), buttonLabel: tr("Update to Cornermark {version}", ["version": "\(release.version)"]))
         case .installing(let release):
-            return UpdateBanner(symbol: "arrow.down.circle", title: "Cornermark \(release.version)", detail: "Installing\u{2026}",
+            return UpdateBanner(symbol: "arrow.down.circle", title: tr("Cornermark {version}", ["version": "\(release.version)"]), detail: tr("Installing\u{2026}"),
                                 button: nil, buttonLabel: "")
         case .idle, .checking:
             return nil
@@ -205,7 +212,7 @@ struct MenuPanelModel: Equatable {
     }
 
     static func dateText(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .shortened)
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(L10n.locale))
     }
 
     /// The rows the keyboard walks, top to bottom. A row with several items is one the arrows also move across.
@@ -249,19 +256,19 @@ extension HotKey {
     /// "Control Shift 2", for a screen reader that would read the symbols as nothing.
     var spokenString: String {
         var parts: [String] = []
-        if modifiers & UInt32(controlKey) != 0 { parts.append("Control") }
-        if modifiers & UInt32(optionKey) != 0 { parts.append("Option") }
-        if modifiers & UInt32(shiftKey) != 0 { parts.append("Shift") }
-        if modifiers & UInt32(cmdKey) != 0 { parts.append("Command") }
-        parts.append(Self.spokenKeys[keyName] ?? keyName)
+        if modifiers & UInt32(controlKey) != 0 { parts.append(tr("Control")) }
+        if modifiers & UInt32(optionKey) != 0 { parts.append(tr("Option")) }
+        if modifiers & UInt32(shiftKey) != 0 { parts.append(tr("Shift")) }
+        if modifiers & UInt32(cmdKey) != 0 { parts.append(tr("Command")) }
+        parts.append(Self.spokenKeys[keyName]?.text ?? keyName)
         return parts.joined(separator: " ")
     }
 
-    private static let spokenKeys: [String: String] = [
-        "\u{21A9}": "Return", "\u{21E5}": "Tab", "\u{232B}": "Delete",
-        "\u{2190}": "Left Arrow", "\u{2192}": "Right Arrow", "\u{2191}": "Up Arrow", "\u{2193}": "Down Arrow",
-        "=": "Equals", "-": "Minus", "[": "Left Bracket", "]": "Right Bracket", ";": "Semicolon", "'": "Quote",
-        ",": "Comma", ".": "Period", "/": "Slash", "\\": "Backslash", "`": "Grave",
+    private static let spokenKeys: [String: LocalizedText] = [
+        "\u{21A9}": trKey("Return"), "\u{21E5}": trKey("Tab"), "\u{232B}": trKey("Delete"),
+        "\u{2190}": trKey("Left Arrow"), "\u{2192}": trKey("Right Arrow"), "\u{2191}": trKey("Up Arrow"), "\u{2193}": trKey("Down Arrow"),
+        "=": trKey("Equals"), "-": trKey("Minus"), "[": trKey("Left Bracket"), "]": trKey("Right Bracket"), ";": trKey("Semicolon"), "'": trKey("Quote"),
+        ",": trKey("Comma"), ".": trKey("Period"), "/": trKey("Slash"), "\\": trKey("Backslash"), "`": trKey("Grave"),
     ]
 }
 
