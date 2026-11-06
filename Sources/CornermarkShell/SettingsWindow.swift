@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkDesign
+import CornermarkVideoEditor
 
 @MainActor
 struct SettingsContext {
@@ -158,7 +159,20 @@ final class ShortcutsPane: SettingsPane {
             statusLabels[spec.id] = status
             rows.append(Form.row(title: spec.title, caption: status, control: Form.hstack([reset, rec])))
         }
-        return Form.page(title: paneTitle, groups: [.init(rows: rows)])
+        return Form.page(title: paneTitle, groups: [.init("Anywhere on your Mac", rows: rows)] + Self.editorGroups())
+    }
+
+    /// The video editor's keys, read from the table the editor answers from. They work only while an editor is in front, so they
+    /// are listed, not recorded.
+    static func editorGroups() -> [Form.Group] {
+        EditorCommand.Group.allCases.map { group in
+            let rows = EditorShortcuts.all.filter { $0.command.group == group }.map { shortcut in
+                let caps = KeyCaps(shortcut.keys.map(\.display))
+                caps.setAccessibilityIdentifier("editorShortcut.\(shortcut.command.rawValue)")
+                return Form.row(title: shortcut.command.title, caption: shortcut.note.map { Form.caption($0) }, control: caps)
+            }
+            return Form.Group(group.title, rows: rows, footer: group == .file ? "These keys work while a video editor window is in front." : nil)
+        }
     }
 
     override func update() {
