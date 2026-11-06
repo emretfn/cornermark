@@ -9,7 +9,7 @@ Capture History lists past captures grouped by date, filters them by kind, and a
 - `history-filter` filters records by kind.
 - `history-actions` acts on the selected records.
 - `history-prune` deletes captures older than the retention window.
-- `history-recordings` lists recordings under their own filter. Edit opens a recording for editing in the video editor and is off for a plain video. Convert to GIF is on only for a plain video, off for a recording for editing and for a GIF. Deleting or pruning one removes its entry and keeps its video.
+- `history-recordings` lists recordings under their own filter. Edit opens a project in the video editor and is off for a plain video. Convert to GIF is on only for a plain video, off for a recording for editing and for a GIF. Deleting or pruning one removes its entry and keeps its video.
 
 ## How to get to it (user POV)
 

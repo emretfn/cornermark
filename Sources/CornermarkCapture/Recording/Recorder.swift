@@ -6,7 +6,7 @@ import Foundation
 /// The camera recorded beside the screen.
 public struct CameraRecording {
     public var source: CameraSource
-    /// Record for Editing writes the camera to this file, on the video's timeline. Nil draws the camera into the picture.
+    /// Record Project writes the camera to this file, on the video's timeline. Nil draws the camera into the picture.
     public var output: URL?
     public var look: CameraLook
     /// Every camera picture as it arrives, on the camera's queue, for the bubble on screen.

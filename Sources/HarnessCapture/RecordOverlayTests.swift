@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkDesign
 
 private func recordMachine(remembered: CGRect? = nil, cursor: CGPoint = CGPoint(x: 10, y: 10)) -> SelectionMachine {
     var m = SelectionMachine(config: MachineConfig(flow: .adjustable, intent: .record, displays: [d1, d2], windows: [winB, winA], remembered: remembered))
@@ -44,7 +45,7 @@ func runRecordOverlayTests() async {
     m = recordMachine(remembered: CGRect(x: 100, y: 100, width: 200, height: 120))
     check(adjustingRect(m) == CGRect(x: 100, y: 100, width: 200, height: 120), "a remembered area opens already selected")
     m.send(.toolbar(.record(.editing)))
-    check(recorded(m)?.1 == .editing, "the Record for Editing button records it for editing")
+    check(recorded(m)?.1 == .editing, "the Record Project button records it as a project")
     m = recordMachine(remembered: CGRect(x: 500, y: 100, width: 200, height: 100))
     check(adjustingRect(m) == CGRect(x: 500, y: 100, width: 100, height: 100), "a remembered area across two displays keeps only the part on one display",
           detail: "\(String(describing: adjustingRect(m)))")
@@ -81,7 +82,7 @@ func runRecordOverlayTests() async {
     m.send(.down(CGPoint(x: 450, y: 250), []))
     check(m.state == .windowPicked(winB), "clicking another window picks that one")
     m.send(.toolbar(.record(.video)))
-    check(recorded(m).map { $0.0 == .window(winB, toggleShadow: false) && $0.1 == .video } == true, "Record Video records just that window")
+    check(recorded(m).map { $0.0 == .window(winB, toggleShadow: false) && $0.1 == .video } == true, "Record MP4 records just that window")
     m = recordMachine(cursor: CGPoint(x: 100, y: 100))
     m.send(.toolbar(.mode(.window)))
     m.send(.down(CGPoint(x: 100, y: 100), []))
@@ -178,9 +179,48 @@ func runRecordOverlayTests() async {
     func button(_ id: String) -> NSButton? { findView("cornermark.record." + id, in: rc.overlayWindows) as? NSButton }
     check(button("start.video")?.isEnabled == false && button("start.editing")?.isEnabled == false && button("start.gif")?.isEnabled == false,
           "the start buttons wait for a target")
-    check(button("start.video")?.title == "Record Video" && button("start.editing")?.title == "Record for Editing" && button("start.gif")?.title == "Record GIF",
-          "they are Record Video, Record for Editing and Record GIF")
-    check(button("start.gif")?.toolTip == "Record GIF (Option-Return)", "Record GIF names its shortcut", detail: button("start.gif")?.toolTip ?? "nil")
+    check(button("start.video")?.title == "Record MP4" && button("start.editing")?.title == "Record Project" && button("start.gif")?.title == "Record GIF",
+          "they are Record MP4, Record Project and Record GIF")
+    check(button("start.gif")?.toolTip == "Saves one animated GIF, without sound (Option-Return)", "Record GIF says what it saves and names its shortcut",
+          detail: button("start.gif")?.toolTip ?? "nil")
+    check(button("start.editing")?.accessibilityHelp() == "Saves a project you can edit: pointer, clicks, keys, camera and sound stay separate until you export."
+          && button("start.video")?.accessibilityLabel() == "Record MP4, Return", "VoiceOver hears each button's name, shortcut and what it saves")
+    let sourceIDs = ["microphone", "systemAudio", "camera", "input"]
+    let toggles = sourceIDs.compactMap { button("source." + $0) as? IconButton }
+    check(toggles.count == 4 && toggles.map { $0.accessibilityLabel() ?? "" } == ["Microphone", "System audio", "Camera", "Clicks and keys"]
+          && toggles.allSatisfy { $0.accessibilityRole() == .checkBox && ($0.accessibilityValue() as? Int) == 0 && !$0.isSelected && $0.symbol.hasSuffix("slash") },
+          "four source toggles, each named for VoiceOver, start off with a slashed glyph", detail: "\(toggles.map { ($0.accessibilityLabel() ?? "", $0.symbol) })")
+    check(toggles.allSatisfy { $0.toolTip?.contains(": off.") == true } && toggles.first?.toolTip?.contains("Record GIF never records sound") == true,
+          "their tooltips say the state, and the sound ones say a GIF has none", detail: toggles.first?.toolTip ?? "nil")
+    var toggled: [RecordingSource] = []
+    var sourcesOn: Set<RecordingSource> = []
+    rc.toggleRecordingSource = { toggled.append($0); sourcesOn.formSymmetricDifference([$0]); rc.refreshOverlay() }
+    rc.recordingSources = { RecordingSources(on: sourcesOn, note: sourcesOn.contains(.microphone) ? .hint("Record GIF never records sound.") : nil) }
+    toggles.first?.performClick(nil)
+    let mic = toggles.first
+    check(toggled == [.microphone] && mic?.isSelected == true && mic?.symbol == "mic.fill" && (mic?.accessibilityValue() as? Int) == 1
+          && mic?.toolTip?.hasPrefix("Microphone: on.") == true, "a click hands the source to the app, and the panel shows what it answers",
+          detail: "\(toggled) \(mic?.symbol ?? "nil")")
+    let note = findView("cornermark.record.sources.note", in: rc.overlayWindows) as? NSTextField
+    check(note.map { !$0.isHidden && $0.stringValue == "Record GIF never records sound." } == true, "and its note")
+    mic?.performClick(nil)
+    check(mic?.isSelected == false && note?.isHidden == true, "a second click turns it off and the note goes")
+    let longest = "Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then reopen it."
+    rc.recordingSources = { RecordingSources(note: .blocked(longest)) }
+    rc.refreshOverlay()
+    if let note, let panel = note.superview {
+        let probe = NSTextField(wrappingLabelWithString: longest)
+        probe.font = note.font
+        probe.preferredMaxLayoutWidth = note.frame.width
+        let fit = (probe.fittingSize.height / NSLayoutManager().defaultLineHeight(for: note.font ?? .systemFont(ofSize: 11))).rounded()
+        let row = toggles[0].frame
+        check(!note.isHidden && fit <= 2 && note.frame.minY >= row.minY && note.frame.maxY <= row.maxY && note.frame.maxX <= panel.bounds.maxX - 36,
+              "the longest note wraps to two lines beside the toggles, inside the panel", detail: "fit=\(fit) note=\(note.frame) row=\(row) panel=\(panel.bounds)")
+        let pill = panel.bounds.insetBy(dx: 32, dy: 32)
+        check(pill.width <= 480 - 24, "the panel is narrow enough to sit inside a 480 pt selection", detail: "\(pill.size)")
+    }
+    rc.recordingSources = { RecordingSources(on: sourcesOn) }
+    rc.refreshOverlay()
     if let a = button("start.video"), let b = button("start.editing"), let g = button("start.gif") {
         check(a.frame.minY == b.frame.minY && b.frame.minY == g.frame.minY && a.frame.maxX < b.frame.minX && b.frame.maxX < g.frame.minX,
               "the three share the bottom row, primary first", detail: "\([a, b, g].map(\.frame))")
@@ -201,8 +241,8 @@ func runRecordOverlayTests() async {
     button("start.video")?.performClick(nil)
     _ = await waitUntil { out.value != nil }
     check(out.recording.map { $0.0 == .display(1, area: CGRect(x: 60, y: 60, width: 400, height: 280)) && $0.1 == .video } == true,
-          "Record Video ends the overlay with the area on its display", detail: "\(String(describing: out.value))")
-    noOverlayWindowsLeft(rc, held: [w1], "after Record Video")
+          "Record MP4 ends the overlay with the area on its display", detail: "\(String(describing: out.value))")
+    noOverlayWindowsLeft(rc, held: [w1], "after Record MP4")
     check(rc.lastSelection?.rect == CGRect(x: 60, y: 60, width: 400, height: 280), "and remembers the area")
 
     out = await start(rc, .recording)
@@ -211,7 +251,7 @@ func runRecordOverlayTests() async {
     button("target.fullscreen")?.performClick(nil)
     button("start.editing")?.performClick(nil)
     _ = await waitUntil { out.value != nil }
-    check(out.recording.map { $0.0 == .display(1, area: nil) && $0.1 == .editing } == true, "Fullscreen then Record for Editing records the whole display",
+    check(out.recording.map { $0.0 == .display(1, area: nil) && $0.1 == .editing } == true, "Fullscreen then Record Project records the whole display",
           detail: "\(String(describing: out.value))")
 
     out = await start(rc, .recording)
@@ -238,6 +278,14 @@ func runRecordOverlayTests() async {
         check(width?.currentEditor() != nil, "Tab moves from the overlay into the width field", detail: "\(String(describing: w.firstResponder))")
         Synth.key(w, 48, "\t")
         check((findView("cornermark.record.height", in: rc.overlayWindows) as? NSTextField)?.currentEditor() != nil, "and on to the height field")
+        if let camera = button("source.camera"), w.makeFirstResponder(camera) {
+            var toggled: [RecordingSource] = []
+            rc.toggleRecordingSource = { toggled.append($0) }
+            Synth.key(w, 49, " ")
+            check(toggled == [.camera], "Space toggles a focused source", detail: "\(toggled)")
+        } else {
+            print("NOT VERIFIED: a source toggle could not take keyboard focus here")
+        }
         if let fullscreen = button("target.fullscreen"), w.makeFirstResponder(fullscreen) {
             Synth.key(w, 49, " ")
             check(rc.overlayState.map { if case .adjusting(let s, _) = $0 { return s.rect == d1.frame } else { return false } } ?? false,

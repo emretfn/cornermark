@@ -8,7 +8,9 @@ public final class IconButton: Pressable {
         case overlay
     }
 
-    public let symbol: String
+    public var symbol: String {
+        didSet { needsDisplay = true }
+    }
     public let size: ComponentSize
     public let tone: Tone
 

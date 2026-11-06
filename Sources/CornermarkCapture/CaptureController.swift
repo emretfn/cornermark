@@ -23,6 +23,10 @@ public final class CaptureController {
     /// Time for our overlays to leave the compositor before a fresh capture.
     public var settleDelay: TimeInterval = 0.12
     public var pointerLocation: () -> CGPoint = { NSEvent.mouseLocation }
+    /// What the recording panel's toggles show. Read each time the panel redraws.
+    public var recordingSources: () -> RecordingSources = { RecordingSources() }
+    /// A click on one of the recording panel's toggles. Call `refreshOverlay` once its answer changes what the panel shows.
+    public var toggleRecordingSource: (RecordingSource) -> Void = { _ in }
 
     public var overlayWindows: [NSWindow] { session?.windows ?? [] }
     public var overlayState: OverlayState? { session?.machine.state }
@@ -44,6 +48,9 @@ public final class CaptureController {
     }
 
     public func cancel() { complete(.cancelled) }
+
+    /// Redraws the open overlay from its state and `recordingSources`.
+    public func refreshOverlay() { session?.refreshOverlay() }
 
     // MARK: Run
 
@@ -100,6 +107,8 @@ public final class CaptureController {
         options.presentation = presentation
         options.tickInterval = countdownTickInterval
         options.scrollInterval = scrollPollInterval
+        options.sources = { [weak self] in self?.recordingSources() ?? RecordingSources() }
+        options.toggleSource = { [weak self] in self?.toggleRecordingSource($0) }
         let session = CaptureSession(displays: displays, config: config, source: source, options: options) { [weak self] end in
             self?.sessionEnded(end, id: id)
         }

@@ -26,10 +26,17 @@ public protocol InputSource: AnyObject {
     func stop()
 }
 
-/// Never asks for Input Monitoring: without it, `start` throws `notPermitted` and creates nothing.
+/// `start` never asks for Input Monitoring: without it, `start` throws `notPermitted` and creates nothing.
 public final class LiveInputSource: InputSource {
     /// Reads the permission without showing a prompt.
     public static var isPermitted: Bool { CGPreflightListenEventAccess() }
+    public private(set) static var requests = 0
+
+    /// Shows the system's Input Monitoring prompt. macOS shows it only the first time an app asks, and answers later calls without one.
+    public static func request() -> Bool {
+        requests += 1
+        return CGRequestListenEventAccess()
+    }
     public private(set) static var tapsCreated = 0
 
     private let capture: InputCapture

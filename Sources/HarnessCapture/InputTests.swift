@@ -43,7 +43,7 @@ func runInputTests() async {
         check(report.clicks.map { ($0.t * 1e6).rounded() / 1e6 } == [0.25, 1.7] && report.clicks.first?.x == 0.5 * width && report.clicks.first?.y == 0.2 * height,
               "clicks land on the video's timeline, measured from the first frame, in points of the area", detail: "\(report.clicks)")
         check(report.keys.map(\.label) == ["\u{2318}K", "a"] && abs((report.keys.first?.t ?? 0) - 0.25) < 1e-9, "keys too, with their labels", detail: "\(report.keys)")
-        check(marked.marked == 0, "Record for Editing draws no marks into its picture: they stay editable in the project")
+        check(marked.marked == 0, "Record Project draws no marks into its picture: they stay editable in the project")
         check(report.project.events.clicks.count == 2 && report.project.events.keys.count == 2, "and the project carries both tracks")
 
         let early = try await record("input-early", capture: all, marks: nil, origin: 5, lead: 0.6)
@@ -60,7 +60,7 @@ func runInputTests() async {
     let ringY = 0.2 * height, ringX = 0.5 * width
     do {
         let (report, url, marked) = try await record("input-video", capture: all, marks: marks)
-        check(marked.marked > 0 && marked.filled == 0, "Record Video draws marks into its picture, and a steady stream needs no filled slots", detail: "\(marked)")
+        check(marked.marked > 0 && marked.filled == 0, "Record MP4 draws marks into its picture, and a steady stream needs no filled slots", detail: "\(marked)")
         let before = await frame(of: url, at: 0.4), during = await frame(of: url, at: 0.5), after = await frame(of: url, at: 0.9)
         if let before, let during, let after {
             check(!lemon(in: before, y: ringY, x0: ringX + 8, x1: ringX + 22), "no ring before the click")

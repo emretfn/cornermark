@@ -60,6 +60,9 @@ final class AppEnvironment {
     var pointerSource: () -> PointerSource? = { nil }
     var inputSource: (InputCapture) -> InputSource? = { _ in nil }
     var hasInputPermission: () -> Bool = { false }
+    /// Shows the system's Input Monitoring prompt and returns whether input may be watched now. Only the live app has one, and only a
+    /// toggle in the recording panel calls it.
+    var requestInputPermission: () -> Bool = { false }
     /// The camera for a recording. A scripted instance draws a synthetic one and never opens a real camera.
     var cameraSource: () -> CameraSource? = { nil }
     /// Reads camera access without asking.

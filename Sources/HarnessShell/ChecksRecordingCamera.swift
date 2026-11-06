@@ -120,7 +120,7 @@ func checkRecordingCamera() async throws {
     if let folder = record?.video?.location, let project = try? RecordingProjectFile.read(from: folder) {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.sorted() ?? []
         check(files == ["camera.mp4", "project.json", "screen.mp4"] && project.source.camera == "camera.mp4",
-              "Record for Editing keeps the camera as its own file in the project", detail: "\(files)")
+              "Record Project keeps the camera as its own file in the project", detail: "\(files)")
         check(project.edits.camera.shape == .square && project.edits.camera.position == .bottomLeft && !project.edits.camera.isMirrored
               && project.edits.camera.fullScreen.count == 1, "and the look at the end, with the full-screen stretch", detail: "\(project.edits.camera)")
     } else { check(false, "the project with a camera can be read") }
@@ -128,7 +128,7 @@ func checkRecordingCamera() async throws {
     check(await start("video"), "a video with the camera starts")
     if let r = await stop(), let file = r.video?.file {
         let folder = file.deletingLastPathComponent()
-        check(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("camera.mp4").path), "Record Video leaves no camera file: the camera is in its picture")
+        check(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("camera.mp4").path), "Record MP4 leaves no camera file: the camera is in its picture")
     } else { check(false, "the video with a camera was saved") }
 
     access = .denied

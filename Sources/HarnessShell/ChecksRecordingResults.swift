@@ -163,7 +163,7 @@ func checkRecordingResults() async throws {
 
     guard let project = await recordOnce(q, "display=1&x=0&y=0&width=640&height=360") else { return check(false, "a project recording is listed") }
     check(project.video?.format == .project && qc.overlay.stack.first?.record.id == project.id && qc.overlay.stack.count == 2,
-          "Record for Editing gets its own card on top of the stack")
+          "Record Project gets its own card on top of the stack")
     if let pcard = qc.overlay.card(forRecord: project.id), let pview = qc.overlay.cardView(for: pcard) {
         check(pview.buttons[.play] == nil && pview.buttons[.edit] != nil, "a project's card offers Edit instead of Play")
         check(click("card.reveal", in: pview) && q.revealed.last == project.video!.location, "Reveal in Finder shows the project folder")

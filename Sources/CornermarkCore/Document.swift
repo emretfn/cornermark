@@ -119,7 +119,7 @@ public struct RecordedVideo: Codable, Hashable, Sendable {
     public enum Format: String, Codable, Sendable {
         /// One MP4 file with the pointer in its picture.
         case video
-        /// A Record for Editing folder: the video and its project file side by side.
+        /// A Record Project folder: the video and its project file side by side.
         case project
         /// One animated GIF with the pointer in its picture.
         case gif

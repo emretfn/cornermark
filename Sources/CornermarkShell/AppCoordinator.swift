@@ -16,6 +16,7 @@ final class AppCoordinator {
     let hud: HUD
     let updates: UpdateController
     let recording: RecordingController
+    let sources: RecordingSourceToggles
     let controls: RecordingControls
     let thumbnails = ThumbnailCache()
     private(set) var hotKeys: HotKeyManager?
@@ -49,10 +50,18 @@ final class AppCoordinator {
         hud = HUD(env: env)
         updates = UpdateController(env: env, hud: hud)
         recording = RecordingController(env: env) { store.value.resolvedSaveFolder(default: env.defaultSaveFolder) }
+        sources = RecordingSourceToggles(env: env, settings: settings)
         controls = RecordingControls(env: env, recording: recording)
         // A corner the bubble was dragged to is where the next recording starts it.
         controls.camera.onCorner = { corner in store.update { $0.recording.camera.position = corner } }
 
+        let sources = sources
+        capture.recordingSources = { sources.state }
+        capture.toggleRecordingSource = { [unowned capture] source in
+            sources.toggle(source)
+            capture.refreshOverlay()
+        }
+        sources.onChange = { [unowned capture] in capture.refreshOverlay() }
         recording.onSaved = { [weak self] finished in Task { await self?.recordingFinished(finished) } }
         recording.onFailed = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
         recording.onNotice = { [unowned self] message in hud.show(message, symbol: "exclamationmark.triangle.fill") }
@@ -253,6 +262,7 @@ final class AppCoordinator {
 
     private func beginCapture(_ mode: CaptureMode, onCaptured: @escaping (CaptureOutput) -> Void) {
         guard env.hasScreenPermission() else { return showPermissionWindow() }
+        if mode == .recording { sources.reset() }
         capture.begin(mode) { [unowned self] outcome in
             switch outcome {
             case .captured(let out): onCaptured(out)

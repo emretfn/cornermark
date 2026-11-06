@@ -58,7 +58,7 @@ func runCameraTests() async {
         let screenTimes = await frameTimes(url)
         let cameraTimes = await frameTimes(cameraURL!)
         check(report.camera?.file == cameraURL && FileManager.default.fileExists(atPath: cameraURL!.path),
-              "Record for Editing writes the camera to its own file beside the video", detail: "\(String(describing: report.camera))")
+              "Record Project writes the camera to its own file beside the video", detail: "\(String(describing: report.camera))")
         check(!screenTimes.isEmpty && cameraTimes == screenTimes, "the camera file has a frame at every moment the video has one, so both share a timeline",
               detail: "screen \(screenTimes.count) camera \(cameraTimes.count)")
         let filled = report.camera?.filled ?? 0
@@ -75,7 +75,7 @@ func runCameraTests() async {
         let inPicture = await frame(of: url, at: 1.0)
         let bubble = CameraLayout.bubbleRect(CameraBubble(), area: area)
         check(inPicture.map { !isMarker(color($0, (bubble.midX + bubble.width * 0.3) / area.width, bubble.midY / area.height)) } == true,
-              "Record for Editing draws no camera into its picture")
+              "Record Project draws no camera into its picture")
     } catch {
         check(false, "recording for editing with the camera threw", detail: "\(error)")
     }
@@ -87,7 +87,7 @@ func runCameraTests() async {
             if abs(t - 1.5) < 1e-9 { look.update { $0.shape = .rectangle; $0.position = .topRight; $0.size = .large } }
             if abs(t - 2.0) < 1e-9 { look.setFullScreen(true, at: t) }
         }
-        check(report.camera?.file == nil && report.project.source.camera == nil, "Record Video keeps no camera file: the camera is in its picture")
+        check(report.camera?.file == nil && report.project.source.camera == nil, "Record MP4 keeps no camera file: the camera is in its picture")
         let bubble = CameraLayout.bubbleRect(CameraBubble(), area: area)
         let markerSide = CameraBubblePainter.aspectFill(CGSize(width: 640, height: 360), in: bubble)
         let marker = SyntheticCamera.markerRect(CGSize(width: 640, height: 360))

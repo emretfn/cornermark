@@ -102,7 +102,7 @@ final class InspectorView: NSView {
     static func note(_ section: EditorSection, origin: RecordingProject.Source.Origin = .recording, hasAudio: Bool = false) -> String {
         if origin == .file {
             switch section {
-            case .cursor: return "This video was opened from a file, so it has no pointer track. Its pointer is part of the picture, and zooms still work. Record for Editing to change the pointer afterwards."
+            case .cursor: return "This video was opened from a file, so it has no pointer track. Its pointer is part of the picture, and zooms still work. Record Project to change the pointer afterwards."
             case .clicks: return "This video was opened from a file, so no clicks were recorded with it."
             case .keystrokes: return "This video was opened from a file, so no keystrokes were recorded with it."
             case .audio: return hasAudio ? "This video plays and exports with its own sound." : "This video has no sound."

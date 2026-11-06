@@ -49,7 +49,7 @@ final class AudioPane: SettingsPane {
         system.onAction { [unowned self] c in change { $0.recording.audio.systemAudio = (c as! NSButton).state == .on } }
         return Form.page(title: paneTitle, groups: [
             .init("Microphone", rows: [
-                Form.row(title: "Record microphone", caption: Form.caption("Record Video and Record for Editing also record your voice."), control: microphone),
+                Form.row(title: "Record microphone", caption: Form.caption("Record MP4 and Record Project also record your voice."), control: microphone),
                 Form.row(title: "Microphone", caption: deviceNote, control: device),
                 Form.row(title: "Input level", caption: meterNote, control: meter),
                 Form.row(title: "Record in mono", caption: Form.caption("Mixes the input channels into one, so a voice on one input plays from both sides."), control: mono),

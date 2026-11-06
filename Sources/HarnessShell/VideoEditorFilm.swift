@@ -40,7 +40,7 @@ enum VideoEditorFilm {
         guard let card = c.overlay.card(forRecord: project.id), let view = c.overlay.cardView(for: card), let panel = c.overlay.panel(for: card) else {
             throw FilmError.missing("the project's card")
         }
-        f.hold(1.6, "Record for Editing finished: its Quick Access card offers Edit instead of Play.")
+        f.hold(1.6, "Record Project finished: its Quick Access card offers Edit instead of Play.")
         f.glide(to: CGPoint(x: panel.frame.midX, y: panel.frame.midY), "Pointing at the card")
         view.mouseEntered(with: Synth.enterExit(.mouseEntered, in: panel))
         f.refresh()
@@ -258,7 +258,7 @@ final class EditorStage {
     var current: VideoEditorWindowController? { w.coordinator.videoEditors.values.first }
 
     func recordProject() async throws -> CaptureRecord? {
-        film.hold(0.6, "Record for Editing: \(URLCommand.scheme)://record?\(area)")
+        film.hold(0.6, "Record Project: \(URLCommand.scheme)://record?\(area)")
         project = await recordOnce(w, area)
         film.refresh()
         return project

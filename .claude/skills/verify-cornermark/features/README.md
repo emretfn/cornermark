@@ -45,5 +45,5 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Import an image](./import-image.md) covers the image link, the stored record, and the editor.
 - [Overlays](./overlays.md) covers restoring and hiding Quick Access cards.
 - [Updates and What's New](./updates-and-whats-new.md) covers the update check and the release notes window.
-- [Video editor](./video-editor.md) covers opening a recording for editing from its card, History, or a link, and the editor's offscreen films.
+- [Video editor](./video-editor.md) covers opening a project from its card, History, or a link, and the editor's offscreen films.
 - [Recording](./recording.md) covers recording the instance's test window and its synthetic display into a project folder with a video and a pointer track.

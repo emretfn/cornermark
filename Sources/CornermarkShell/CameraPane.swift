@@ -76,7 +76,7 @@ final class CameraPane: SettingsPane {
         }
         return Form.page(title: paneTitle, groups: [
             .init(rows: [
-                Form.row(title: "Show camera", caption: Form.caption("Shows you in a bubble over the recording. Record for Editing keeps the camera as its own track, so you can still change it later."),
+                Form.row(title: "Show camera", caption: Form.caption("Shows you in a bubble over the recording. Record Project keeps the camera as its own track, so you can still change it later."),
                          control: show),
             ]),
             .init("Bubble", rows: [

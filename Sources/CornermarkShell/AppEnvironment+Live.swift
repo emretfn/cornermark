@@ -62,6 +62,7 @@ extension AppEnvironment {
         env.pointerSource = { LivePointerSource() }
         env.inputSource = { LiveInputSource(capture: $0) }
         env.hasInputPermission = { LiveInputSource.isPermitted }
+        env.requestInputPermission = { LiveInputSource.request() }
         env.cameraSource = { LiveCameraSource() }
         env.cameraAccess = { CameraAccess.current }
         env.requestCameraAccess = { CameraAccess.request($0) }
@@ -105,6 +106,10 @@ extension AppEnvironment {
         env.pointerSource = { ScriptedPointerSource() }
         env.inputSource = { ScriptedInputSource(capture: $0) }
         env.hasInputPermission = { true }
+        env.requestInputPermission = {
+            Log.shell.error("input monitoring request refused: a scripted instance never asks")
+            return false
+        }
         env.cameraSource = { ScriptedCameraSource() }
         env.cameraAccess = { .allowed }
         env.requestCameraAccess = { done in

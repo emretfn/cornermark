@@ -11,6 +11,8 @@ struct SessionOptions {
     var presentation = OverlayPresentation.onscreen
     var tickInterval: TimeInterval = 1
     var scrollInterval: TimeInterval = 0.15
+    var sources: () -> RecordingSources = { RecordingSources() }
+    var toggleSource: (RecordingSource) -> Void = { _ in }
 }
 
 enum SessionEnd {
@@ -143,7 +145,7 @@ final class CaptureSession: OverlayHost {
         }
     }
 
-    private func refreshOverlay() {
+    func refreshOverlay() {
         for p in panels { p.chrome.needsDisplay = true }
         updateToolbar()
     }
@@ -196,9 +198,11 @@ final class CaptureSession: OverlayHost {
             if let existing = recordingPanel { panel = existing } else {
                 panel = RecordingPanel()
                 panel.onAction = { [weak self] in self?.send(.toolbar($0)) }
+                panel.onToggle = { [weak self] in self?.options.toggleSource($0) }
                 recordingPanel = panel
             }
             panel.update(machine)
+            panel.show(options.sources())
             bar = panel
             pill = panel.pillRect.size
         } else {
