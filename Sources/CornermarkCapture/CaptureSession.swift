@@ -287,6 +287,8 @@ final class CaptureSession: OverlayHost {
             origin = CGPoint(x: display.frame.midX - pill.width / 2, y: display.frame.minY + 90)
         }
         origin.x = min(max(origin.x, display.frame.minX + 8), display.frame.maxX - pill.width - 8)
+        // Centring an odd-sized selection or pill lands on a half point, and at 1x everything in the bar would straddle two pixels.
+        origin = CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
 
         guard let panel = panels.first(where: { $0.display.displayID == display.id }) else { return }
         toolbarPill = CGRect(origin: origin, size: pill)
