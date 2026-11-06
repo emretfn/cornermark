@@ -240,8 +240,8 @@ func checkVideoZoom() async throws {
         editor.seek(to: t)
         await decoder?.prepare(frameState(project, outputTime: t).sourceTime)
         editor.tick()
-        check(editor.previewState?.camera == ZoomCamera.rect(project.edits.zooms, at: t), String(format: "at %.1f s the preview shows the camera frameState gives", t),
-              detail: "\(String(describing: editor.previewState?.camera))")
+        check(editor.previewState?.crop == ZoomCamera.rect(project.edits.zooms, at: t), String(format: "at %.1f s the preview shows the crop frameState gives", t),
+              detail: "\(String(describing: editor.previewState?.crop))")
     }
     editor.seek(to: 2)
     await decoder?.prepare(frameState(project, outputTime: 2).sourceTime)

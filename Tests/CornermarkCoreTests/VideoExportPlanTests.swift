@@ -38,8 +38,8 @@ final class VideoExportPlanTests: XCTestCase {
     }
 
     func testChoicesOfferOnlySmallerSizes() {
-        XCTAssertEqual(ExportResolution.choices(for: project().source), [.original, .shortSide(480)])
-        XCTAssertEqual(ExportResolution.choices(for: project(width: 3840, height: 2160).source), [.original, .shortSide(1440), .shortSide(1080), .shortSide(720), .shortSide(480)])
+        XCTAssertEqual(ExportResolution.choices(for: project()), [.original, .shortSide(480)])
+        XCTAssertEqual(ExportResolution.choices(for: project(width: 3840, height: 2160)), [.original, .shortSide(1440), .shortSide(1080), .shortSide(720), .shortSide(480)])
     }
 
     func testHigherQualityAndSizeCostMoreBytes() {

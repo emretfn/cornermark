@@ -9,6 +9,9 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     private let target: RecordingTarget
     private let options: RecordingOptions
     private let queue = DispatchQueue(label: "cornermark.stream-frames", qos: .userInteractive)
+    private let audioQueue = DispatchQueue(label: "cornermark.stream-audio", qos: .userInteractive)
+    /// What the Mac plays, when the options ask for it. It needs only Screen Recording, no audio driver.
+    public let systemAudio = StreamAudio()
     private var stream: SCStream?
     private var prepared: (filter: SCContentFilter, config: SCStreamConfiguration, format: FrameFormat)?
     private var deliver: ((VideoFrame) -> Void)?
@@ -26,7 +29,12 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         let content = try await Self.content()
         let config = SCStreamConfiguration()
         config.showsCursor = options.showsCursor
-        config.capturesAudio = false
+        config.capturesAudio = options.capturesSystemAudio
+        if options.capturesSystemAudio {
+            config.excludesCurrentProcessAudio = true
+            config.sampleRate = 48_000
+            config.channelCount = 2
+        }
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB
         // The stream spaces frames about a millisecond wider than asked. Measured on a 120 Hz display, asking for exactly 1/60 s
@@ -69,6 +77,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         let stream = SCStream(filter: prepared.filter, configuration: prepared.config, delegate: self)
         do {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+            if options.capturesSystemAudio { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue) }
             try await stream.startCapture()
         } catch {
             throw Self.map(error)
@@ -111,6 +120,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     }
 
     public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        if type == .audio { return systemAudio.receive(sampleBuffer) }
         guard type == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
@@ -155,6 +165,21 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         if let known = error as? RecordingError { return known }
         if let sc = error as? SCStreamError, sc.code == .userDeclined { return .permissionDenied }
         return .source(error.localizedDescription)
+    }
+}
+
+/// The stream's sound as an audio source. The stream itself starts and stops it, so `start` only says where chunks go.
+public final class StreamAudio: AudioSource {
+    private let lock = NSLock()
+    private var deliver: ((AudioChunk) -> Void)?
+
+    public func start(_ deliver: @escaping (AudioChunk) -> Void) throws { lock.withLock { self.deliver = deliver } }
+    public func stop() { lock.withLock { deliver = nil } }
+
+    /// The stream stamps sound and pictures on the host clock, which is the recording clock.
+    func receive(_ sample: CMSampleBuffer) {
+        guard sample.isValid, let deliver = lock.withLock({ self.deliver }), let chunk = AudioChunk(sample, clock: { $0.seconds }) else { return }
+        deliver(chunk)
     }
 }
 

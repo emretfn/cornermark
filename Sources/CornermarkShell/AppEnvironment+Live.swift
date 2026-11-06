@@ -14,6 +14,7 @@ final class MainAppLoginItem: LoginItemControlling {
 extension AppEnvironment {
     static let screenCapturePaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
     static let inputMonitoringPaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
+    static let microphonePaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
 
     static func live() throws -> AppEnvironment {
         #if DEBUG
@@ -61,6 +62,14 @@ extension AppEnvironment {
         env.pointerSource = { LivePointerSource() }
         env.inputSource = { LiveInputSource(capture: $0) }
         env.hasInputPermission = { LiveInputSource.isPermitted }
+        env.cameraSource = { LiveCameraSource() }
+        env.cameraAccess = { CameraAccess.current }
+        env.requestCameraAccess = { CameraAccess.request($0) }
+        env.microphones = { LiveMicrophoneSource.devices() }
+        env.microphoneAccess = { MicrophoneAccess.current }
+        env.requestMicrophoneAccess = { MicrophoneAccess.request($0) }
+        env.microphoneSource = { LiveMicrophoneSource(deviceID: $0) }
+        env.systemAudioSource = { ($0 as? StreamFrameSource)?.systemAudio }
         env.recordingJournal = RecordingJournal(folder: support.appendingPathComponent("\(AppVariant.current.name)/Unfinished Recordings", isDirectory: true))
         return env
     }
@@ -96,6 +105,21 @@ extension AppEnvironment {
         env.pointerSource = { ScriptedPointerSource() }
         env.inputSource = { ScriptedInputSource(capture: $0) }
         env.hasInputPermission = { true }
+        env.cameraSource = { ScriptedCameraSource() }
+        env.cameraAccess = { .allowed }
+        env.requestCameraAccess = { done in
+            Log.shell.error("camera access request refused: a scripted instance never asks")
+            done(false)
+        }
+        // Sound comes from scripts, so no real device is ever opened and access is never asked for.
+        env.microphones = { ScriptedAudioSource.microphones }
+        env.microphoneAccess = { .allowed }
+        env.requestMicrophoneAccess = { done in
+            Log.shell.error("microphone access request refused: a scripted instance never asks")
+            done(false)
+        }
+        env.microphoneSource = { ScriptedAudioSource.microphone($0) }
+        env.systemAudioSource = { _ in ScriptedAudioSource(pattern: .systemTour) }
         env.recordingJournal = RecordingJournal(folder: root.appendingPathComponent("unfinished", isDirectory: true))
         env.willPresent = { window in
             Log.shell.notice("present window=\(window.title, privacy: .public) visible=\(window.isVisible, privacy: .public) appActive=\(NSApp.isActive, privacy: .public)")
@@ -106,6 +130,9 @@ extension AppEnvironment {
     /// The only screen pixels a scripted instance may film are those of its own test window. A display is a synthetic one,
     /// so no content filter on a real display is ever built here.
     static func isolatedFrameSource(_ target: RecordingTarget, _ options: RecordingOptions, testWindow: RecordingTestWindowHosting) throws -> FrameSource {
+        // System sound is scripted here, so the stream never captures what the Mac plays.
+        var options = options
+        options.capturesSystemAudio = false
         switch target {
         case .window(let id):
             guard let own = testWindow.windowID else { throw RecordingRefusal.noTestWindow }

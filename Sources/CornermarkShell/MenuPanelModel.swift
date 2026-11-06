@@ -92,6 +92,9 @@ struct MenuPanelModel: Equatable {
         canRestoreOverlay: Bool,
         pins: [PinSummary],
         recording: RecordingController.Phase = .idle,
+        /// Nil when no camera shows, else whether it fills the recording.
+        cameraFullScreen: Bool? = nil,
+        microphoneSilent: Bool = false,
         recent: [CaptureRecord],
         dateText: (Date) -> String = Self.dateText
     ) -> MenuPanelModel {
@@ -116,8 +119,18 @@ struct MenuPanelModel: Equatable {
         if recording.isRunning {
             let pause = ActionTable.spec(recording == .paused ? .resumeRecording : .pauseRecording)
             let restart = ActionTable.spec(.restartRecording)
-            sections.append(.rows([Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
-                                   Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true)]))
+            var rows = [Row(item: .action(pause.id), symbol: pause.symbol, title: pause.title, isEnabled: true),
+                        Row(item: .action(restart.id), symbol: restart.symbol, title: "Discard and Restart", isEnabled: true)]
+            // The camera's bubble never takes the keyboard either, so its click has a row here.
+            if let full = cameraFullScreen {
+                rows.append(Row(item: .action(.recordingCamera), symbol: full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                title: full ? "Shrink Camera to Bubble" : "Fill with Camera", isEnabled: true))
+            }
+            // The bar's No sound badge says what, and this row says what to do, where the keyboard can reach it.
+            if microphoneSilent {
+                rows.append(Row(item: .action(.settings), symbol: "mic.slash.fill", title: "No sound from the microphone. Check that it is not muted.", isEnabled: false))
+            }
+            sections.append(.rows(rows))
         }
 
         let newest = Array(recent.sorted { $0.createdAt > $1.createdAt }.prefix(recentLimit))

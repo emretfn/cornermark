@@ -14,11 +14,17 @@ final class InspectorView: NSView {
     let zoomPanel = ZoomPanel()
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
+    let backgroundPanel = BackgroundPanel()
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
     private let cursorSize = TrackingSlider()
     private let cursorSizeValue = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
+    private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), tilePadding: DS.Space.s8)
+    private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), tilePadding: DS.Space.s8)
+    private let hideIdle = Checkbox(title: "Hide when not moving")
+    private let hideTyping = Checkbox(title: "Hide when typing")
+    private var rowLabels: [NSTextField] = []
     private let emptyNote = NSTextField(wrappingLabelWithString: "")
     private var cursorRows: [NSView] = []
     private var cursor = CursorSettings()
@@ -34,7 +40,7 @@ final class InspectorView: NSView {
     static let sizeRange = 0.5...4.0
 
     /// A picked zoom takes the panel over from the section, and the rail then marks none.
-    func show(_ section: EditorSection, cursor: CursorSettings, zoom: Zoom? = nil, zoomCount: Int = 0) {
+    func show(_ section: EditorSection, cursor: CursorSettings, background: VideoBackground, picture: CGImage?, zoom: Zoom? = nil, zoomCount: Int = 0) {
         self.cursor = cursor
         for (s, b) in railButtons { b.isSelected = zoom == nil && s == section }
         title.stringValue = zoom == nil ? section.title : "Zoom"
@@ -42,13 +48,37 @@ final class InspectorView: NSView {
         if let zoom { zoomPanel.show(zoom, count: zoomCount) }
         let isCursor = section == .cursor && zoom == nil
         cursorRows.forEach { $0.isHidden = !isCursor }
-        emptyNote.isHidden = isCursor || zoom != nil
+        emptyNote.isHidden = isCursor || zoom != nil || section == .background
         emptyNote.stringValue = Self.note(section)
+        backgroundPanel.isHidden = section != .background || zoom != nil
+        backgroundPanel.show(background, picture: picture)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
-        cursorSize.isEnabled = cursor.isVisible
         cursorSizeValue.stringValue = String(format: "%.1f\u{00D7}", cursor.scale)
-        cursorSizeValue.textColor = cursor.isVisible ? DS.Color.textSecondary : DS.Color.textDisabled
+        cursorStyle.selectedSegment = CursorStyle.allCases.firstIndex(of: cursor.style) ?? 0
+        cursorMotion.selectedSegment = CursorMotion.allCases.firstIndex(of: cursor.motion) ?? 0
+        hideIdle.state = cursor.hidesWhenIdle ? .on : .off
+        hideTyping.state = cursor.hidesWhenTyping ? .on : .off
+        // Every other setting shapes a pointer that is not drawn while Show cursor is off.
+        let on = cursor.isVisible
+        for control in [cursorSize, cursorStyle, cursorMotion, hideIdle, hideTyping] as [NSControl] { control.isEnabled = on }
+        cursorSizeValue.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled
+        for label in rowLabels { label.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled }
+    }
+
+    static func title(_ style: CursorStyle) -> String {
+        switch style {
+        case .white: return "White"
+        case .black: return "Black"
+        case .dot: return "Dot"
+        }
+    }
+
+    static func title(_ motion: CursorMotion) -> String {
+        switch motion {
+        case .natural: return "Natural"
+        case .smooth: return "Smooth"
+        }
     }
 
     /// What a section without settings says. Each one states what this recording holds, not what a later version adds.
@@ -58,7 +88,7 @@ final class InspectorView: NSView {
         case .keystrokes: return "This recording has no keystrokes."
         case .audio: return "This recording has no sound."
         case .camera: return "This recording has no camera."
-        case .background: return "Background settings are not available yet."
+        case .background: return ""
         case .motionBlur: return "Motion blur is not available yet."
         }
     }
@@ -97,12 +127,39 @@ final class InspectorView: NSView {
         cursorSize.action = #selector(sizeChanged)
         cursorSizeValue.alignment = .right
         cursorSizeValue.setContentHuggingPriority(.required, for: .horizontal)
-        let sizeLabel = NSTextField.label("Size", style: DS.Text.label, color: DS.Color.textSecondary)
-        sizeLabel.widthAnchor.constraint(equalToConstant: Self.labelColumn).isActive = true
-        let sizeRow = NSStackView(views: [sizeLabel, cursorSize, cursorSizeValue])
-        sizeRow.spacing = DS.Space.s8
-        sizeRow.alignment = .centerY
-        cursorRows = [showCursor, sizeRow]
+        cursorStyle.setAccessibilityIdentifier("video.cursor.style")
+        cursorStyle.setAccessibilityLabel("Cursor style")
+        for (i, tip) in ["White arrow", "Black arrow", "Translucent dot"].enumerated() { cursorStyle.setToolTip(tip, forSegment: i) }
+        cursorStyle.target = self
+        cursorStyle.action = #selector(styleChanged)
+        cursorMotion.setAccessibilityIdentifier("video.cursor.motion")
+        cursorMotion.setAccessibilityLabel("Cursor motion")
+        cursorMotion.setToolTip("The path as it was recorded", forSegment: 0)
+        cursorMotion.setToolTip("A steadier path that settles at each stop", forSegment: 1)
+        cursorMotion.target = self
+        cursorMotion.action = #selector(motionChanged)
+        for (box, id) in [(hideIdle, "video.cursor.hideIdle"), (hideTyping, "video.cursor.hideTyping")] {
+            box.setAccessibilityIdentifier(id)
+            box.target = self
+            box.action = #selector(hidingChanged)
+        }
+        func row(_ title: String, _ controls: [NSView]) -> NSStackView {
+            let label = NSTextField.label(title, style: DS.Text.label, color: DS.Color.textSecondary)
+            label.widthAnchor.constraint(equalToConstant: Self.labelColumn).isActive = true
+            rowLabels.append(label)
+            let row = NSStackView(views: [label] + controls)
+            row.spacing = DS.Space.s8
+            row.alignment = .centerY
+            return row
+        }
+        let sizeRow = row("Size", [cursorSize, cursorSizeValue])
+        let styleRow = row("Style", [cursorStyle])
+        let motionRow = row("Motion", [cursorMotion])
+        // The stack insets its rows, so the line between the look and the hiding options is laid over a spacer of its height.
+        let ruleSlot = NSView()
+        ruleSlot.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        let rule = Separator(axis: .horizontal)
+        cursorRows = [showCursor, sizeRow, styleRow, motionRow, ruleSlot, rule, hideIdle, hideTyping]
 
         emptyNote.font = DS.Text.body.font
         emptyNote.textColor = DS.Color.textSecondary
@@ -114,11 +171,13 @@ final class InspectorView: NSView {
         body.alignment = .leading
         body.spacing = DS.Space.s12
         body.edgeInsets = NSEdgeInsets(top: DS.Space.s16, left: DS.Space.s16, bottom: DS.Space.s16, right: DS.Space.s16)
-        for v in [title, showCursor, sizeRow, emptyNote, zoomPanel] as [NSView] { body.addArrangedSubview(v) }
-        for v in [sizeRow, emptyNote, zoomPanel] {
+        for v in [title, showCursor, sizeRow, styleRow, motionRow, ruleSlot, hideIdle, hideTyping, emptyNote, zoomPanel] as [NSView] { body.addArrangedSubview(v) }
+        for v in [sizeRow, styleRow, motionRow, ruleSlot, emptyNote, zoomPanel] {
             v.widthAnchor.constraint(equalTo: body.widthAnchor, constant: -2 * DS.Space.s16).isActive = true
         }
         body.setCustomSpacing(DS.Space.s16, after: title)
+        body.setCustomSpacing(DS.Space.s16, after: motionRow)
+        body.setCustomSpacing(DS.Space.s16, after: ruleSlot)
         let filler = NSView()
         filler.setContentHuggingPriority(.defaultLow, for: .vertical)
         body.addArrangedSubview(filler)
@@ -126,7 +185,8 @@ final class InspectorView: NSView {
 
         let divider = Separator(axis: .vertical)
         let edge = Separator(axis: .vertical)
-        for v in [rail, divider, body, edge] as [NSView] {
+        backgroundPanel.isHidden = true
+        for v in [rail, divider, body, edge, rule, backgroundPanel] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -142,10 +202,17 @@ final class InspectorView: NSView {
             body.topAnchor.constraint(equalTo: topAnchor),
             body.bottomAnchor.constraint(equalTo: bottomAnchor),
             body.widthAnchor.constraint(equalToConstant: Self.panelWidth),
+            backgroundPanel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: DS.Space.s16),
+            backgroundPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            backgroundPanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            backgroundPanel.bottomAnchor.constraint(equalTo: bottomAnchor),
             edge.leadingAnchor.constraint(equalTo: body.trailingAnchor),
             edge.trailingAnchor.constraint(equalTo: trailingAnchor),
             edge.topAnchor.constraint(equalTo: topAnchor),
             edge.bottomAnchor.constraint(equalTo: bottomAnchor),
+            rule.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            rule.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            rule.centerYAnchor.constraint(equalTo: ruleSlot.centerYAnchor),
         ])
     }
 
@@ -165,10 +232,31 @@ final class InspectorView: NSView {
         next.scale = (cursorSize.doubleValue * 10).rounded() / 10
         onCursor(next)
     }
+
+    @objc private func styleChanged() {
+        guard CursorStyle.allCases.indices.contains(cursorStyle.selectedSegment) else { return }
+        var next = cursor
+        next.style = CursorStyle.allCases[cursorStyle.selectedSegment]
+        onCursor(next)
+    }
+
+    @objc private func motionChanged() {
+        guard CursorMotion.allCases.indices.contains(cursorMotion.selectedSegment) else { return }
+        var next = cursor
+        next.motion = CursorMotion.allCases[cursorMotion.selectedSegment]
+        onCursor(next)
+    }
+
+    @objc private func hidingChanged() {
+        var next = cursor
+        next.hidesWhenIdle = hideIdle.state == .on
+        next.hidesWhenTyping = hideTyping.state == .on
+        onCursor(next)
+    }
 }
 
 /// A slider that says when a drag ends: `mouseDown` returns only once the pointer lets go.
-private final class TrackingSlider: Slider {
+final class TrackingSlider: Slider {
     var onTrackingEnd: () -> Void = {}
 
     override func mouseDown(with event: NSEvent) {

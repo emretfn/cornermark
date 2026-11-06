@@ -15,6 +15,8 @@ public struct ExportReport: Equatable, Sendable {
     public var encoderID: String
     /// Wall time of the whole export.
     public var renderSeconds: Double
+    /// The recording's microphone and system sound, mixed into the file's one sound track.
+    public var hasAudio = false
 }
 
 extension ExportPlan {
@@ -30,48 +32,78 @@ public enum ExportError: Error, Equatable {
     case writer(String)
 }
 
-/// Draws one frame of the finished video: the source picture, then the pointer `frameState` places, in the recording's points
-/// with y down, the way the preview's layers do.
-public struct ExportFrameRenderer: Sendable {
+/// Draws one frame of the finished video: the background, then the source picture and the pointer `frameState` places, clipped
+/// to the recording's rounded frame, in the recording's points with y down, the way the preview's layers do.
+public struct ExportFrameRenderer: @unchecked Sendable {
     public let width: Int
     public let height: Int
     /// The recorded area in points, the unit of pointer positions.
     public let pointSize: CGSize
+    public let canvas: VideoCanvas
+    /// The fill and shadow, made once: the recording is opaque, so nothing behind it changes from frame to frame.
+    let backdrop: CGImage?
 
-    public init(plan: ExportPlan, source: RecordingProject.Source) {
+    /// `folder` is the project folder, where a background picture the viewer added lives.
+    public init(plan: ExportPlan, project: RecordingProject, folder: URL?) {
         width = plan.width; height = plan.height
-        pointSize = CGSize(width: max(source.pointWidth, 1), height: max(source.pointHeight, 1))
+        pointSize = CGSize(width: max(project.source.pointWidth, 1), height: max(project.source.pointHeight, 1))
+        canvas = project.canvas
+        backdrop = VideoBackdrop.image(canvas, width: plan.width, height: plan.height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
     }
 
     public static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin.
-    public func draw(_ state: FrameState, source: CGImage?, in ctx: CGContext) {
+    /// The recording's rectangle in the bitmap, y up.
+    var frameRect: CGRect {
+        let sx = CGFloat(width) / canvas.size.width, sy = CGFloat(height) / canvas.size.height
+        let f = canvas.frame
+        return CGRect(x: f.minX * sx, y: CGFloat(height) - f.maxY * sy, width: f.width * sx, height: f.height * sy)
+    }
+
+    /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin. `camera` is the camera file's picture at the same moment.
+    public func draw(_ state: FrameState, source: CGImage?, camera: CGImage? = nil, in ctx: CGContext) {
         let full = CGRect(x: 0, y: 0, width: width, height: height)
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
         ctx.fill(full)
         ctx.interpolationQuality = .high
-        if let source { ctx.draw(source, in: Self.pictureRect(state.camera, in: full)) }
-        guard let cursor = state.cursor else { return }
-        let camera = state.camera
+        if let backdrop { ctx.draw(backdrop, in: full) }
+        let frame = frameRect
+        let radius = canvas.cornerRadius * min(frame.width / pointSize.width, frame.height / pointSize.height)
         ctx.saveGState()
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: CGFloat(width) / (pointSize.width * camera.width), y: -CGFloat(height) / (pointSize.height * camera.height))
-        ctx.translateBy(x: -pointSize.width * camera.x, y: -pointSize.height * camera.y)
-        PointerShape.draw(cursor, in: ctx)
+        if canvas.hasBackdrop {
+            ctx.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            ctx.clip()
+        }
+        // The crop zooms the recording inside the frame, and the frame's clip cuts what falls outside it.
+        if let source { ctx.draw(source, in: Self.pictureRect(state.crop, in: frame)) }
+        // The camera bubble is an overlay on the frame, so it ignores the crop. The pointer is in recording points and follows it.
+        if let placed = state.camera, let camera {
+            ctx.saveGState()
+            ctx.translateBy(x: frame.minX, y: frame.maxY)
+            ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
+            CameraBubblePainter.draw(camera, placed, in: ctx)
+            ctx.restoreGState()
+        }
+        if let cursor = state.cursor {
+            let crop = state.crop
+            ctx.translateBy(x: frame.minX, y: frame.maxY)
+            ctx.scaleBy(x: frame.width / (pointSize.width * crop.width), y: -frame.height / (pointSize.height * crop.height))
+            ctx.translateBy(x: -pointSize.width * crop.x, y: -pointSize.height * crop.y)
+            PointerShape.draw(cursor, in: ctx)
+        }
         ctx.restoreGState()
     }
 
-    /// Where the whole recording lands so that `camera` fills `frame`, in y-up coordinates.
-    public static func pictureRect(_ camera: ZoomRect, in frame: CGRect) -> CGRect {
-        let w = frame.width / camera.width, h = frame.height / camera.height
-        return CGRect(x: frame.minX - camera.x * w, y: frame.minY - (1 - camera.y - camera.height) * h, width: w, height: h)
+    /// Where the whole recording lands so that `crop` fills `frame`, in y-up coordinates.
+    public static func pictureRect(_ crop: ZoomRect, in frame: CGRect) -> CGRect {
+        let w = frame.width / crop.width, h = frame.height / crop.height
+        return CGRect(x: frame.minX - crop.x * w, y: frame.minY - (1 - crop.y - crop.height) * h, width: w, height: h)
     }
 
-    public func image(_ state: FrameState, source: CGImage?) -> CGImage? {
+    public func image(_ state: FrameState, source: CGImage?, camera: CGImage? = nil) -> CGImage? {
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: Self.colorSpace,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-        draw(state, source: source, in: ctx)
+        draw(state, source: source, camera: camera, in: ctx)
         return ctx.makeImage()
     }
 }
@@ -91,13 +123,17 @@ public enum VideoExporter {
         defer { encoder.invalidate() }
         let writer = try AVAssetWriter(outputURL: partial, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
+        let folder = video.deletingLastPathComponent()
+        let mix = try await AudioMixReader(files: project.source.audioFiles.map { folder.appendingPathComponent($0) }, clips: project.timeline.clips,
+                                           duration: plan.duration)
+        defer { mix?.cancel() }
         do {
-            let frames = try await render(project: project, video: video, plan: plan, encoder: encoder, writer: writer, progress: progress)
+            let frames = try await render(project: project, video: video, plan: plan, encoder: encoder, sink: Sink(writer: writer, audio: mix), progress: progress)
             let duration = try await AVURLAsset(url: partial).load(.duration).seconds
             let bytes = ((try? FileManager.default.attributesOfItem(atPath: partial.path))?[.size] as? NSNumber)?.int64Value ?? 0
             try FileManager.default.moveItem(at: partial, to: output)
             return ExportReport(url: output, plan: plan, framesWritten: frames, duration: duration, bytes: bytes, usesHardware: encoder.usesHardware,
-                                encoderID: encoder.encoderID, renderSeconds: Date().timeIntervalSince(started))
+                                encoderID: encoder.encoderID, renderSeconds: Date().timeIntervalSince(started), hasAudio: mix != nil)
         } catch {
             if writer.status == .writing { writer.cancelWriting() }
             throw error
@@ -111,13 +147,17 @@ public enum VideoExporter {
         return (encoder.usesHardware, encoder.encoderID)
     }
 
-    private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, writer: AVAssetWriter,
+    private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, sink: Sink,
                                progress: @Sendable (Double) -> Void) async throws -> Int {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
         let timeline = project.timeline
-        let renderer = ExportFrameRenderer(plan: plan, source: project.source)
-        let sink = Sink(writer: writer)
+        // The camera file shares the video's timeline, so each clip reads the same stretch of it. A project whose camera file is gone
+        // still exports, without the camera.
+        let cameraAsset = project.source.camera.map { AVURLAsset(url: video.deletingLastPathComponent().appendingPathComponent($0)) }
+        let cameraTrack = try? await cameraAsset?.loadTracks(withMediaType: .video).first
+        var cameraReader: ClipReader?
+        let renderer = ExportFrameRenderer(plan: plan, project: project, folder: video.deletingLastPathComponent())
         var reader: ClipReader?
         var reported = -1
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.fps))
@@ -128,8 +168,13 @@ public enum VideoExporter {
             let clip = timeline.clipIndex(at: t)
             if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
             let current = reader?.image(at: state.sourceTime)
+            var camera: CGImage?
+            if state.camera != nil, let cameraAsset, let cameraTrack {
+                if cameraReader?.clip != clip { cameraReader = try? ClipReader(asset: cameraAsset, track: cameraTrack, clip: clip, range: timeline.clips[clip]) }
+                camera = cameraReader?.image(at: state.sourceTime)
+            }
             let buffer = try encoder.makeBuffer()
-            try draw(into: buffer) { renderer.draw(state, source: current, in: $0) }
+            try draw(into: buffer) { renderer.draw(state, source: current, camera: camera, in: $0) }
             try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
             try await sink.append(encoder.take())
             let percent = (k + 1) * 100 / plan.frameCount
@@ -285,11 +330,14 @@ private final class Encoder: @unchecked Sendable {
 }
 
 /// Writes compressed samples as they are. The input is made from the first sample, since an MP4 track needs its format up front.
+/// The sound, when there is some, is pulled by the writer on its own queue as it interleaves it with the pictures.
 private final class Sink {
     let writer: AVAssetWriter
+    private let audio: AudioMixReader?
     private var input: AVAssetWriterInput?
+    private let audioDone = DispatchGroup()
 
-    init(writer: AVAssetWriter) { self.writer = writer }
+    init(writer: AVAssetWriter, audio: AudioMixReader?) { self.writer = writer; self.audio = audio }
 
     func append(_ samples: [CMSampleBuffer]) async throws {
         for sample in samples {
@@ -307,8 +355,17 @@ private final class Sink {
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else { throw ExportError.writer("the video track could not be added") }
         writer.add(input)
+        let sound = audio.map { _ in AudioMixReader.makeInput() }
+        if let sound {
+            guard writer.canAdd(sound) else { throw ExportError.writer("the sound track could not be added") }
+            writer.add(sound)
+        }
         guard writer.startWriting() else { throw ExportError.writer(writer.error?.localizedDescription ?? "the file could not be started") }
         writer.startSession(atSourceTime: .zero)
+        if let audio, let sound {
+            audioDone.enter()
+            audio.feed(sound) { [audioDone] in audioDone.leave() }
+        }
         self.input = input
         return input
     }
@@ -316,6 +373,8 @@ private final class Sink {
     func finish() async throws {
         guard let input else { throw ExportError.writer("no frame was encoded") }
         input.markAsFinished()
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in audioDone.notify(queue: .global()) { done.resume() } }
+        if audio?.failed == true { throw ExportError.writer("the sound could not be read") }
         await writer.finishWriting()
         guard writer.status == .completed else { throw ExportError.writer(writer.error?.localizedDescription ?? "the file could not be finished") }
     }

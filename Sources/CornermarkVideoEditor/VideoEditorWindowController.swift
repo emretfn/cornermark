@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CornermarkCore
 import CornermarkDesign
+import UniformTypeIdentifiers
 
 /// What the editor shows and plays. The project is the document; everything else is how it is being looked at.
 public struct VideoEditorState: Equatable {
@@ -78,10 +79,22 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// Where a finished export is written.
     public var exportFolder: () -> URL = { FileManager.default.temporaryDirectory }
     public var onExport: (ExportEvent) -> Void = { _ in }
+    /// Asks for a picture to put behind the recording and hands back its file, or nothing when the viewer cancels.
+    public var chooseImage: (NSWindow?, @escaping (URL?) -> Void) -> Void = { window, done in
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        guard let window else { return done(panel.runModal() == .OK ? panel.url : nil) }
+        panel.beginSheetModal(for: window) { done($0 == .OK ? panel.url : nil) }
+    }
 
     private var saved: RecordingProject
     private var history: UndoHistory<RecordingProject.Edits>
+    /// The added background picture as last read, keyed by its file name.
+    private var backgroundPicture: (file: String?, image: CGImage?) = (nil, nil)
     private var frames: SourceFrames
+    /// The camera file's pictures, when the recording has a camera. A harness can set its own.
+    public var cameraFrames: SourceFrames?
     private let clock: () -> Double
     private let preview = PreviewView()
     private let transportBar = TransportBar()
@@ -108,7 +121,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         do { project = try RecordingProjectFile.read(from: folder) } catch { throw VideoEditorError.noProject(folder.lastPathComponent) }
         let video = folder.appendingPathComponent(project.source.video)
         guard FileManager.default.fileExists(atPath: video.path) else { throw VideoEditorError.noVideo(project.source.video) }
-        return VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video))
+        let editor = VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video))
+        if let name = project.source.camera, FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
+            let camera = PlayerFrames(url: folder.appendingPathComponent(name))
+            camera.volume = 0
+            editor.cameraFrames = camera
+        }
+        return editor
     }
 
     /// `frames` decodes the source and `clock` is the host clock in seconds; a harness passes its own of both.
@@ -212,6 +231,9 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
         inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }
+        inspector.backgroundPanel.onChange = { [unowned self] in setBackground($0, coalescing: $1) }
+        inspector.backgroundPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
+        inspector.backgroundPanel.onAddImage = { [unowned self] in addBackgroundImage() }
         transportBar.onCommand = { [unowned self] command in
             switch command {
             case .start: seek(to: 0)
@@ -285,9 +307,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         refresh()
     }
 
+    /// A run of size changes, such as one slider drag, is one undo step.
     public func setCursor(_ cursor: CursorSettings) {
         var edits = state.project.edits
-        let sizeOnly = cursor.isVisible == edits.cursor.isVisible
+        var sameButSize = cursor
+        sameButSize.scale = edits.cursor.scale
+        let sizeOnly = sameButSize == edits.cursor
         edits.cursor = cursor
         commit(edits, coalescing: sizeOnly ? "cursor.scale" : nil)
     }
@@ -314,6 +339,32 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         if state.selectedClip != nil { state.selectedZoom = nil }
         timeline.selection = state.selectedClip
         refresh()
+    }
+
+    /// `key` folds a run of changes, such as one slider drag, into one undo step.
+    public func setBackground(_ background: VideoBackground, coalescing key: CoalescingKey? = nil) {
+        var edits = state.project.edits
+        edits.background = background
+        commit(edits, coalescing: key)
+    }
+
+    /// Asks for a picture, copies it into the project folder and puts it behind the recording.
+    public func addBackgroundImage() {
+        chooseImage(window) { [weak self] url in
+            guard let self, let url else { return }
+            do { try useBackgroundImage(at: url) } catch { inspector.backgroundPanel.showProblem("\(url.lastPathComponent) could not be added. Choose another image.") }
+        }
+    }
+
+    /// The copy keeps the original's bytes under a name of its own, so undo can go back to an earlier picture.
+    public func useBackgroundImage(at url: URL) throws {
+        let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
+        let name = "background-\(UUID().uuidString.prefix(8).lowercased()).\(ext)"
+        try FileManager.default.copyItem(at: url, to: folder.appendingPathComponent(name))
+        var background = state.project.edits.background
+        background.image = name
+        background.fill = .image
+        setBackground(background)
     }
 
     // MARK: Zooms
@@ -783,7 +834,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             preview.image = image
             if !state.transport.isPlaying { awaitingSince = nil }
         }
+        if let cameraFrames, frame.camera != nil {
+            cameraFrames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying)
+            if let image = cameraFrames.frame(at: frame.sourceTime) { preview.cameraImage = image }
+        }
         preview.state = frame
+        preview.canvas = state.project.canvas
         timeline.time = t
         updateTransportBar(t)
         let waiting = awaitingSince.map { now - $0 < Self.frameWait } ?? false
@@ -797,8 +853,14 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var previewState: FrameState? { preview.state }
 
     private func refresh() {
+        let background = state.project.edits.background
+        if backgroundPicture.file != background.image {
+            backgroundPicture = (background.image, background.picture(in: folder))
+            preview.backgroundPicture = backgroundPicture.image
+        }
         let zooms = state.project.edits.zooms
-        inspector.show(state.section, cursor: state.project.edits.cursor, zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count)
+        inspector.show(state.section, cursor: state.project.edits.cursor, background: background, picture: backgroundPicture.image,
+                       zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count)
         timeline.zoomLane.zooms = zooms
         timeline.zoomLane.selection = state.selectedZoom
         header.show(state.export)

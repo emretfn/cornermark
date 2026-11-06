@@ -335,7 +335,7 @@ extension EditorStage {
     func cameraText(_ editor: VideoEditorWindowController) -> String {
         let st = editor.state
         let t = st.transport.time(at: clock.now)
-        let cam = frameState(st.project, outputTime: t).camera
+        let cam = frameState(st.project, outputTime: t).crop
         let zooms = st.project.edits.zooms.map { String(format: "%.2f-%.2f %@ %@", $0.start, $0.end, Zoom.percent($0.scale), $0.mode.rawValue) }.joined(separator: ", ")
         let picked = st.selectedZoom.flatMap { id in st.project.edits.zooms.firstIndex { $0.id == id } }.map { "\($0 + 1)" } ?? "none"
         return String(format: "t=%@ camera scale=%.3f x=%.3f y=%.3f  picked=%@  zooms=[%@]", Timecode.text(t), cam.scale, cam.x, cam.y, picked, zooms)
@@ -364,7 +364,7 @@ extension EditorStage {
         }
         ctx.strokePath()
         let now = editor.state.transport.time(at: clock.now)
-        let dot = CGPoint(x: plot.minX + plot.width * CGFloat(now / max(d, 1e-9)), y: y(frameState(project, outputTime: now).camera.scale))
+        let dot = CGPoint(x: plot.minX + plot.width * CGFloat(now / max(d, 1e-9)), y: y(frameState(project, outputTime: now).crop.scale))
         ctx.setFillColor(CGColor(gray: 1, alpha: 1))
         ctx.fillEllipse(in: CGRect(x: dot.x - 4, y: dot.y - 4, width: 8, height: 8))
         NSGraphicsContext.saveGraphicsState()

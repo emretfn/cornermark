@@ -48,9 +48,12 @@ public struct RecordingOptions: Equatable {
     public var limit: SizeLimit
     /// What a display recording leaves out. A window recording films one window and nothing over it.
     public var exclusion: ContentExclusion
+    /// The live stream also delivers what the Mac plays, leaving out Cornermark's own sounds.
+    public var capturesSystemAudio: Bool
     public init(fps: Int = 60, showsCursor: Bool = false, quality: VideoQuality = .high, density: PixelDensity = .retina, limit: SizeLimit = .none,
-                exclusion: ContentExclusion = ContentExclusion()) {
+                exclusion: ContentExclusion = ContentExclusion(), capturesSystemAudio: Bool = false) {
         self.fps = fps; self.showsCursor = showsCursor; self.quality = quality; self.density = density; self.limit = limit; self.exclusion = exclusion
+        self.capturesSystemAudio = capturesSystemAudio
     }
     public static let standard = RecordingOptions()
 }
@@ -94,6 +97,10 @@ public struct RecordingReport: Equatable {
     public var keys: [KeyEvent] = []
     /// The stretches a pause left out, on the source clock in seconds after the first frame.
     public var pauses: [RecordingPause] = []
+    /// The camera, when one was recorded.
+    public var camera: CameraTrackReport?
+    /// The sound tracks written beside the video, each as long as it.
+    public var audio: [AudioTrackReport] = []
 
     public var dropRate: Double {
         let total = framesWritten + framesDropped
@@ -104,12 +111,29 @@ public struct RecordingReport: Equatable {
 extension RecordingReport {
     /// The project that describes this recording, with every edit at its default. The video is the file the report names.
     public var project: RecordingProject {
-        RecordingProject(
+        var project = RecordingProject(
             source: .init(video: url.lastPathComponent, pixelWidth: format.width, pixelHeight: format.height,
                           pointWidth: area.width, pointHeight: area.height, fps: format.fps,
-                          duration: duration + 1.0 / Double(format.fps)),
+                          duration: duration + 1.0 / Double(format.fps),
+                          microphone: audio.first { $0.kind == .microphone }?.url.lastPathComponent,
+                          systemAudio: audio.first { $0.kind == .system }?.url.lastPathComponent,
+                          camera: camera?.file?.lastPathComponent),
             events: .init(pointer: pointer, clicks: clicks, keys: keys))
+        if let camera { project.edits.camera = camera.bubble }
+        return project
     }
+}
+
+/// The camera beside a recording.
+public struct CameraTrackReport: Equatable {
+    /// The camera's own file, on the video's timeline. Nil when the camera was drawn into the picture.
+    public var file: URL?
+    /// Pictures the camera delivered.
+    public var pictures: Int
+    /// Frames the recording made from the camera's clock because the screen sent none, so a still screen still shows a moving camera.
+    public var filled: Int
+    /// The look at the end, with full-screen spans on the video's timeline.
+    public var bubble: CameraBubble
 }
 
 /// A stretch of the source clock that a pause kept out of the video. `from` is where the video stopped and `to` where it went on.

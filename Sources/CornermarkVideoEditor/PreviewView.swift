@@ -3,10 +3,9 @@ import CornermarkCore
 import CornermarkDesign
 import QuartzCore
 
-/// The finished video at the playhead: the source frame `frameState` names, cropped to its camera, and the pointer it places, in
-/// the outline export draws.
-/// Both are layers, so a new frame costs the main thread a property change and Core Animation composites it.
-/// The picture is content, so only the backdrop around it follows the appearance.
+/// The finished video at the playhead: the background, the source frame `frameState` names cropped to its zoom, and the pointer it places,
+/// in the look export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
+/// The video is content, so only the area around it follows the appearance.
 final class PreviewView: NSView {
     /// The recorded area in points, the unit of pointer positions.
     var pointSize = CGSize(width: 16, height: 9) { didSet { needsLayout = true } }
@@ -16,12 +15,32 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { place() } } }
+    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera() } } }
+    /// Where the recording sits on the finished video.
+    var canvas: VideoCanvas? { didSet { if oldValue != canvas { needsLayout = true } } }
+    /// The picture the background shows when its fill is an added image.
+    var backgroundPicture: CGImage? { didSet { if backgroundPicture !== oldValue { drawnBackdrop = nil; needsLayout = true } } }
+    /// The camera file's picture at the playhead. Shown only where `state` places the camera.
+    var cameraImage: CGImage? {
+        didSet {
+            guard cameraImage !== oldValue else { return }
+            withoutAnimation { cameraPicture.contents = cameraImage }
+            placeCamera()
+        }
+    }
     /// Room around the picture. None in preview-only mode, where the picture fills the window.
     var inset: CGFloat = DS.Space.s16 { didSet { needsLayout = true } }
 
+    /// The whole finished video. As the backing layer's first sublayer it is what a harness renders as the preview's frame.
+    private let stage = CALayer()
     private let picture = CALayer()
     private let pointer = CAShapeLayer()
+    private var pointerStyle = CursorStyle.white
+    /// The camera's shadow, and inside it the clipped picture, drawn as `CameraBubblePainter` draws it in export.
+    private let cameraHolder = CALayer()
+    private let cameraPicture = CALayer()
+    /// What the stage shows now, so a layout that changes nothing draws nothing.
+    private var drawnBackdrop: (canvas: VideoCanvas, width: Int, height: Int)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -29,17 +48,22 @@ final class PreviewView: NSView {
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         picture.contentsGravity = .resize
         picture.backgroundColor = CGColor(gray: 0, alpha: 1)
-        picture.borderWidth = 1
         picture.masksToBounds = true
-        let outline = CGMutablePath()
-        outline.addLines(between: PointerShape.outline)
-        outline.closeSubpath()
-        pointer.path = outline
-        pointer.fillColor = PointerShape.fill
-        pointer.strokeColor = PointerShape.stroke
-        pointer.lineWidth = PointerShape.lineWidth
+        picture.cornerCurve = .circular
+        stage.contentsGravity = .resize
+        stage.borderWidth = 1
+        stage.masksToBounds = true
+        stage.addSublayer(picture)
         pointer.lineJoin = .round
+        dress(.white)
         pointer.isHidden = true
+        cameraPicture.contentsGravity = .resizeAspectFill
+        cameraPicture.masksToBounds = true
+        cameraPicture.borderColor = CameraBubblePainter.edge
+        cameraHolder.shadowColor = CameraBubblePainter.shadow
+        cameraHolder.isHidden = true
+        cameraHolder.addSublayer(cameraPicture)
+        picture.addSublayer(cameraHolder)
         picture.addSublayer(pointer)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -53,47 +77,119 @@ final class PreviewView: NSView {
 
     override func makeBackingLayer() -> CALayer {
         let layer = CALayer()
-        layer.addSublayer(picture)
+        layer.addSublayer(stage)
         return layer
     }
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = DS.Color.bgCanvas.cgColor
-            picture.borderColor = DS.Color.imageOutline.cgColor
+            stage.borderColor = DS.Color.imageOutline.cgColor
         }
     }
 
     override func layout() {
         super.layout()
-        withoutAnimation { picture.frame = pictureRect }
-        place()
+        let canvas = canvas ?? VideoCanvas(source: RecordingProject.Source(pointWidth: pointSize.width, pointHeight: pointSize.height), background: VideoBackground())
+        let stageRect = fitted(canvas.size)
+        // Each axis scales on its own, as export's does, so the recording lands where the file puts it after the stage's rounding.
+        let kx = stageRect.width / canvas.size.width, ky = stageRect.height / canvas.size.height
+        let f = canvas.frame
+        withoutAnimation {
+            stage.frame = stageRect
+            picture.frame = CGRect(x: f.minX * kx, y: stageRect.height - f.maxY * ky, width: f.width * kx, height: f.height * ky)
+            picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
+        }
+        drawBackdrop(canvas)
+        placeCrop()
+        placeCursor()
+        placeCamera()
     }
 
-    /// Where the picture sits: the recorded area fitted into the view, in the view's bottom-left coordinates.
+    /// Where the recording sits in the view, in the view's bottom-left coordinates, after the last layout.
     var pictureRect: CGRect {
+        let p = picture.frame
+        return p.offsetBy(dx: stage.frame.minX, dy: stage.frame.minY)
+    }
+
+    /// The video fitted into the view, in the view's bottom-left coordinates.
+    private func fitted(_ size: CGSize) -> CGRect {
         let box = bounds.insetBy(dx: inset, dy: inset)
-        guard pointSize.width > 0, pointSize.height > 0, box.width > 0, box.height > 0 else { return .zero }
-        let k = min(box.width / pointSize.width, box.height / pointSize.height)
-        let w = (pointSize.width * k).rounded(), h = (pointSize.height * k).rounded()
+        guard size.width > 0, size.height > 0, box.width > 0, box.height > 0 else { return .zero }
+        let k = min(box.width / size.width, box.height / size.height)
+        let w = (size.width * k).rounded(), h = (size.height * k).rounded()
         return CGRect(x: (box.midX - w / 2).rounded(), y: (box.midY - h / 2).rounded(), width: w, height: h)
     }
 
-    /// The camera picks the part of the picture shown; `contentsRect` counts from the picture's bottom-left, the camera from its top-left.
-    /// Pointer samples count from the recorded area's top-left corner with y down, and move with the camera.
-    private func place() {
+    /// Draws the background at the stage's own pixel size, through the painter export uses.
+    private func drawBackdrop(_ canvas: VideoCanvas) {
+        let scale = window?.backingScaleFactor ?? 2
+        let w = Int((stage.bounds.width * scale).rounded()), h = Int((stage.bounds.height * scale).rounded())
+        if let drawn = drawnBackdrop, drawn.canvas == canvas, drawn.width == w, drawn.height == h { return }
+        drawnBackdrop = (canvas, w, h)
+        let image = w > 0 && h > 0 ? VideoBackdrop.image(canvas, width: w, height: h, picture: backgroundPicture) : nil
+        withoutAnimation { stage.contents = image }
+    }
+
+    /// The crop picks the part of the recording the frame shows; `contentsRect` counts from the picture's bottom-left, the crop from its
+    /// top-left. The frame's rounded clip and the picture layer's bounds stay put, so the zoom happens inside the frame.
+    private func placeCrop() {
+        let crop = state?.crop ?? .full
+        withoutAnimation { picture.contentsRect = CGRect(x: crop.x, y: 1 - crop.y - crop.height, width: crop.width, height: crop.height) }
+    }
+
+    /// Pointer samples count from the recorded area's top-left corner with y down and sit in recording coordinates, so the crop moves
+    /// them. The picture layer counts from its bottom-left. The camera bubble does not follow the crop: it is a separate overlay.
+    private func placeCursor() {
         withoutAnimation {
-            let camera = state?.camera ?? .full
-            picture.contentsRect = CGRect(x: camera.x, y: 1 - camera.y - camera.height, width: camera.width, height: camera.height)
             guard let cursor = state?.cursor, pointSize.width > 0, pointSize.height > 0 else {
                 pointer.isHidden = true
                 return
             }
             let size = picture.bounds.size
-            let kx = size.width / (pointSize.width * camera.width), ky = size.height / (pointSize.height * camera.height)
+            let crop = state?.crop ?? .full
+            let kx = size.width / (pointSize.width * crop.width), ky = size.height / (pointSize.height * crop.height)
+            if cursor.style != pointerStyle { dress(cursor.style) }
             pointer.isHidden = false
-            pointer.position = CGPoint(x: (cursor.x - camera.x * pointSize.width) * kx, y: size.height - (cursor.y - camera.y * pointSize.height) * ky)
+            pointer.opacity = Float(cursor.opacity)
+            pointer.position = CGPoint(x: (cursor.x - crop.x * pointSize.width) * kx,
+                                     y: size.height - (cursor.y - crop.y * pointSize.height) * ky)
             pointer.setAffineTransform(CGAffineTransform(scaleX: cursor.scale * kx, y: -cursor.scale * ky))
+        }
+    }
+
+    private func dress(_ style: CursorStyle) {
+        let look = PointerShape.look(style)
+        pointer.path = look.path
+        pointer.fillColor = look.fill
+        pointer.strokeColor = look.stroke
+        pointer.lineWidth = look.lineWidth
+        pointerStyle = style
+    }
+
+    /// Camera rects count from the area's top-left corner with y down, like pointer samples.
+    private func placeCamera() {
+        withoutAnimation {
+            guard let placed = state?.camera, cameraImage != nil, pointSize.width > 0, pointSize.height > 0 else {
+                cameraHolder.isHidden = true
+                return
+            }
+            let size = picture.bounds.size
+            let kx = size.width / pointSize.width, ky = size.height / pointSize.height
+            let r = placed.rect
+            let frame = CGRect(x: r.minX * kx, y: size.height - r.maxY * ky, width: r.width * kx, height: r.height * ky)
+            let bubble = CGFloat(1 - placed.fill)
+            cameraHolder.isHidden = false
+            cameraHolder.frame = frame
+            cameraHolder.shadowOpacity = Float(0.35 * bubble)
+            cameraHolder.shadowRadius = frame.height * 0.04
+            cameraHolder.shadowOffset = CGSize(width: 0, height: -frame.height * 0.02)
+            cameraHolder.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: min(placed.cornerRadius * kx, frame.height / 2),
+                                             cornerHeight: min(placed.cornerRadius * kx, frame.height / 2), transform: nil)
+            cameraPicture.frame = CGRect(origin: .zero, size: frame.size)
+            cameraPicture.cornerRadius = min(placed.cornerRadius * kx, min(frame.width, frame.height) / 2)
+            cameraPicture.borderWidth = bubble > 0 ? 1 : 0
+            cameraPicture.setAffineTransform(placed.isMirrored ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
         }
     }
 

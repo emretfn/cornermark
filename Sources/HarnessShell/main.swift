@@ -20,7 +20,10 @@ let filmingInput = ProcessInfo.processInfo.environment["CORNERMARK_INPUT_FILM"]
 let trimFilming = ProcessInfo.processInfo.environment["CORNERMARK_TRIM_FILM"]
 let zoomFilming = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_FILM"]
 let zoomCurve = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_CURVE"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve].allSatisfy { $0 == nil } ? 180 : 900)) {
+let cursorFilming = ProcessInfo.processInfo.environment["CORNERMARK_CURSOR_FILM"]
+let cameraFilming = ProcessInfo.processInfo.environment["CORNERMARK_CAMERA_FILM"]
+let backgroundFilming = ProcessInfo.processInfo.environment["CORNERMARK_BACKGROUND_FILM"]
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming].allSatisfy { $0 == nil } ? 180 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
@@ -33,6 +36,18 @@ Task { @MainActor in
     }
     if let zoomFilming {
         let ok = await VideoZoomFilm.run(out: URL(fileURLWithPath: zoomFilming, isDirectory: true))
+        filmDone(ok)
+    }
+    if let cursorFilming {
+        let ok = await CursorFilm.run(out: URL(fileURLWithPath: cursorFilming, isDirectory: true))
+        filmDone(ok)
+    }
+    if let cameraFilming {
+        let ok = await CameraFilm.run(out: URL(fileURLWithPath: cameraFilming, isDirectory: true))
+        filmDone(ok)
+    }
+    if let backgroundFilming {
+        let ok = await VideoBackgroundFilm.run(out: URL(fileURLWithPath: backgroundFilming, isDirectory: true))
         filmDone(ok)
     }
     if let trimFilming {
@@ -97,6 +112,8 @@ Task { @MainActor in
         try await checkRecordingRecovery()
         try await checkGifRecording()
         try await checkRecordingInput()
+        try await checkRecordingCamera()
+        try await checkRecordingAudio()
         try await checkVideoEditor()
         try await checkVideoExport()
         try await checkVideoZoom()
@@ -111,6 +128,8 @@ Task { @MainActor in
     check(NSApp.activationPolicy() == .prohibited, "activation policy still .prohibited")
     check(SilentNoResponder.count == 0, "no key fell through to a system beep", detail: SilentNoResponder.selectors.joined(separator: " "))
     check(LiveInputSource.tapsCreated == 0, "no event tap was created in this run", detail: "\(LiveInputSource.tapsCreated)")
+    check(LiveMicrophoneSource.sessionsOpened == 0 && MicrophoneAccess.requests == 0, "no real audio device was opened and microphone access was never requested",
+          detail: "devices \(LiveMicrophoneSource.sessionsOpened), requests \(MicrophoneAccess.requests)")
     let c = Checks.shared
     print("\nRESULT \(c.passed) passed, \(c.failed) failed")
     exit(c.failed == 0 ? 0 : 1)

@@ -82,8 +82,8 @@ final class ZoomCurveTests: XCTestCase {
 
     func testFrameStateCarriesTheCamera() {
         let project = RecordingProject(source: .init(pointWidth: 100, pointHeight: 50, duration: 6), edits: .init(zooms: [zoom]))
-        XCTAssertEqual(frameState(project, outputTime: 3).camera, ZoomCamera.rect([zoom], at: 3))
-        XCTAssertEqual(frameState(project, outputTime: 0).camera, .full)
+        XCTAssertEqual(frameState(project, outputTime: 3).crop, ZoomCamera.rect([zoom], at: 3))
+        XCTAssertEqual(frameState(project, outputTime: 0).crop, .full)
     }
 }
 
