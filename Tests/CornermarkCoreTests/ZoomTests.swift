@@ -80,6 +80,25 @@ final class ZoomCurveTests: XCTestCase {
         XCTAssertEqual(scale(2 + ZoomCurve.joinGap / 2, [a, apart]), 1, "zooms far apart each return to the whole picture")
     }
 
+    func testTheCropFollowsOutputTimeAfterClipsMapItToTheSource() {
+        let zoom = Zoom(start: 1, end: 3, scale: 2)
+        var project = RecordingProject(source: .init(pointWidth: 100, pointHeight: 50, duration: 8), edits: .init(zooms: [zoom]))
+        project.edits.clips = [Clip(start: 0, end: 1), Clip(start: 4, end: 8)]
+        let state = frameState(project, outputTime: 2)
+        XCTAssertEqual(state.sourceTime, 5, accuracy: 1e-9, "output 2 s is source 5 s once the cut stretch is gone")
+        XCTAssertEqual(state.crop, ZoomCamera.rect([zoom], at: 2), "the zoom is placed on the finished video's timeline, not the recording's")
+        XCTAssertNotEqual(state.crop, ZoomCamera.rect([zoom], at: state.sourceTime))
+    }
+
+    func testTheCameraBubbleIsPlacedWithoutTheCrop() {
+        var project = RecordingProject(source: .init(pointWidth: 100, pointHeight: 50, duration: 6), edits: .init(zooms: [Zoom(start: 0.5, end: 4, scale: 3, center: ZoomPoint(x: 0.8, y: 0.2))]))
+        project.source.camera = RecordingProjectFile.cameraName
+        let bubble = frameState(RecordingProject(source: project.source), outputTime: 2).camera
+        XCTAssertNotNil(bubble)
+        XCTAssertEqual(frameState(project, outputTime: 2).camera, bubble, "a zoom moves the picture and the pointer, never the bubble")
+        XCTAssertGreaterThan(frameState(project, outputTime: 2).crop.scale, 2.9)
+    }
+
     func testFrameStateCarriesTheCamera() {
         let project = RecordingProject(source: .init(pointWidth: 100, pointHeight: 50, duration: 6), edits: .init(zooms: [zoom]))
         XCTAssertEqual(frameState(project, outputTime: 3).crop, ZoomCamera.rect([zoom], at: 3))

@@ -270,6 +270,36 @@ func checkVideoZoom() async throws {
         check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoomed file frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     } else { check(false, "the harness decoder is known") }
+    section("video editor: zoom, background and pointer together match the preview")
+    let plainCursor = editor.state.project.edits.cursor
+    editor.setCursor(CursorSettings(scale: 2.4, style: .black, motion: .smooth))
+    var framed = editor.state.project.edits.background
+    framed.fill = .gradient(index: 6)
+    framed.padding = 48; framed.shadow = 70; framed.cornerRadius = 20
+    editor.setBackground(framed)
+    let combined = editor.state.project
+    let combinedOut = w.root.appendingPathComponent("zoomed-framed.mp4")
+    let combinedReport = try await VideoExporter.export(project: combined, video: editor.videoURL, settings: ExportSettings(), to: combinedOut)
+    if let decoder {
+        // Before any zoom, partway into the first one, holding at its level, and partway out of the second.
+        let times = [30, 81, 120, 339].map { Double($0) / 60 }
+        let rows = await measureParity(editor, frames: decoder, clock: clock, export: combinedOut, plan: combinedReport.plan, project: combined, times: times,
+                                       name: "parity-zoom-framed")
+        for r in rows {
+            let state = frameState(combined, outputTime: r.time)
+            print(String(format: "PARITY zoom+background+cursor t=%.2f scale=%.3f pointer=%@ preview-vs-drawn %@ | preview-vs-file %@", r.time, state.crop.scale,
+                         state.cursor == nil ? "hidden" : "shown", r.drawn.description, r.encoded.description))
+        }
+        check(rows.count == times.count && times.allSatisfy { frameState(combined, outputTime: $0).cursor != nil }, "the pointer is on screen at each measured moment")
+        check(times.contains { (1.01...1.99).contains(frameState(combined, outputTime: $0).crop.scale) }, "one measured moment is partway through a zoom")
+        check(rows.count == times.count && rows.allSatisfy { $0.drawn.mean < 0.5 && $0.drawn.over16 < 0.001 },
+              "zoom, background and pointer: the export draws what the preview shows, before compression", detail: rows.map { $0.drawn.description }.joined(separator: "; "))
+        check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoom, background and pointer: the file's frames match the preview within compression loss",
+              detail: rows.map { $0.encoded.description }.joined(separator: "; "))
+    } else { check(false, "the harness decoder is known") }
+    editor.setBackground(VideoBackground())
+    editor.setCursor(plainCursor)
+
     if let dir = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_EXPORT"] {
         let copy = URL(fileURLWithPath: dir).appendingPathComponent("zoom-export.mp4")
         try? FileManager.default.removeItem(at: copy)
