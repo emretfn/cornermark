@@ -26,6 +26,8 @@ public final class Button: Pressable {
 
     public override var title: String {
         didSet {
+            // The spoken name follows the title, unless a caller gave the control a name of its own.
+            if oldValue != title, accessibilityLabel() == oldValue { setAccessibilityLabel(title) }
             invalidateIntrinsicContentSize()
             needsDisplay = true
         }

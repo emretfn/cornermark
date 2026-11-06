@@ -50,6 +50,14 @@ private func hosted(_ view: NSView) -> NSWindow {
     return window
 }
 
+private var windows: [NSWindow] = []
+
+/// Puts `view` in a real window, where constraints and the layout direction interact the way they do in the app.
+private func inWindow<T: NSView>(_ view: T) -> T {
+    windows.append(hosted(view))
+    return view
+}
+
 func checkDirection() {
     section("Right to left: components mirror their geometry")
     checkRedraws()
@@ -89,7 +97,7 @@ private func checkRedraws() {
 }
 
 private func checkButtonLike() {
-    let button = Button(title: "Record MP4", variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}")
+    let button = inWindow(Button(title: "Record MP4", variant: .primary, size: .large, symbol: "record.circle", shortcut: "\u{21A9}"))
     let width = button.frame.width
     let before = button.contentRects
     check("a Button in left to right reads symbol, title, shortcut from the left",
@@ -105,13 +113,24 @@ private func checkButtonLike() {
     button.applyLanguageDirection(ltr)
     check("the same Button reads from the left again after the language goes back", button.contentRects.symbol == before.symbol)
 
-    let wide = Button(title: "Done", variant: .secondary)
+    let wide = inWindow(Button(title: "Done", variant: .secondary))
     wide.frame.size.width = 200
     wide.applyLanguageDirection(rtl)
     check("a wide Button centres its content in both directions", abs(wide.contentRects.title.midX - 100) < 1)
 
-    let side = SidebarItem(symbol: "gearshape", title: "General")
+    let side = inWindow(SidebarItem(symbol: "gearshape", title: "General"))
     side.frame.size.width = 200
+    check("a SidebarItem's accessibility label follows its title", { side.title = "Advanced"; return side.accessibilityLabel() == "Advanced" }())
+    side.title = "General"
+    let named = Button(title: "Done")
+    named.setAccessibilityLabel("Done, Return")
+    named.title = "Finish"
+    let plain = Button(title: "Done")
+    plain.title = "Finish"
+    check("a Button's accessibility label follows its title, unless a caller named it", named.accessibilityLabel() == "Done, Return" && plain.accessibilityLabel() == "Finish")
+    let titled = Checkbox(title: "Shadow")
+    titled.title = "Glow"
+    check("a Checkbox's accessibility label follows its title", titled.accessibilityLabel() == "Glow")
     let ltrSymbol = side.symbolRect, ltrTitle = side.titleRect
     side.applyLanguageDirection(rtl)
     check("a SidebarItem's symbol leads the title on the left, and on the right in right to left",
@@ -121,14 +140,14 @@ private func checkButtonLike() {
           { side.isSelected = false; let off = side.accessibilityValue() as? String; L10n.setPseudoLanguage(.ar) { "\u{2039}\($0)\u{203A}" }
               defer { L10n.setLanguage(.en) }; return off == "Not selected" && side.accessibilityValue() as? String == "\u{2039}Not selected\u{203A}" }())
 
-    let badge = Badge(text: "Saved", symbol: "checkmark.circle", tone: .success)
+    let badge = inWindow(Badge(text: "Saved", symbol: "checkmark.circle", tone: .success))
     badge.frame.size.width = 140
     let leading = badge.symbolRect
     badge.applyLanguageDirection(rtl)
     check("a Badge's symbol leads its text on the left, and on the right in right to left",
           leading.minX == DS.Space.s8 && badge.symbolRect.maxX == 140 - DS.Space.s8 && badge.symbolRect.minX > badge.textRect.minX)
 
-    let icon = IconButton(symbol: "timer", label: "Timer", size: .large)
+    let icon = inWindow(IconButton(symbol: "timer", label: "Timer", size: .large))
     icon.marksSelection = true
     icon.isSelected = true
     let right = icon.markFrame
@@ -139,7 +158,7 @@ private func checkButtonLike() {
 }
 
 private func checkCheckbox() {
-    let box = Checkbox(title: "Show shadow")
+    let box = inWindow(Checkbox(title: "Show shadow"))
     box.frame.size.width += 40
     box.state = .on
     let width = box.frame.width
@@ -159,7 +178,7 @@ private func checkCheckbox() {
 }
 
 private func checkSegmentsDirection() {
-    let tiles = Segments(labels: ["One", "Two", "Three"])
+    let tiles = inWindow(Segments(labels: ["One", "Two", "Three"]))
     tiles.dividers = [0]
     tiles.setToolTip("first", forSegment: 0)
     tiles.setToolTip("third", forSegment: 2)
@@ -179,7 +198,7 @@ private func checkSegmentsDirection() {
     let tip = { (i: Int) in tiles.view(tiles, stringForToolTip: 0, point: centre(i), userData: nil) }
     check("tooltips follow the mirrored tiles when the direction changes on a live control", tip(0) == "first" && tip(2) == "third")
 
-    let track = Segments(labels: ["Light", "Dark"], width: 160, style: .track)
+    let track = inWindow(Segments(labels: ["Light", "Dark"], width: 160, style: .track))
     track.selectedSegment = 0
     check("a track's thumb sits under the first choice, on the left", track.thumbRect!.minX < track.bounds.midX && track.segment(at: CGPoint(x: 1, y: 14)) == 0)
     track.applyLanguageDirection(rtl)
