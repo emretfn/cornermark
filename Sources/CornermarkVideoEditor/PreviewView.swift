@@ -31,12 +31,28 @@ final class PreviewView: NSView {
             placeCamera()
         }
     }
+    /// The whole frame as export draws it, over everything else. Set while paused on a frame that motion blur averages, which layers cannot draw.
+    var still: CGImage? {
+        didSet {
+            guard still !== oldValue else { return }
+            withoutAnimation {
+                stillLayer.contents = still
+                stillLayer.isHidden = still == nil
+            }
+        }
+    }
+    /// The stage in pixels, the size a still is drawn at.
+    var stagePixelSize: (width: Int, height: Int) {
+        let scale = window?.backingScaleFactor ?? 2
+        return (Int((stage.bounds.width * scale).rounded()), Int((stage.bounds.height * scale).rounded()))
+    }
     /// Room around the picture. None in preview-only mode, where the picture fills the window.
     var inset: CGFloat = DS.Space.s16 { didSet { needsLayout = true } }
 
     /// The whole finished video. As the backing layer's first sublayer it is what a harness renders as the preview's frame.
     private let stage = CALayer()
     private let picture = CALayer()
+    private let stillLayer = CALayer()
     private let pointer = CAShapeLayer()
     private var pointerStyle = CursorStyle.white
     private var rings: [RingLayer] = []
@@ -61,6 +77,9 @@ final class PreviewView: NSView {
         stage.borderWidth = 1
         stage.masksToBounds = true
         stage.addSublayer(picture)
+        stillLayer.contentsGravity = .resize
+        stillLayer.isHidden = true
+        stage.addSublayer(stillLayer)
         pointer.lineJoin = .round
         dress(.white)
         pointer.isHidden = true
@@ -105,6 +124,7 @@ final class PreviewView: NSView {
         let f = canvas.frame
         withoutAnimation {
             stage.frame = stageRect
+            stillLayer.frame = stage.bounds
             picture.frame = CGRect(x: f.minX * kx, y: stageRect.height - f.maxY * ky, width: f.width * kx, height: f.height * ky)
             picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
             badge.frame = picture.bounds

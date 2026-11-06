@@ -19,6 +19,7 @@ final class InspectorView: NSView {
     let cameraPanel = CameraPanel()
     let keystrokesPanel = KeystrokesPanel()
     let audioPanel = AudioPanel()
+    let motionBlurPanel = MotionBlurPanel()
     /// The sections whose settings this recording can use: it has a camera, keystrokes or sound. The others show a note.
     var available: Set<EditorSection> = []
     private var recordingPanels: [EditorSection: SettingsPanel] { [.camera: cameraPanel, .keystrokes: keystrokesPanel, .audio: audioPanel] }
@@ -66,6 +67,7 @@ final class InspectorView: NSView {
         backgroundPanel.isHidden = section != .background || zoom != nil
         backgroundPanel.show(background, picture: picture)
         clicksPanel.isHidden = section != .clicks || zoom != nil || !note.isEmpty
+        motionBlurPanel.isHidden = section != .motionBlur || zoom != nil
         clicksPanel.show(cursor: cursor, clicks: clicks, hasClicks: hasClicks)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
@@ -113,8 +115,7 @@ final class InspectorView: NSView {
         case .keystrokes: return "This recording has no keystrokes. Turn on Show keystrokes in Recording settings before you record."
         case .audio: return "This recording has no sound. Turn on Record microphone or Record system audio in Audio settings before you record."
         case .camera: return "This recording has no camera. Turn on Show camera in Camera settings before you record."
-        case .background: return ""
-        case .motionBlur: return "Motion blur is not available yet."
+        case .background, .motionBlur: return ""
         }
     }
 
@@ -211,7 +212,7 @@ final class InspectorView: NSView {
         let divider = Separator(axis: .vertical)
         let edge = Separator(axis: .vertical)
         backgroundPanel.isHidden = true
-        let panels = Array(recordingPanels.values)
+        let panels = Array(recordingPanels.values) + [motionBlurPanel]
         panels.forEach { $0.isHidden = true }
         clicksPanel.isHidden = true
         clicksPanel.onCursor = { [unowned self] in onCursor($0) }

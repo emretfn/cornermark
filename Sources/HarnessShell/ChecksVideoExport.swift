@@ -121,7 +121,7 @@ func checkVideoExport() async throws {
         return VideoEditorWindowController(folder: folder, project: project, frames: decoder, clock: { clock.now })
     }
     guard let recorded = await recordOnce(w, "display=1&x=0&y=0&width=640&height=360"), let folder = recorded.video?.location,
-          let editor = c.openVideoEditor(folder), let window = editor.window, let content = window.contentView else {
+          (try? turnOffBlur(in: folder)) != nil, let editor = c.openVideoEditor(folder), let window = editor.window, let content = window.contentView else {
         return check(false, "a project is recorded and opens in the editor")
     }
     defer { c.closeAllEditors() }
@@ -357,6 +357,7 @@ private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: Scripted
     // The Command key, a moment after the third click, puts a badge on screen with the rings. Command keys leave the pointer showing.
     typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false),
                          KeyEvent(t: 1.6, label: "\u{2318}K", isCommand: true)]
+    typed.edits.motionBlur.scope = .off
     try RecordingProjectFile.write(typed, to: copy)
     guard let editor = c.openVideoEditor(copy), let frames = decoder(copy) else { return check(false, "the moving-pointer copy opens in the editor") }
     defer { editor.window?.close() }

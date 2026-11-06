@@ -412,7 +412,7 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
     for (i, section) in EditorSection.allCases.enumerated() {
         railButtons[i].performClick(nil)
         let only = railButtons.enumerated().allSatisfy { $0.element.isSelected == ($0.offset == i) }
-        let hasSettings = section == .cursor || section == .clicks || section == .background
+        let hasSettings = section == .cursor || section == .clicks || section == .background || section == .motionBlur
         let shows = hasSettings ? (show?.isHidden == (section != .cursor) && note?.isHidden == true)
             : (show?.isHidden == true && note?.isHidden == false && note?.stringValue.isEmpty == false)
         check(editor.state.section == section && title?.stringValue == section.title && only && shows,

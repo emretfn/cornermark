@@ -138,6 +138,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private var awaitingSince: Double?
     static let frameWait = 0.5
     private var resumeAfterScrub = false
+    /// A drag on the ruler under way. The paused preview waits for its end to draw a blurred frame, which costs several full drawings.
+    private var isScrubbing = false
     private var enteredFullScreenForPreview = false
     private var preparation: Task<Void, Never>?
 
@@ -270,6 +272,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         inspector.keystrokesPanel.onChange = { [unowned self] in setKeystrokes($0) }
         inspector.audioPanel.onChange = { [unowned self] in setAudio($0, coalescing: $1) }
         inspector.audioPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
+        inspector.motionBlurPanel.onChange = { [unowned self] in setMotionBlur($0, coalescing: $1) }
+        inspector.motionBlurPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
         transportBar.onCommand = { [unowned self] command in
             switch command {
             case .start: seek(to: 0)
@@ -372,6 +376,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func setAudio(_ audio: AudioEdits, coalescing key: CoalescingKey? = nil) {
         var edits = state.project.edits
         edits.audio = audio
+        commit(edits, coalescing: key)
+    }
+
+    public func setMotionBlur(_ blur: MotionBlur, coalescing key: CoalescingKey? = nil) {
+        var edits = state.project.edits
+        edits.motionBlur = blur
         commit(edits, coalescing: key)
     }
 
@@ -741,6 +751,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             state.transport.pause(now: now)
         }
         state.transport.seek(to: t, now: now)
+        isScrubbing = phase != .ended
         // Letting go at the end stays there instead of starting over from the beginning.
         if phase == .ended && resumeAfterScrub && t < state.transport.duration { state.transport.play(now: now) }
         awaitFrame()
@@ -911,6 +922,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         preview.highlight = state.project.edits.clicks
         preview.state = frame
         preview.canvas = state.project.canvas
+        showStill(at: t, frame)
         timeline.time = t
         updateTransportBar(t)
         let waiting = awaitingSince.map { now - $0 < Self.frameWait } ?? false
@@ -918,10 +930,76 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         displayLink?.isPaused = !(state.transport.isPlaying || waiting)
     }
 
+    /// Paused on a frame that motion blur averages, the preview shows export's drawing of it at the stage's size once it is drawn. Playing,
+    /// it shows the sharp frame: averaging every frame live would cost several full drawings per tick.
+    private func showStill(at t: Double, _ frame: FrameState) {
+        let project = state.project
+        func clear() { _ = still.latest.next(); preview.still = nil; still.key = nil }
+        guard !state.transport.isPlaying, !isScrubbing, let source = preview.image else { return clear() }
+        let size = preview.stagePixelSize
+        guard project.edits.motionBlur.scope != .off, size.width > 0, size.height > 0 else { return clear() }
+        if still.renderer?.width != size.width || still.renderer?.height != size.height || still.edits != project.edits {
+            still.renderer = ExportFrameRenderer(width: size.width, height: size.height, project: project, folder: folder)
+            still.edits = project.edits
+        }
+        guard let renderer = still.renderer else { return clear() }
+        let samples = frameSamples(project, outputTime: t, fps: max(project.source.fps, 1), pixelsAcross: renderer.frameRect.width)
+        guard samples.count > 1 else { return clear() }
+        let camera = frame.camera == nil ? nil : preview.cameraImage
+        let key = StillKey(samples: samples, source: ObjectIdentifier(source), camera: camera.map(ObjectIdentifier.init), width: size.width, height: size.height,
+                           edits: project.edits)
+        guard key != still.key else { return }
+        // A new moment shows its sharp layers until its blurred frame is ready; a new blur setting keeps the last blurred frame meanwhile.
+        if still.key?.samples.first != samples.first { preview.still = nil }
+        still.key = key
+        let generation = still.latest.next(), latest = still.latest, accumulator = still.accumulator
+        // Several full drawings take tens of milliseconds, so they run off the main thread, and a request already replaced is skipped.
+        stillQueue.async { [weak self] in
+            guard latest.isCurrent(generation) else { return }
+            let started = Date()
+            let image = renderer.image(samples, source: source, camera: camera, accumulator: accumulator)
+            let milliseconds = Date().timeIntervalSince(started) * 1000
+            DispatchQueue.main.async {
+                guard let self, latest.isCurrent(generation) else { return }
+                self.preview.still = image
+                self.stillMilliseconds = milliseconds
+            }
+        }
+    }
+
+    /// Returns once the blurred frame asked for so far is on the preview, or was skipped.
+    public func previewSettled() async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in stillQueue.async { DispatchQueue.main.async { done.resume() } } }
+    }
+
+    /// How long the last blurred frame took to draw.
+    public private(set) var stillMilliseconds: Double?
+    private let stillQueue = DispatchQueue(label: "video.preview.still", qos: .userInitiated)
+
+    final class Generation: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func next() -> Int { lock.lock(); defer { lock.unlock() }; value += 1; return value }
+        func isCurrent(_ n: Int) -> Bool { lock.lock(); defer { lock.unlock() }; return value == n }
+    }
+
+    struct StillKey: Equatable {
+        var samples: [FrameState]
+        var source: ObjectIdentifier
+        var camera: ObjectIdentifier?
+        var width: Int
+        var height: Int
+        var edits: RecordingProject.Edits
+    }
+    private var still: (key: StillKey?, renderer: ExportFrameRenderer?, edits: RecordingProject.Edits?, accumulator: SampleAccumulator, latest: Generation) =
+        (nil, nil, nil, SampleAccumulator(), Generation())
+
     /// The picture the preview shows now, nil before the first frame arrives.
     public var previewImage: CGImage? { preview.image }
     /// The frame the preview drew last.
     public var previewState: FrameState? { preview.state }
+    /// The blurred frame the paused preview shows over its layers, nil when it shows them.
+    public var previewStill: CGImage? { preview.still }
     /// How many click rings the preview shows, one layer each.
     public var previewRingLayerCount: Int { preview.visibleRingCount }
 
@@ -937,6 +1015,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         inspector.cameraPanel.show(project.edits.camera)
         inspector.keystrokesPanel.show(project.edits.keystrokes)
         inspector.audioPanel.show(project.edits.audio, tracks: project.source.audioTracks)
+        inspector.motionBlurPanel.show(project.edits.motionBlur)
         frames.setGains(Dictionary(uniqueKeysWithValues: AudioTrack.allCases.map { ($0, project.edits.audio[$0].gain) }))
         let size = ExportPlan(project: project, settings: ExportSettings())
         inspector.backgroundPanel.videoSize = CGSize(width: size.width, height: size.height)

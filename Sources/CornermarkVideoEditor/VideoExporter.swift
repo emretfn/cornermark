@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import CoreGraphics
 import CornermarkCore
@@ -18,6 +19,9 @@ public struct ExportReport: Equatable, Sendable {
     public var renderSeconds: Double
     /// The recording's microphone and system sound, mixed into the file's one sound track.
     public var hasAudio = false
+    /// Frames drawn as an average of several moments, and the drawings made for the whole file.
+    public var blurredFrames = 0
+    public var drawings = 0
 }
 
 extension ExportPlan {
@@ -49,18 +53,22 @@ public struct ExportFrameRenderer: @unchecked Sendable {
 
     /// `folder` is the project folder, where a background picture the viewer added lives.
     public init(plan: ExportPlan, project: RecordingProject, folder: URL?) {
-        width = plan.width; height = plan.height
+        self.init(width: plan.width, height: plan.height, project: project, folder: folder)
+    }
+
+    public init(width: Int, height: Int, project: RecordingProject, folder: URL?) {
+        self.width = width; self.height = height
         pointSize = CGSize(width: max(project.source.pointWidth, 1), height: max(project.source.pointHeight, 1))
         canvas = project.canvas
         highlight = project.edits.clicks
         keystrokes = project.edits.keystrokes
-        backdrop = VideoBackdrop.image(canvas, width: plan.width, height: plan.height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
+        backdrop = VideoBackdrop.image(canvas, width: width, height: height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
     }
 
     public static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
     /// The recording's rectangle in the bitmap, y up.
-    var frameRect: CGRect {
+    public var frameRect: CGRect {
         let sx = CGFloat(width) / canvas.size.width, sy = CGFloat(height) / canvas.size.height
         let f = canvas.frame
         return CGRect(x: f.minX * sx, y: CGFloat(height) - f.maxY * sy, width: f.width * sx, height: f.height * sy)
@@ -115,6 +123,53 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         draw(state, source: source, camera: camera, in: ctx)
         return ctx.makeImage()
     }
+
+    /// The average of `samples`, the frame motion blur draws. One sample is the sharp frame.
+    public func image(_ samples: [FrameState], source: CGImage?, camera: CGImage? = nil, accumulator: SampleAccumulator = SampleAccumulator()) -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: Self.colorSpace,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        accumulator.draw(samples, with: self, source: source, camera: camera, in: ctx)
+        return ctx.makeImage()
+    }
+}
+
+/// Averages several drawings of a frame into one, byte by byte in premultiplied sRGB. Keeps its buffers between frames of one size.
+public final class SampleAccumulator {
+    private var scratch: CGContext?
+    private var sum: [Float] = []
+    private var drawing: [Float] = []
+
+    public init() {}
+
+    /// One sample draws straight into `ctx`, as a frame without blur does.
+    public func draw(_ samples: [FrameState], with renderer: ExportFrameRenderer, source: CGImage?, camera: CGImage?, in ctx: CGContext) {
+        guard samples.count > 1, let out = ctx.data?.assumingMemoryBound(to: UInt8.self), let scratch = scratch(like: ctx),
+              let drawn = scratch.data?.assumingMemoryBound(to: UInt8.self) else {
+            if let sharp = samples.first { renderer.draw(sharp, source: source, camera: camera, in: ctx) }
+            return
+        }
+        let count = vDSP_Length(sum.count)
+        vDSP_vclr(&sum, 1, count)
+        for sample in samples {
+            renderer.draw(sample, source: source, camera: camera, in: scratch)
+            vDSP_vfltu8(drawn, 1, &drawing, 1, count)
+            vDSP_vadd(drawing, 1, sum, 1, &sum, 1, count)
+        }
+        var scale = 1 / Float(samples.count), low: Float = 0, high: Float = 255
+        vDSP_vsmul(sum, 1, &scale, &drawing, 1, count)
+        vDSP_vclip(drawing, 1, &low, &high, &drawing, 1, count)
+        vDSP_vfixru8(drawing, 1, out, 1, count)
+    }
+
+    private func scratch(like ctx: CGContext) -> CGContext? {
+        if let scratch, scratch.width == ctx.width, scratch.height == ctx.height, scratch.bytesPerRow == ctx.bytesPerRow { return scratch }
+        scratch = CGContext(data: nil, width: ctx.width, height: ctx.height, bitsPerComponent: 8, bytesPerRow: ctx.bytesPerRow, space: ExportFrameRenderer.colorSpace,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        let count = scratch == nil ? 0 : ctx.bytesPerRow * ctx.height
+        sum = [Float](repeating: 0, count: count)
+        drawing = [Float](repeating: 0, count: count)
+        return scratch
+    }
 }
 
 /// The file appears at `output` only when it is complete; cancelling or failing leaves nothing there.
@@ -139,12 +194,13 @@ public enum VideoExporter {
                                            duration: plan.duration)
         defer { mix?.cancel() }
         do {
-            let frames = try await render(project: project, video: video, plan: plan, encoder: encoder, sink: Sink(writer: writer, audio: mix), progress: progress)
+            let drawn = try await render(project: project, video: video, plan: plan, encoder: encoder, sink: Sink(writer: writer, audio: mix), progress: progress)
             let duration = try await AVURLAsset(url: partial).load(.duration).seconds
             let bytes = ((try? FileManager.default.attributesOfItem(atPath: partial.path))?[.size] as? NSNumber)?.int64Value ?? 0
             try FileManager.default.moveItem(at: partial, to: output)
-            return ExportReport(url: output, plan: plan, framesWritten: frames, duration: duration, bytes: bytes, usesHardware: encoder.usesHardware,
-                                encoderID: encoder.encoderID, renderSeconds: Date().timeIntervalSince(started), hasAudio: mix != nil)
+            return ExportReport(url: output, plan: plan, framesWritten: plan.frameCount, duration: duration, bytes: bytes, usesHardware: encoder.usesHardware,
+                                encoderID: encoder.encoderID, renderSeconds: Date().timeIntervalSince(started), hasAudio: mix != nil,
+                                blurredFrames: drawn.blurred, drawings: drawn.drawings)
         } catch {
             if writer.status == .writing { writer.cancelWriting() }
             throw error
@@ -159,7 +215,7 @@ public enum VideoExporter {
     }
 
     private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, sink: Sink,
-                               progress: @Sendable (Double) -> Void) async throws -> Int {
+                               progress: @Sendable (Double) -> Void) async throws -> (blurred: Int, drawings: Int) {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
         let timeline = project.timeline
@@ -170,12 +226,17 @@ public enum VideoExporter {
         var cameraReader: ClipReader?
         let renderer = ExportFrameRenderer(plan: plan, project: project, folder: video.deletingLastPathComponent())
         var reader: ClipReader?
+        let accumulator = SampleAccumulator()
+        var blurred = 0, drawings = 0
         var reported = -1
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.fps))
         for k in 0..<plan.frameCount {
             try Task.checkCancellation()
             let t = plan.time(ofFrame: k)
-            let state = frameState(project, outputTime: t)
+            let samples = frameSamples(project, outputTime: t, fps: plan.fps, pixelsAcross: renderer.frameRect.width)
+            let state = samples[0]
+            if samples.count > 1 { blurred += 1 }
+            drawings += samples.count
             let clip = timeline.clipIndex(at: t)
             if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
             let current = reader?.image(at: state.sourceTime)
@@ -185,7 +246,7 @@ public enum VideoExporter {
                 camera = cameraReader?.image(at: state.sourceTime)
             }
             let buffer = try encoder.makeBuffer()
-            try draw(into: buffer) { renderer.draw(state, source: current, camera: camera, in: $0) }
+            try draw(into: buffer) { accumulator.draw(samples, with: renderer, source: current, camera: camera, in: $0) }
             try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
             try await sink.append(encoder.take())
             let percent = (k + 1) * 100 / plan.frameCount
@@ -194,7 +255,7 @@ public enum VideoExporter {
         try encoder.finish()
         try await sink.append(encoder.take())
         try await sink.finish()
-        return plan.frameCount
+        return (blurred, drawings)
     }
 
     private static func draw(into buffer: CVPixelBuffer, _ body: (CGContext) -> Void) throws {

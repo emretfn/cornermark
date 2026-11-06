@@ -83,6 +83,7 @@ func checkVideoZoom() async throws {
     typed.events.keys = [KeyEvent(t: 0.3, label: "\u{2318}K", isCommand: true), KeyEvent(t: 1.2, label: "\u{2318}J", isCommand: true),
                          KeyEvent(t: 1.9, label: "\u{2318}H", isCommand: true), KeyEvent(t: 5.5, label: "\u{2318}G", isCommand: true)]
     typed.edits.keystrokes.isVisible = false
+    typed.edits.motionBlur.scope = .off
     try RecordingProjectFile.write(typed, to: folder)
     guard let editor = w.coordinator.openVideoEditor(folder), let window = editor.window, let content = window.contentView,
           let lane = editor.view(identifier: "video.zoomLane") as? ZoomLaneView else {
@@ -292,6 +293,32 @@ func checkVideoZoom() async throws {
         check(rows.count == times.count && rows.allSatisfy { $0.encoded.psnr > 35 }, "zoomed file frames match the preview within compression loss",
               detail: rows.map { $0.encoded.description }.joined(separator: "; "))
     } else { check(false, "the harness decoder is known") }
+    section("video export: a following pan is blurred")
+    // Blur reads the crop through frameState, so a pan made by following the pointer smears like any other camera move.
+    var panning = project
+    panning.edits.motionBlur = MotionBlur(scope: .zooms)
+    let pan = Array(Int(1.8 * 60)...Int(3.7 * 60)).map { Double($0) / 60 }.max { a, b in
+        func step(_ t: Double) -> Double { let x = ZoomCamera.rect(panning, at: t), y = ZoomCamera.rect(panning, at: t + 1.0 / 60); return hypot(y.x - x.x, y.y - x.y) }
+        return step(a) < step(b)
+    } ?? 2
+    let panOut = w.root.appendingPathComponent("zoomed-follow-blur.mp4")
+    let panReport = try await VideoExporter.export(project: panning, video: editor.videoURL, settings: ExportSettings(), to: panOut)
+    let panRenderer = ExportFrameRenderer(plan: panReport.plan, project: panning, folder: editor.folder)
+    let panSamples = frameSamples(panning, outputTime: pan, fps: panReport.plan.fps, pixelsAcross: panRenderer.frameRect.width)
+    let crops = panSamples.map(\.crop)
+    check(panSamples.count > 1 && crops.allSatisfy { abs($0.width - crops[0].width) < 1e-12 && $0.width < 1 }
+          && hypot((crops.last?.x ?? 0) - crops[0].x, (crops.last?.y ?? 0) - crops[0].y) > 1e-4,
+          String(format: "at %.3f s the level holds and the following camera pans inside the shutter window, so export averages %d moments", pan, panSamples.count),
+          detail: crops.map { String(format: "(%.4f,%.4f)", $0.x, $0.y) }.joined(separator: " "))
+    if let source = await decodedFrame(editor.videoURL, at: panSamples[0].sourceTime),
+       let reference = averageOf(panSamples.compactMap { panRenderer.image($0, source: source) }),
+       let sharp = panRenderer.image(panSamples[0], source: source), let file = await decodedFrame(panOut, at: pan),
+       let toReference = PixelDifference(file, reference, edge: 4), let toSharp = PixelDifference(file, sharp, edge: 4) {
+        print(String(format: "BLUR follow pan t=%.3f samples=%d file-vs-blurred-reference %@ | file-vs-sharp %@", pan, panSamples.count, toReference.description, toSharp.description))
+        check(toReference.psnr > 35 && toSharp.mean > toReference.mean, "the file's frame is the blurred average of the pan, not the sharp frame",
+              detail: "reference \(toReference.description) vs sharp \(toSharp.description)")
+    } else { check(false, "the following pan's blurred frame could be measured") }
+
     section("video editor: zoom, background, pointer and keystroke badge together match the preview")
     let plainCursor = editor.state.project.edits.cursor
     editor.setCursor(CursorSettings(scale: 2.4, style: .black, motion: .smooth))
