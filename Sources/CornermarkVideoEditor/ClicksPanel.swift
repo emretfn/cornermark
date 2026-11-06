@@ -1,20 +1,21 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 final class ClicksPanel: NSView {
     var onCursor: (CursorSettings) -> Void = { _ in }
     var onClicks: (ClickHighlight) -> Void = { _ in }
 
     private let note = NSTextField(wrappingLabelWithString: "")
-    private let press = Checkbox(title: "Press effect")
+    private let press = Checkbox(title: tr("Press effect"))
     private let pressNote = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
-    private let ripple = Checkbox(title: "Ripple")
-    private let rippleNote = NSTextField.label("A ring marks each click.", style: DS.Text.caption, color: DS.Color.textSecondary)
+    private let ripple = Checkbox(title: tr("Ripple"))
+    private let rippleNote = NSTextField.label(tr("A ring marks each click."), style: DS.Text.caption, color: DS.Color.textSecondary)
     private let color = Select()
     private let size = Segments(labels: ClickHighlight.Size.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth, style: .track)
     private let style = Segments(labels: ClickHighlight.Style.allCases.map(ClicksPanel.title), width: SettingsPanel.controlWidth, style: .track)
-    private let motion = Segments(labels: ["Grow", "Still"], width: SettingsPanel.controlWidth, style: .track)
+    private let motion = Segments(labels: [tr("Grow"), tr("Still")], width: SettingsPanel.controlWidth, style: .track)
     private var ringLabels: [NSTextField] = []
     private var cursor = CursorSettings()
     private var clicks = ClickHighlight()
@@ -37,10 +38,10 @@ final class ClicksPanel: NSView {
         style.selectedSegment = ClickHighlight.Style.allCases.firstIndex(of: clicks.style) ?? 0
         motion.selectedSegment = clicks.animates ? 0 : 1
         press.isEnabled = hasClicks && cursor.isVisible
-        pressNote.stringValue = cursor.isVisible || !hasClicks ? "The pointer shrinks at each click."
-            : "Turn on Show cursor to use it."
-        pressNote.toolTip = cursor.isVisible || !hasClicks ? "The pointer shrinks for a moment at each click."
-            : "Turn on Show cursor in the Cursor section to use the press effect."
+        pressNote.stringValue = cursor.isVisible || !hasClicks ? tr("The pointer shrinks at each click.")
+            : tr("Turn on Show cursor to use it.")
+        pressNote.toolTip = cursor.isVisible || !hasClicks ? tr("The pointer shrinks for a moment at each click.")
+            : tr("Turn on Show cursor in the Cursor section to use the press effect.")
         ripple.isEnabled = hasClicks
         let ringOn = hasClicks && clicks.isVisible
         for control in [color, size, style, motion] as [NSControl] { control.isEnabled = ringOn }
@@ -52,31 +53,31 @@ final class ClicksPanel: NSView {
 
     static func title(_ size: ClickHighlight.Size) -> String {
         switch size {
-        case .small: return "Small"
-        case .medium: return "Medium"
-        case .large: return "Large"
+        case .small: return tr("Small")
+        case .medium: return tr("Medium")
+        case .large: return tr("Large")
         }
     }
 
     static func title(_ style: ClickHighlight.Style) -> String {
         switch style {
-        case .outline: return "Outline"
-        case .filled: return "Filled"
+        case .outline: return tr("Outline")
+        case .filled: return tr("Filled")
         }
     }
 
     static func title(_ color: ClickHighlight.Color) -> String {
         switch color {
-        case .lemon: return "Lemon"
-        case .white: return "White"
-        case .orange: return "Orange"
-        case .red: return "Red"
-        case .green: return "Green"
+        case .lemon: return tr("Lemon")
+        case .white: return tr("White")
+        case .orange: return tr("Orange")
+        case .red: return tr("Red")
+        case .green: return tr("Green")
         }
     }
 
     private func build() {
-        note.stringValue = "This recording has no clicks. Cornermark keeps clicks when Input Monitoring is allowed."
+        note.stringValue = tr("This recording has no clicks. Cornermark keeps clicks when Input Monitoring is allowed.")
         for caption in [note, pressNote, rippleNote] {
             caption.font = DS.Text.caption.font
             caption.textColor = DS.Color.textSecondary
@@ -94,20 +95,20 @@ final class ClicksPanel: NSView {
             color.lastItem?.image = Self.swatch(c)
         }
         color.setAccessibilityIdentifier("video.clicks.color")
-        color.setAccessibilityLabel("Ripple color")
+        color.setAccessibilityLabel(tr("Ripple color"))
         color.target = self
         color.action = #selector(ringChanged)
-        for (control, id, name) in [(size, "video.clicks.size", "Ripple size"), (style, "video.clicks.style", "Ripple style"),
-                                    (motion, "video.clicks.motion", "Ripple motion")] {
+        for (control, id, name) in [(size, "video.clicks.size", tr("Ripple size")), (style, "video.clicks.style", tr("Ripple style")),
+                                    (motion, "video.clicks.motion", tr("Ripple motion"))] {
             control.setAccessibilityIdentifier(id)
             control.setAccessibilityLabel(name)
             control.target = self
             control.action = #selector(ringChanged)
         }
-        style.setToolTip("A ring line", forSegment: 0)
-        style.setToolTip("A ring line over a see-through disc", forSegment: 1)
-        motion.setToolTip("The ring grows and fades", forSegment: 0)
-        motion.setToolTip("The ring stays still, then goes", forSegment: 1)
+        style.setToolTip(tr("A ring line"), forSegment: 0)
+        style.setToolTip(tr("A ring line over a see-through disc"), forSegment: 1)
+        motion.setToolTip(tr("The ring grows and fades"), forSegment: 0)
+        motion.setToolTip(tr("The ring stays still, then goes"), forSegment: 1)
 
         func row(_ title: String, _ control: NSView) -> NSStackView {
             let label = NSTextField.label(title, style: DS.Text.label, color: DS.Color.textSecondary)
@@ -121,7 +122,7 @@ final class ClicksPanel: NSView {
             row.distribution = .fill
             return row
         }
-        let rows = [row("Color", color), row("Size", size), row("Style", style), row("Motion", motion)]
+        let rows = [row(tr("Color"), color), row(tr("Size"), size), row(tr("Style"), style), row(tr("Motion"), motion)]
         let rule = Separator(axis: .horizontal)
         let content = NSStackView(views: [note, press, pressNote, ripple, rippleNote, rule] + rows)
         content.orientation = .vertical

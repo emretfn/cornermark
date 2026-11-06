@@ -1,10 +1,11 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The ruler, the zoom lane and the clip lane under one playhead. A click or a drag anywhere on it moves the playhead; on the clip lane
 /// it also picks the clip, and a drag that starts on a clip's edge trims it.
-final class TimelineView: NSView {
+final class TimelineView: NSView, KeepsLeftToRight {
     enum Metrics {
         static let gutter: CGFloat = 36
         static let trailing: CGFloat = DS.Space.s16
@@ -72,13 +73,18 @@ final class TimelineView: NSView {
         addSubview(playhead)
         setAccessibilityElement(true)
         setAccessibilityRole(.slider)
-        setAccessibilityLabel("Timeline")
+        relocalize()
         setAccessibilityIdentifier("video.timeline")
-        setAccessibilityHelp(Self.keyHelp)
     }
 
-    static let keyHelp = "Left and Right move the playhead a frame. Option with Left or Right moves the clip's start, Option-Command its end. Shift makes each step a second."
+    static var keyHelp: String { tr("Left and Right move the playhead a frame. Option with Left or Right moves the clip's start, Option-Command its end. Shift makes each step a second.") }
 
+    /// Reads the accessibility texts again in the current language.
+    func relocalize() {
+        setAccessibilityLabel(tr("Timeline"))
+        setAccessibilityHelp(Self.keyHelp)
+        zoomLane.relocalize()
+    }
 
     required init?(coder: NSCoder) { fatalError("TimelineView is created in code") }
 
@@ -155,8 +161,9 @@ final class TimelineView: NSView {
     override func accessibilityValue() -> Any? {
         let n = timeline.clips.count
         guard n > 1 else { return Timecode.text(time) }
-        let picked = selection.map { ", clip \($0 + 1) picked" } ?? ""
-        return "\(Timecode.text(time)), clip \(timeline.clipIndex(at: time) + 1) of \(n)\(picked)"
+        let place = ["time": Timecode.text(time), "index": timeline.clipIndex(at: time) + 1, "count": n] as [String: Any]
+        guard let selection else { return tr("{time}, clip {index} of {count}", place) }
+        return tr("{time}, clip {index} of {count}, clip {picked} picked", place.merging(["picked": selection + 1]) { $1 })
     }
 
     override func layout() {

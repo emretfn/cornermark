@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The sound after recording: each track on or off, at its own level. Export mixes what this says.
 final class AudioPanel: SettingsPanel {
@@ -18,15 +19,15 @@ final class AudioPanel: SettingsPanel {
         super.init(frame: frameRect)
         var views: [NSView] = []
         for track in AudioTrack.allCases {
-            let toggle = Checkbox(title: track.title)
+            let toggle = Checkbox(title: track.localizedTitle)
             toggle.setAccessibilityIdentifier("video.audio.\(track.rawValue)")
             toggle.target = self
             toggle.action = #selector(toggled(_:))
             toggle.identifier = NSUserInterfaceItemIdentifier(track.rawValue)
-            let level = slider(id: "video.audio.\(track.rawValue).level", label: "\(track.title) level", range: AudioTrackLevel.range, action: #selector(slid(_:)))
+            let level = slider(id: "video.audio.\(track.rawValue).level", label: tr("{track} level", ["track": track.localizedTitle]), range: AudioTrackLevel.range, action: #selector(slid(_:)))
             level.identifier = NSUserInterfaceItemIdentifier(track.rawValue)
-            level.format = { "\(Int(($0 * 100).rounded()))%" }
-            let levelRow = row("Level", [level])
+            level.format = { Digits.percent($0) }
+            let levelRow = row(tr("Level"), [level])
             levelRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
             rows[track] = TrackRows(toggle: toggle, level: level, levelRow: levelRow)
             views += [toggle, levelRow]

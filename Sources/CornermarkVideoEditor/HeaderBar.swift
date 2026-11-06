@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// Whether the project file holds what the editor shows.
 enum DocumentStatus: Equatable {
@@ -11,16 +12,16 @@ enum DocumentStatus: Equatable {
     var text: String {
         switch self {
         case .unchanged: return ""
-        case .edited: return "Edited"
-        case .saved: return "Saved"
+        case .edited: return tr("Edited")
+        case .saved: return tr("Saved")
         }
     }
 
     var help: String? {
         switch self {
         case .unchanged: return nil
-        case .edited: return "Your edits are saved when you close the window. Press Command-S to save now."
-        case .saved: return "Your edits are saved in the project."
+        case .edited: return tr("Your edits are saved when you close the window. Press Command-S to save now.")
+        case .saved: return tr("Your edits are saved in the project.")
         }
     }
 }
@@ -28,13 +29,13 @@ enum DocumentStatus: Equatable {
 final class HeaderBar: NSView {
     static let height: CGFloat = 44
 
-    let exportButton = Button(title: "Export", variant: .primary, symbol: "square.and.arrow.up")
+    let exportButton = Button(title: tr("Export"), variant: .primary, symbol: "square.and.arrow.up")
     let status = NSTextField.label("", style: DS.Text.label, color: DS.Color.textSecondary)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         exportButton.setAccessibilityIdentifier("video.export")
-        exportButton.toolTip = "Export the edited video"
+        exportButton.toolTip = tr("Export the edited video")
         status.setAccessibilityIdentifier("video.document.status")
         let rule = Separator(axis: .horizontal)
         for v in [status, exportButton, rule] as [NSView] {

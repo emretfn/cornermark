@@ -1,33 +1,49 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The keystroke badge after recording: whether it shows, which keys, its size, style and place.
 final class KeystrokesPanel: SettingsPanel {
     var onChange: (KeystrokeDisplay) -> Void = { _ in }
     private(set) var display = KeystrokeDisplay()
-    private let show = Checkbox(title: "Show keystrokes")
-    private let keys = Segments(labels: ["Shortcuts", "All keys"], width: SettingsPanel.controlWidth, style: .track)
-    private let size = Segments(labels: KeystrokeDisplay.Size.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth, style: .track)
-    private let style = Segments(labels: KeystrokeDisplay.Theme.allCases.map(\.rawValue.capitalized), width: SettingsPanel.controlWidth, style: .track)
+    private let show = Checkbox(title: tr("Show keystrokes"))
+    private let keys = Segments(labels: [tr("Shortcuts"), tr("All keys")], width: SettingsPanel.controlWidth, style: .track)
+    private let size = Segments(labels: KeystrokeDisplay.Size.allCases.map(KeystrokesPanel.title), width: SettingsPanel.controlWidth, style: .track)
+    private let style = Segments(labels: KeystrokeDisplay.Theme.allCases.map(KeystrokesPanel.title), width: SettingsPanel.controlWidth, style: .track)
     private let position = PositionGrid(identifier: "video.keys.position")
+
+    static func title(_ size: KeystrokeDisplay.Size) -> String {
+        switch size {
+        case .small: return tr("Small")
+        case .medium: return tr("Medium")
+        case .large: return tr("Large")
+        }
+    }
+
+    static func title(_ theme: KeystrokeDisplay.Theme) -> String {
+        switch theme {
+        case .dark: return tr("Dark")
+        case .light: return tr("Light")
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         show.setAccessibilityIdentifier("video.keys.show")
         show.target = self
         show.action = #selector(changed)
-        keys.setToolTip("Only keys pressed with Command or Control", forSegment: 0)
-        keys.setToolTip("Every key, typing included", forSegment: 1)
-        for (control, id, label) in [(keys, "video.keys.mode", "Keys to show"), (size, "video.keys.size", "Badge size"), (style, "video.keys.style", "Badge style")] {
+        keys.setToolTip(tr("Only keys pressed with Command or Control"), forSegment: 0)
+        keys.setToolTip(tr("Every key, typing included"), forSegment: 1)
+        for (control, id, label) in [(keys, "video.keys.mode", tr("Keys to show")), (size, "video.keys.size", tr("Badge size")), (style, "video.keys.style", tr("Badge style"))] {
             control.setAccessibilityIdentifier(id)
             control.setAccessibilityLabel(label)
             control.target = self
             control.action = #selector(changed)
         }
-        position.setAccessibilityLabel("Badge position")
+        position.setAccessibilityLabel(tr("Badge position"))
         position.onPick = { [unowned self] _ in changed() }
-        add([show, row("Keys", [keys]), row("Size", [size]), row("Style", [style]), row("Position", [position], alignment: .top)])
+        add([show, row(tr("Keys"), [keys]), row(tr("Size"), [size]), row(tr("Style"), [style]), row(tr("Position"), [position], alignment: .top)])
         setAccessibilityIdentifier("video.keys")
     }
 

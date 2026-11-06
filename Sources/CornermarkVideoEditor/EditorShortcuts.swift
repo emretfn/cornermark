@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkL10n
 
 /// Every key the video editor answers, in one table. The editor window, the timeline, the zoom lane, the main menu and the list in
 /// Settings all read it, so a key cannot work without being listed or be listed without working.
@@ -69,15 +70,15 @@ public struct EditorShortcut: Equatable, Sendable {
     public var note: String? {
         let whereText: String? = switch place {
         case .window: nil
-        case .timeline: "With the timeline focused."
-        case .zoomLane: "With the zoom lane focused."
-        case .zoomTarget: "With a manual zoom's target frame focused."
+        case .timeline: tr("With the timeline focused.")
+        case .zoomLane: tr("With the zoom lane focused.")
+        case .zoomTarget: tr("With a manual zoom's target frame focused.")
         case .app: nil
         }
         let step: String = switch place {
-        case .zoomLane: "0.1 s a press, a second with Shift."
-        case .zoomTarget: "1% of the picture a press, 10% with Shift."
-        default: "A frame a press, a second with Shift."
+        case .zoomLane: tr("0.1 s a press, a second with Shift.")
+        case .zoomTarget: tr("1% of the picture a press, 10% with Shift.")
+        default: tr("A frame a press, a second with Shift.")
         }
         let shift = shiftEnlarges ? step : nil
         let parts = [whereText, shift, command.detail].compactMap { $0 }
@@ -96,10 +97,10 @@ public enum EditorCommand: String, CaseIterable, Sendable {
         case playback, clips, zooms, file
         public var title: String {
             switch self {
-            case .playback: "Video editor: playback"
-            case .clips: "Video editor: clips"
-            case .zooms: "Video editor: zooms"
-            case .file: "Video editor: project and export"
+            case .playback: tr("Video editor: playback")
+            case .clips: tr("Video editor: clips")
+            case .zooms: tr("Video editor: zooms")
+            case .file: tr("Video editor: project and export")
             }
         }
     }
@@ -115,35 +116,35 @@ public enum EditorCommand: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .playPause: "Play or Pause"
-        case .step: "Step One Frame"
-        case .jump: "Go to Start or End"
-        case .fullScreen: "Full Screen Preview"
-        case .escape: "Exit Full Screen or Deselect"
-        case .split: "Split at Playhead"
-        case .delete: "Delete Clip or Zoom"
-        case .trimStart: "Trim Clip Start"
-        case .trimEnd: "Trim Clip End"
-        case .addZoom: "Add Zoom at Playhead"
-        case .duplicateZoom: "Duplicate Zoom"
-        case .pickZoom: "Select Previous or Next Zoom"
-        case .moveZoom: "Move Zoom"
-        case .resizeZoom: "Move Zoom End"
-        case .moveTarget: "Move Zoom Target"
-        case .undo: "Undo"
-        case .redo: "Redo"
-        case .save: "Save"
-        case .saveAs: "Save As"
-        case .openVideo: "Open Video"
-        case .export: "Export"
-        case .exportFrame: "Export Current Frame as Image"
+        case .playPause: tr("Play or Pause")
+        case .step: tr("Step One Frame")
+        case .jump: tr("Go to Start or End")
+        case .fullScreen: tr("Full Screen Preview")
+        case .escape: tr("Exit Full Screen or Deselect")
+        case .split: tr("Split at Playhead")
+        case .delete: tr("Delete Clip or Zoom")
+        case .trimStart: tr("Trim Clip Start")
+        case .trimEnd: tr("Trim Clip End")
+        case .addZoom: tr("Add Zoom at Playhead")
+        case .duplicateZoom: tr("Duplicate Zoom")
+        case .pickZoom: tr("Select Previous or Next Zoom")
+        case .moveZoom: tr("Move Zoom")
+        case .resizeZoom: tr("Move Zoom End")
+        case .moveTarget: tr("Move Zoom Target")
+        case .undo: tr("Undo")
+        case .redo: tr("Redo")
+        case .save: tr("Save")
+        case .saveAs: tr("Save As")
+        case .openVideo: tr("Open Video")
+        case .export: tr("Export")
+        case .exportFrame: tr("Export Current Frame as Image")
         }
     }
 
     /// More of what the command does, when its name cannot say it all.
     public var detail: String? {
         switch self {
-        case .escape: "Also closes Animation Settings."
+        case .escape: tr("Also closes Animation Settings.")
         default: nil
         }
     }
@@ -217,16 +218,16 @@ public struct EditorChord: Hashable, Sendable {
         if modifiers.contains(.shift) { s += "\u{21E7}" }
         if modifiers.contains(.command) { s += "\u{2318}" }
         switch key {
-        case .space: s += "Space"
-        case .escape: s += "Esc"
+        case .space: s += tr("Space")
+        case .escape: s += tr("Esc")
         case .delete: s += "\u{232B}"
         case .forwardDelete: s += "\u{2326}"
         case .left: s += "\u{2190}"
         case .right: s += "\u{2192}"
         case .up: s += "\u{2191}"
         case .down: s += "\u{2193}"
-        case .home: s += "Home"
-        case .end: s += "End"
+        case .home: s += tr("Home")
+        case .end: s += tr("End")
         case .letter(let c): s += c.uppercased()
         }
         return s
@@ -235,21 +236,21 @@ public struct EditorChord: Hashable, Sendable {
     /// The keys in words, for VoiceOver, such as "Option Command Left Arrow".
     public var spoken: String {
         var words: [String] = []
-        if modifiers.contains(.control) { words.append("Control") }
-        if modifiers.contains(.option) { words.append("Option") }
-        if modifiers.contains(.shift) { words.append("Shift") }
-        if modifiers.contains(.command) { words.append("Command") }
+        if modifiers.contains(.control) { words.append(tr("Control")) }
+        if modifiers.contains(.option) { words.append(tr("Option")) }
+        if modifiers.contains(.shift) { words.append(tr("Shift")) }
+        if modifiers.contains(.command) { words.append(tr("Command")) }
         switch key {
-        case .space: words.append("Space")
-        case .escape: words.append("Escape")
-        case .delete: words.append("Delete")
-        case .forwardDelete: words.append("Forward Delete")
-        case .left: words.append("Left Arrow")
-        case .right: words.append("Right Arrow")
-        case .up: words.append("Up Arrow")
-        case .down: words.append("Down Arrow")
-        case .home: words.append("Home")
-        case .end: words.append("End")
+        case .space: words.append(tr("Space"))
+        case .escape: words.append(tr("Escape"))
+        case .delete: words.append(tr("Delete"))
+        case .forwardDelete: words.append(tr("Forward Delete"))
+        case .left: words.append(tr("Left Arrow"))
+        case .right: words.append(tr("Right Arrow"))
+        case .up: words.append(tr("Up Arrow"))
+        case .down: words.append(tr("Down Arrow"))
+        case .home: words.append(tr("Home"))
+        case .end: words.append(tr("End"))
         case .letter(let c): words.append(c.uppercased())
         }
         return words.joined(separator: " ")

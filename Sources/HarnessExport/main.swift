@@ -9,7 +9,7 @@ import VideoToolbox
 // Measures and checks video export without any window or sound.
 //   HarnessExport run <plain|heavy|gif> <video> <outDir>   one export, with wall time, CPU time, peak memory and scheduling latency
 //   HarnessExport bench <seconds>                          a CPU benchmark on every core, to run beside an export
-//   HarnessExport check                                    the checks that guard the export's speed and output
+//   HarnessExport check                                    the video editor window in a pseudo language: texts, mirroring, kept state (also the default)
 
 func now() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
 
@@ -157,7 +157,9 @@ case "probe":
     print("probe wakeups=\(lat.n) late_p50_ms=\(f(lat.p50)) late_p99_ms=\(f(lat.p99)) late_max_ms=\(f(lat.max))")
 case "bench":
     bench(seconds: args.count > 2 ? Double(args[2]) ?? 10 : 10)
+case "check", "":
+    exit(await localizationChecks() ? 0 : 1)
 default:
-    print("usage: HarnessExport run <plain|heavy|gif> <video> <outDir> | bench <seconds>")
+    print("usage: HarnessExport [check] | run <plain|heavy|gif> <video> <outDir> | bench <seconds>")
     exit(64)
 }
