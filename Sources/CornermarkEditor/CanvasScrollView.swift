@@ -15,7 +15,7 @@ final class CenteringClipView: NSClipView {
 /// Zoom below 100% re-renders the canvas smaller (`CanvasView.renderScale`) so the renderer's
 /// smooth resampling applies. Zoom above 100% magnifies the scroll view, which keeps pixels crisp.
 /// Either way one `zoom` number is what the user sees.
-final class CanvasScrollView: NSScrollView {
+final class CanvasScrollView: NSScrollView, KeepsLeftToRight {
     enum ZoomMode { case fit, fixed }
     private(set) var zoomMode: ZoomMode = .fit
     var onZoomChange: (() -> Void)?
