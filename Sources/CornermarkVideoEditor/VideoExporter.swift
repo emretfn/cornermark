@@ -1,7 +1,7 @@
-import Accelerate
 import AVFoundation
 import CoreGraphics
 import CornermarkCore
+import Metal
 import CornermarkDesign
 import VideoToolbox
 
@@ -80,41 +80,102 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         return CGRect(x: f.minX * sx, y: CGFloat(height) - f.maxY * sy, width: f.width * sx, height: f.height * sy)
     }
 
+    private func clipToFrame(_ ctx: CGContext) {
+        guard canvas.hasBackdrop else { return }
+        let frame = frameRect
+        let radius = canvas.cornerRadius * min(frame.width / pointSize.width, frame.height / pointSize.height)
+        ctx.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        ctx.clip()
+    }
+
+    /// Puts `ctx` in the recording's points inside the frame, with `crop` showing: y down, the unit of pointer positions.
+    private func enterRecordingPoints(_ ctx: CGContext, crop: ZoomRect) {
+        let frame = frameRect
+        ctx.translateBy(x: frame.minX, y: frame.maxY)
+        ctx.scaleBy(x: frame.width / (pointSize.width * crop.width), y: -frame.height / (pointSize.height * crop.height))
+        ctx.translateBy(x: -pointSize.width * crop.x, y: -pointSize.height * crop.y)
+    }
+
     /// `ctx` is a bitmap of `width` × `height` pixels with the usual y-up origin. `camera` is the camera file's picture at the same moment.
     public func draw(_ state: FrameState, source: CGImage?, camera: CGImage? = nil, in ctx: CGContext) {
+        draw(state, source: source, camera: camera, only: nil, in: ctx)
+    }
+
+    /// With `only`, nothing outside that rectangle is drawn, which costs only what the rectangle holds.
+    func draw(_ state: FrameState, source: CGImage?, camera: CGImage?, only: CGRect?, in ctx: CGContext) {
+        if let only { ctx.saveGState(); ctx.clip(to: only) }
+        defer { if only != nil { ctx.restoreGState() } }
         let full = CGRect(x: 0, y: 0, width: width, height: height)
         ctx.setFillColor(CGColor(gray: 0, alpha: 1))
         ctx.fill(full)
         ctx.interpolationQuality = .high
         if let backdrop { ctx.draw(backdrop, in: full) }
         let frame = frameRect
-        let radius = canvas.cornerRadius * min(frame.width / pointSize.width, frame.height / pointSize.height)
         ctx.saveGState()
-        if canvas.hasBackdrop {
-            ctx.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
-            ctx.clip()
-        }
+        clipToFrame(ctx)
         // The crop zooms the recording inside the frame, and the frame's clip cuts what falls outside it.
         if let source { ctx.draw(source, in: Self.pictureRect(state.crop, in: frame)) }
-        // The camera bubble is an overlay on the frame, so it ignores the crop. Rings and the pointer are in recording points and follow it.
-        if let placed = state.camera, let camera {
-            ctx.saveGState()
-            ctx.translateBy(x: frame.minX, y: frame.maxY)
-            ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
-            CameraBubblePainter.draw(camera, placed, in: ctx)
-            ctx.restoreGState()
-        }
+        drawCamera(state, camera, in: ctx)
         if state.cursor != nil || !state.input.isEmpty {
-            let crop = state.crop
-            ctx.translateBy(x: frame.minX, y: frame.maxY)
-            ctx.scaleBy(x: frame.width / (pointSize.width * crop.width), y: -frame.height / (pointSize.height * crop.height))
-            ctx.translateBy(x: -pointSize.width * crop.x, y: -pointSize.height * crop.y)
+            enterRecordingPoints(ctx, crop: state.crop)
             if !state.input.isEmpty {
                 InputOverlayPainter.draw(state.input, area: pointSize, highlight: highlight, keystrokes: keystrokes, ink: .design, in: ctx)
             }
             if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
         }
         ctx.restoreGState()
+    }
+
+    /// The camera bubble is an overlay on the frame, so it ignores the crop. Rings and the pointer are in recording points and follow it.
+    private func drawCamera(_ state: FrameState, _ camera: CGImage?, in ctx: CGContext) {
+        guard let placed = state.camera, let camera else { return }
+        let frame = frameRect
+        ctx.saveGState()
+        ctx.translateBy(x: frame.minX, y: frame.maxY)
+        ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
+        CameraBubblePainter.draw(camera, placed, in: ctx)
+        ctx.restoreGState()
+    }
+
+    /// The whole pixels of the bitmap the recording's frame covers, which is where a picture averaged for it goes.
+    var pictureRegion: CGRect { frameRect.integral.intersection(CGRect(x: 0, y: 0, width: width, height: height)) }
+
+    /// The frame as `draw` makes it, with the recording replaced by `picture`: the average of its drawings, already placed, `region` pixels
+    /// of the bitmap that draw one to one. Whatever does not depend on the crop goes on as usual, and the rings, the badge and the pointer do
+    /// not: they are not drawn here, so the caller does not use this where there are any.
+    func drawAverage(_ picture: CGImage, in region: CGRect, state: FrameState, camera: CGImage?, in ctx: CGContext) {
+        let full = CGRect(x: 0, y: 0, width: width, height: height)
+        ctx.setFillColor(CGColor(gray: 0, alpha: 1))
+        ctx.fill(full)
+        ctx.interpolationQuality = .high
+        if let backdrop { ctx.draw(backdrop, in: full) }
+        ctx.saveGState()
+        clipToFrame(ctx)
+        ctx.interpolationQuality = .none
+        ctx.draw(picture, in: region)
+        drawCamera(state, camera, in: ctx)
+        ctx.restoreGState()
+    }
+
+    /// Draws only the pointer over a frame `draw` made without it, the way `draw` puts it on top of everything else.
+    func drawCursor(_ cursor: CursorFrame, crop: ZoomRect, in ctx: CGContext) {
+        ctx.saveGState()
+        clipToFrame(ctx)
+        enterRecordingPoints(ctx, crop: crop)
+        PointerShape.draw(cursor, in: ctx)
+        ctx.restoreGState()
+    }
+
+    /// Whole pixels, y up, that the pointer at `cursor` can touch with `crop` showing: a box that holds its largest look plus a margin.
+    func cursorBounds(_ cursor: CursorFrame, crop: ZoomRect) -> CGRect {
+        let frame = frameRect
+        let sx = frame.width / (pointSize.width * crop.width), sy = frame.height / (pointSize.height * crop.height)
+        let cx = frame.minX + (cursor.x - pointSize.width * crop.x) * sx
+        let cy = frame.maxY - (cursor.y - pointSize.height * crop.y) * sy
+        let reach = 21 * cursor.scale + 3
+        let box = CGRect(x: cx - reach * sx - 2, y: cy - reach * sy - 2, width: 2 * reach * sx + 4, height: 2 * reach * sy + 4).integral
+        return box.intersection(canvas.hasBackdrop ? frame.integral : CGRect(x: 0, y: 0, width: width, height: height))
+            .intersection(CGRect(x: 0, y: 0, width: width, height: height))
     }
 
     /// Where the whole recording lands so that `crop` fills `frame`, in y-up coordinates.
@@ -138,47 +199,196 @@ public struct ExportFrameRenderer: @unchecked Sendable {
 }
 
 /// Averages several drawings of a frame into one, byte by byte in premultiplied sRGB. Keeps its buffers between frames of one size.
+///
+/// When every drawing has the same crop, which is a frame where only the pointer moves, the picture under the pointer is drawn once and
+/// only the part of the frame the pointer crosses is drawn and averaged again. The result is the same bytes the full drawings give.
 public final class SampleAccumulator {
     private var scratch: CGContext?
-    private var sum: [Float] = []
-    private var drawing: [Float] = []
+    private var sum: [UInt16] = []
+    private var converter: CGContext?
+    /// The converted picture's bytes and, where there is a GPU, what it needs to average placements of it.
+    private var converterPixels: SharedPixels?
+    private var pictureTexture: MTLTexture?
+    private var averageResult: SharedPixels?
+    private var averageSize = (width: 0, height: 0)
+    /// Whether the last frame with several drawings was averaged on the GPU.
+    private(set) var lastUsedGPU = false
 
     public init() {}
 
+    /// A recording is tagged with its screen's colors, and drawing it into the sRGB bitmap converts every pixel it covers. Several
+    /// drawings of one picture would convert it again each time, which is most of their cost, so it is converted once into a picture
+    /// that is already sRGB. The pixels end up the same, since the conversion comes before the scaling either way.
+    private func converted(_ image: CGImage) -> CGImage? {
+        if converter == nil || converter?.width != image.width || converter?.height != image.height { makeConverter(width: image.width, height: image.height) }
+        guard let converter else { return nil }
+        converter.interpolationQuality = .none
+        converter.setBlendMode(.copy)
+        converter.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return converter.makeImage()
+    }
+
+    private func makeConverter(width: Int, height: Int) {
+        converter = nil; converterPixels = nil; pictureTexture = nil
+        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        if let gpu = SampleAverager.shared {
+            let rowBytes = gpu.rowBytes(width: width)
+            if let pixels = SharedPixels(device: gpu.device, bytes: rowBytes * height), let texture = gpu.texture(over: pixels, width: width, height: height, rowBytes: rowBytes),
+               let ctx = CGContext(data: pixels.pointer, width: width, height: height, bitsPerComponent: 8, bytesPerRow: rowBytes, space: ExportFrameRenderer.colorSpace, bitmapInfo: bitmapInfo) {
+                converter = ctx; converterPixels = pixels; pictureTexture = texture
+                return
+            }
+        }
+        converter = ExportFrameRenderer.bitmap(width: width, height: height)
+    }
+
+    /// Averages the placements on the GPU, where the picture is not made much smaller (a reduction needs the filtering Core Graphics does)
+    /// and no ring or badge needs a drawing of its own at every placement, and draws the pointer over the average where it moves.
+    private func drawOnGPU(_ samples: [FrameState], with renderer: ExportFrameRenderer, source: CGImage, camera: CGImage?, in ctx: CGContext, scratch: CGContext) -> Bool {
+        guard let gpu = SampleAverager.shared, let texture = pictureTexture, converterPixels != nil, source.width == texture.width, source.height == texture.height,
+              samples.allSatisfy({ $0.input.isEmpty }), let out = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return false }
+        let frame = renderer.frameRect, region = renderer.pictureRegion
+        let w = Int(region.width), h = Int(region.height)
+        guard w > 0, h > 0 else { return false }
+        var placements: [SampleAverager.Placement] = []
+        for sample in samples {
+            let picture = ExportFrameRenderer.pictureRect(sample.crop, in: frame)
+            // Below nine tenths of its size the picture is reduced, which the sampler would alias.
+            guard picture.width >= 0.9 * CGFloat(source.width), picture.height >= 0.9 * CGFloat(source.height) else { return false }
+            placements.append(.init(minX: Float(picture.minX), maxY: Float(picture.maxY), width: Float(picture.width), height: Float(picture.height)))
+        }
+        // Where the pointer moves, a drawing of every placement is still needed; when that is most of the frame, the GPU saves little.
+        let reach = samples.compactMap { sample in sample.cursor.map { renderer.cursorBounds($0, crop: sample.crop) } }
+        let moving = reach.filter { !$0.isEmpty }.reduce(nil, { (union: CGRect?, box: CGRect) in union.map { $0.union(box) } ?? box })
+        if let moving, moving.width * moving.height > 0.25 * region.width * region.height { return false }
+        if averageResult == nil || averageSize != (w, h) {
+            averageResult = SharedPixels(device: gpu.device, bytes: w * h * 4)
+            averageSize = (w, h)
+        }
+        guard let result = averageResult,
+              gpu.average(picture: texture, placements: placements, origin: CGPoint(x: region.minX, y: region.maxY), result: result, width: w, height: h),
+              let provider = CGDataProvider(dataInfo: nil, data: result.pointer, size: w * h * 4, releaseData: { _, _, _ in }),
+              let average = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: ExportFrameRenderer.colorSpace,
+                                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+                                    provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return false }
+        var bare = samples[0]
+        bare.cursor = nil
+        renderer.drawAverage(average, in: region, state: bare, camera: camera, in: ctx)
+        guard let moving, let drawn = scratch.data?.assumingMemoryBound(to: UInt8.self) else { return true }
+        // The box the pointer crosses is drawn and averaged as before, at every placement.
+        let x0 = Int(moving.minX), cols = Int(moving.width), row0 = ctx.height - Int(moving.maxY), rows = Int(moving.height)
+        let stride = ctx.bytesPerRow, rowBytes = cols * 4
+        let at = drawn + row0 * scratch.bytesPerRow + x0 * 4
+        sum.withUnsafeMutableBufferPointer { sum in
+            sum.baseAddress!.update(repeating: 0, count: rows * rowBytes)
+            for sample in samples {
+                renderer.draw(sample, source: source, camera: camera, only: moving, in: scratch)
+                Self.add(at, stride: scratch.bytesPerRow, rowBytes: rowBytes, rows: rows, to: sum.baseAddress!)
+            }
+            Self.average(sum.baseAddress!, count: samples.count, rowBytes: rowBytes, rows: rows, into: out + row0 * stride + x0 * 4, stride: stride)
+        }
+        return true
+    }
+
     /// One sample draws straight into `ctx`, as a frame without blur does.
     public func draw(_ samples: [FrameState], with renderer: ExportFrameRenderer, source: CGImage?, camera: CGImage?, in ctx: CGContext) {
-        guard samples.count > 1, let out = ctx.data?.assumingMemoryBound(to: UInt8.self), let scratch = scratch(like: ctx),
-              let drawn = scratch.data?.assumingMemoryBound(to: UInt8.self) else {
+        guard samples.count > 1, let scratch = scratch(like: ctx) else {
             if let sharp = samples.first { renderer.draw(sharp, source: source, camera: camera, in: ctx) }
             return
         }
-        let count = vDSP_Length(sum.count)
-        vDSP_vclr(&sum, 1, count)
-        for sample in samples {
-            renderer.draw(sample, source: source, camera: camera, in: scratch)
-            vDSP_vfltu8(drawn, 1, &drawing, 1, count)
-            vDSP_vadd(drawing, 1, sum, 1, &sum, 1, count)
+        let source = source.flatMap(converted)
+        lastUsedGPU = false
+        if let first = samples.first, samples.allSatisfy({ $0.crop == first.crop }) {
+            drawPointerMoving(samples, with: renderer, source: source, camera: camera, in: ctx, scratch: scratch)
+        } else if let source, drawOnGPU(samples, with: renderer, source: source, camera: camera, in: ctx, scratch: scratch) {
+            lastUsedGPU = true
+            return
+        } else {
+            drawAll(samples, with: renderer, source: source, camera: camera, in: ctx, scratch: scratch)
         }
-        var scale = 1 / Float(samples.count), low: Float = 0, high: Float = 255
-        vDSP_vsmul(sum, 1, &scale, &drawing, 1, count)
-        vDSP_vclip(drawing, 1, &low, &high, &drawing, 1, count)
-        vDSP_vfixru8(drawing, 1, out, 1, count)
+    }
+
+    private func drawAll(_ samples: [FrameState], with renderer: ExportFrameRenderer, source: CGImage?, camera: CGImage?, in ctx: CGContext, scratch: CGContext) {
+        guard let out = ctx.data?.assumingMemoryBound(to: UInt8.self), let drawn = scratch.data?.assumingMemoryBound(to: UInt8.self) else { return }
+        let rowBytes = ctx.bytesPerRow
+        sum.withUnsafeMutableBufferPointer { sum in
+            sum.update(repeating: 0)
+            for sample in samples {
+                renderer.draw(sample, source: source, camera: camera, in: scratch)
+                Self.add(drawn, stride: scratch.bytesPerRow, rowBytes: rowBytes, rows: ctx.height, to: sum.baseAddress!)
+            }
+            Self.average(sum.baseAddress!, count: samples.count, rowBytes: rowBytes, rows: ctx.height, into: out, stride: ctx.bytesPerRow)
+        }
+    }
+
+    private func drawPointerMoving(_ samples: [FrameState], with renderer: ExportFrameRenderer, source: CGImage?, camera: CGImage?, in ctx: CGContext, scratch: CGContext) {
+        guard let out = ctx.data?.assumingMemoryBound(to: UInt8.self), let drawn = scratch.data?.assumingMemoryBound(to: UInt8.self) else { return }
+        var bare = samples[0]
+        bare.cursor = nil
+        renderer.draw(bare, source: source, camera: camera, in: ctx)
+        let crop = bare.crop
+        let boxes = samples.map { $0.cursor.map { renderer.cursorBounds($0, crop: crop) } }
+        guard let region = boxes.compactMap({ $0 }).filter({ !$0.isEmpty }).reduce(nil, { (union: CGRect?, box: CGRect) in union.map { $0.union(box) } ?? box }) else { return }
+        // A bitmap's rows run top down in memory, while the boxes are y up.
+        let x0 = Int(region.minX), cols = Int(region.width), row0 = ctx.height - Int(region.maxY), rows = Int(region.height)
+        let stride = ctx.bytesPerRow, rowBytes = cols * 4
+        let from = out + row0 * stride + x0 * 4, to = drawn + row0 * scratch.bytesPerRow + x0 * 4
+        sum.withUnsafeMutableBufferPointer { sum in
+            sum.baseAddress!.update(repeating: 0, count: rows * rowBytes)
+            for sample in samples {
+                for r in 0..<rows { memcpy(to + r * scratch.bytesPerRow, from + r * stride, rowBytes) }
+                if let cursor = sample.cursor { renderer.drawCursor(cursor, crop: crop, in: scratch) }
+                Self.add(to, stride: scratch.bytesPerRow, rowBytes: rowBytes, rows: rows, to: sum.baseAddress!)
+            }
+            Self.average(sum.baseAddress!, count: samples.count, rowBytes: rowBytes, rows: rows, into: out + row0 * stride + x0 * 4, stride: stride)
+        }
+    }
+
+    /// Adds `rows` rows of `rowBytes` bytes from `source` into the running `sum`, which is packed row after row.
+    private static func add(_ source: UnsafePointer<UInt8>, stride: Int, rowBytes: Int, rows: Int, to sum: UnsafeMutablePointer<UInt16>) {
+        for r in 0..<rows {
+            let s = source + r * stride, d = sum + r * rowBytes
+            for i in 0..<rowBytes { d[i] &+= UInt16(s[i]) }
+        }
+    }
+
+    /// Writes `sum / count`, rounded to the nearest, into `out`.
+    private static func average(_ sum: UnsafePointer<UInt16>, count: Int, rowBytes: Int, rows: Int, into out: UnsafeMutablePointer<UInt8>, stride: Int) {
+        let scale = 1 / Float(count)
+        for r in 0..<rows {
+            let s = sum + r * rowBytes, d = out + r * stride
+            for i in 0..<rowBytes { d[i] = UInt8(truncatingIfNeeded: Int32(Float(s[i]) * scale + 0.5)) }
+        }
     }
 
     private func scratch(like ctx: CGContext) -> CGContext? {
         if let scratch, scratch.width == ctx.width, scratch.height == ctx.height, scratch.bytesPerRow == ctx.bytesPerRow { return scratch }
         scratch = CGContext(data: nil, width: ctx.width, height: ctx.height, bitsPerComponent: 8, bytesPerRow: ctx.bytesPerRow, space: ExportFrameRenderer.colorSpace,
                             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
-        let count = scratch == nil ? 0 : ctx.bytesPerRow * ctx.height
-        sum = [Float](repeating: 0, count: count)
-        drawing = [Float](repeating: 0, count: count)
+        sum = [UInt16](repeating: 0, count: scratch == nil ? 0 : ctx.bytesPerRow * ctx.height)
         return scratch
     }
 }
 
+/// How hard an export works. An export is something the person asked for and is waiting on, so its threads run at the user-initiated
+/// class: the utility class puts them on the efficiency cores, where each frame took about two and a half times as long. The machine
+/// stays usable because few threads run, not because they are slow: the drawing uses at most half the cores, and the pictures that can
+/// be averaged on the GPU leave the processor nearly idle.
+public struct ExportTuning: Equatable, Sendable {
+    /// Frames drawn at the same time. The decoder and the encoder run beside them.
+    public var workers: Int
+    public var qos: QualityOfService
+
+    public init(workers: Int, qos: QualityOfService = .userInitiated) { self.workers = max(1, workers); self.qos = qos }
+
+    /// Half the cores, between 1 and 6: the hardware encoder takes about 120 frames a second at 2560 x 1440 whatever else is done, and a
+    /// few drawing threads already keep it fed.
+    public static var standard: ExportTuning { ExportTuning(workers: min(6, max(1, ProcessInfo.processInfo.activeProcessorCount / 2))) }
+}
+
 /// The file appears at `output` only when it is complete; cancelling or failing leaves nothing there.
 public enum VideoExporter {
-    public static func export(project: RecordingProject, video: URL, settings: ExportSettings, to output: URL,
+    public static func export(project: RecordingProject, video: URL, settings: ExportSettings, to output: URL, tuning: ExportTuning = .standard,
                               progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ExportReport {
         let started = Date()
         let plan = ExportPlan(project: project, settings: settings, video: video)
@@ -198,7 +408,9 @@ public enum VideoExporter {
                                            duration: plan.duration)
         defer { mix?.cancel() }
         do {
-            let drawn = try await render(project: project, video: video, plan: plan, encoder: encoder, sink: Sink(writer: writer, audio: mix), progress: progress)
+            let sink = Sink(writer: writer, audio: mix)
+            let drawn = try await render(project: project, video: video, plan: plan, encoder: encoder, sink: sink, tuning: tuning, progress: progress)
+            try await sink.finish()
             let duration = try await AVURLAsset(url: partial).load(.duration).seconds
             let bytes = ((try? FileManager.default.attributesOfItem(atPath: partial.path))?[.size] as? NSNumber)?.int64Value ?? 0
             try FileManager.default.moveItem(at: partial, to: output)
@@ -244,51 +456,28 @@ public enum VideoExporter {
         return (encoder.usesHardware, encoder.encoderID)
     }
 
-    private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, sink: Sink,
-                               progress: @Sendable (Double) -> Void) async throws -> (blurred: Int, drawings: Int) {
+    private static func render(project: RecordingProject, video: URL, plan: ExportPlan, encoder: Encoder, sink: Sink, tuning: ExportTuning,
+                               progress: @escaping @Sendable (Double) -> Void) async throws -> (blurred: Int, drawings: Int) {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
-        let timeline = project.timeline
         // The camera file shares the video's timeline, so each clip reads the same stretch of it. A project whose camera file is gone
         // still exports, without the camera.
         let cameraAsset = project.source.camera.map { AVURLAsset(url: video.deletingLastPathComponent().appendingPathComponent($0)) }
         let cameraTrack = try? await cameraAsset?.loadTracks(withMediaType: .video).first
-        var cameraReader: ClipReader?
-        let renderer = ExportFrameRenderer(plan: plan, project: project, folder: video.deletingLastPathComponent())
-        var reader: ClipReader?
-        let accumulator = SampleAccumulator()
-        var blurred = 0, drawings = 0
-        var reported = -1
-        let frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.fps))
-        for k in 0..<plan.frameCount {
-            try Task.checkCancellation()
-            let t = plan.time(ofFrame: k)
-            let samples = frameSamples(project, outputTime: t, fps: plan.fps, pixelsAcross: renderer.frameRect.width)
-            let state = samples[0]
-            if samples.count > 1 { blurred += 1 }
-            drawings += samples.count
-            let clip = timeline.clipIndex(at: t)
-            if reader?.clip != clip { reader = try ClipReader(asset: asset, track: track, clip: clip, range: timeline.clips[clip]) }
-            let current = reader?.image(at: state.sourceTime)
-            var camera: CGImage?
-            if state.camera != nil, let cameraAsset, let cameraTrack {
-                if cameraReader?.clip != clip { cameraReader = try? ClipReader(asset: cameraAsset, track: cameraTrack, clip: clip, range: timeline.clips[clip]) }
-                camera = cameraReader?.image(at: state.sourceTime)
+        let pipeline = FramePipeline(project: project, plan: plan, encoder: encoder, sink: sink, tuning: tuning, progress: progress,
+                                     source: (asset, track), camera: cameraAsset.flatMap { a in cameraTrack.map { (a, $0) } },
+                                     folder: video.deletingLastPathComponent())
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (done: CheckedContinuation<(blurred: Int, drawings: Int), Error>) in
+                let thread = Thread { do { done.resume(returning: try pipeline.run()) } catch { done.resume(throwing: error) } }
+                thread.qualityOfService = tuning.qos
+                thread.name = "export.decode"
+                thread.start()
             }
-            let buffer = try encoder.makeBuffer()
-            try draw(into: buffer) { accumulator.draw(samples, with: renderer, source: current, camera: camera, in: $0) }
-            try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
-            try await sink.append(encoder.take())
-            let percent = (k + 1) * 100 / plan.frameCount
-            if percent != reported { reported = percent; progress(Double(k + 1) / Double(plan.frameCount)) }
-        }
-        try encoder.finish()
-        try await sink.append(encoder.take())
-        try await sink.finish()
-        return (blurred, drawings)
+        } onCancel: { pipeline.cancel() }
     }
 
-    private static func draw(into buffer: CVPixelBuffer, _ body: (CGContext) -> Void) throws {
+    fileprivate static func draw(into buffer: CVPixelBuffer, _ body: (CGContext) -> Void) throws {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let ctx = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer),
@@ -296,6 +485,151 @@ public enum VideoExporter {
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         else { throw ExportError.writer("a frame could not be drawn") }
         body(ctx)
+    }
+}
+
+/// Reads, draws and encodes the frames of an export at the same time. One thread decodes the source in order, `tuning.workers` draw
+/// frames in any order, and one thread hands the finished frames to the encoder in order, so the pictures reach the file as they would
+/// from a single thread. A frame waits for a free slot before it is decoded, so the frames in flight, and the memory they hold, are bounded.
+private final class FramePipeline: @unchecked Sendable {
+    private let project: RecordingProject
+    private let plan: ExportPlan
+    private let encoder: Encoder
+    private let sink: Sink
+    private let tuning: ExportTuning
+    private let progress: @Sendable (Double) -> Void
+    private let source: (asset: AVAsset, track: AVAssetTrack)
+    private let camera: (asset: AVAsset, track: AVAssetTrack)?
+    private let renderer: ExportFrameRenderer
+
+    /// Frames that may still be taken in; a count under `cond`, which unlike a semaphore may be dropped with any value.
+    private var freeSlots: Int
+    private let drawers = OperationQueue()
+    private let cond = NSCondition()
+    private var finished: [Int: CVPixelBuffer] = [:]
+    private var failure: Error?
+    private var cancelled = false
+    private var spare: [SampleAccumulator] = []
+    private var blurred = 0, drawings = 0
+
+    init(project: RecordingProject, plan: ExportPlan, encoder: Encoder, sink: Sink, tuning: ExportTuning, progress: @escaping @Sendable (Double) -> Void,
+         source: (AVAsset, AVAssetTrack), camera: (AVAsset, AVAssetTrack)?, folder: URL) {
+        self.project = project; self.plan = plan; self.encoder = encoder; self.sink = sink; self.tuning = tuning; self.progress = progress
+        self.source = source; self.camera = camera
+        renderer = ExportFrameRenderer(plan: plan, project: project, folder: folder)
+        freeSlots = tuning.workers + 2
+        drawers.maxConcurrentOperationCount = tuning.workers
+        drawers.qualityOfService = tuning.qos
+        drawers.name = "export.draw"
+    }
+
+    func cancel() { fail(CancellationError()) }
+
+    private func fail(_ error: Error) {
+        cond.lock()
+        if failure == nil { failure = error }
+        cond.broadcast()
+        cond.unlock()
+    }
+
+    private var aborted: Bool { cond.lock(); defer { cond.unlock() }; return failure != nil }
+
+    func run() throws -> (blurred: Int, drawings: Int) {
+        let encoding = DispatchGroup()
+        encoding.enter()
+        let thread = Thread { [self] in defer { encoding.leave() }; encode() }
+        thread.qualityOfService = tuning.qos
+        thread.name = "export.encode"
+        thread.start()
+        decode()
+        encoding.wait()
+        drawers.cancelAllOperations()
+        cond.lock(); defer { cond.unlock() }
+        if let failure { throw failure }
+        return (blurred, drawings)
+    }
+
+    /// Walks the frames in order, reads the source pictures they show, and hands each to a drawing thread.
+    private func decode() {
+        do {
+            let timeline = project.timeline
+            var reader: ClipReader?, cameraReader: ClipReader?
+            for k in 0..<plan.frameCount {
+              try autoreleasepool {
+                if aborted { return }
+                let t = plan.time(ofFrame: k)
+                let samples = frameSamples(project, outputTime: t, fps: plan.fps, pixelsAcross: renderer.frameRect.width)
+                let state = samples[0]
+                let clip = timeline.clipIndex(at: t)
+                if reader?.clip != clip { reader = try ClipReader(asset: source.asset, track: source.track, clip: clip, range: timeline.clips[clip]) }
+                let current = reader?.image(at: state.sourceTime)
+                var cameraImage: CGImage?
+                if state.camera != nil, let camera {
+                    if cameraReader?.clip != clip { cameraReader = try? ClipReader(asset: camera.asset, track: camera.track, clip: clip, range: timeline.clips[clip]) }
+                    cameraImage = cameraReader?.image(at: state.sourceTime)
+                }
+                cond.lock()
+                while freeSlots == 0 && failure == nil { cond.wait() }
+                freeSlots -= 1
+                let stop = failure != nil
+                cond.unlock()
+                if stop { return }
+                drawers.addOperation { [self] in draw(k, samples, current, cameraImage) }
+              }
+            }
+        } catch { fail(error) }
+    }
+
+    private func draw(_ k: Int, _ samples: [FrameState], _ current: CGImage?, _ camera: CGImage?) {
+        if aborted { return }
+        let accumulator = checkout()
+        defer { giveBack(accumulator) }
+        do {
+            let buffer = try encoder.makeBuffer()
+            try VideoExporter.draw(into: buffer) { accumulator.draw(samples, with: renderer, source: current, camera: camera, in: $0) }
+            cond.lock()
+            finished[k] = buffer
+            if samples.count > 1 { blurred += 1 }
+            drawings += samples.count
+            cond.broadcast()
+            cond.unlock()
+        } catch { fail(error) }
+    }
+
+    /// Takes the frames back in order, gives them to the encoder, and writes what it has finished.
+    private func encode() {
+        do {
+            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.fps))
+            var reported = -1
+            for k in 0..<plan.frameCount {
+                let more: Bool = try autoreleasepool {
+                    cond.lock()
+                    while finished[k] == nil && failure == nil { cond.wait() }
+                    let buffer = finished.removeValue(forKey: k)
+                    let stop = failure != nil
+                    cond.unlock()
+                    guard let buffer, !stop else { return false }
+                    try encoder.encode(buffer, at: CMTime(value: CMTimeValue(k), timescale: CMTimeScale(plan.fps)), duration: frameDuration)
+                    try sink.append(encoder.take())
+                    cond.lock(); freeSlots += 1; cond.broadcast(); cond.unlock()
+                    let percent = (k + 1) * 100 / plan.frameCount
+                    if percent != reported { reported = percent; progress(Double(k + 1) / Double(plan.frameCount)) }
+                    return true
+                }
+                if !more { return }
+            }
+            try encoder.finish()
+            try sink.append(encoder.take())
+        } catch { fail(error) }
+    }
+
+    private func checkout() -> SampleAccumulator {
+        cond.lock(); defer { cond.unlock() }
+        return spare.popLast() ?? SampleAccumulator()
+    }
+
+    private func giveBack(_ accumulator: SampleAccumulator) {
+        cond.lock(); spare.append(accumulator); cond.unlock()
     }
 }
 
@@ -345,6 +679,11 @@ private final class Encoder: @unchecked Sendable {
     private let lock = NSLock()
     private var ready: [CMSampleBuffer] = []
     private var failure: OSStatus = noErr
+    /// Frames given to the session whose compressed sample has not come back. Bounded, so a slow encoder holds up the drawing instead of
+    /// letting finished frames pile up in memory.
+    private var inFlight = 0
+    private let room = NSCondition()
+    static let maxInFlight = 6
 
     init(plan: ExportPlan) throws {
         let attributes: [CFString: Any] = [
@@ -400,12 +739,18 @@ private final class Encoder: @unchecked Sendable {
     }
 
     func encode(_ buffer: CVPixelBuffer, at time: CMTime, duration: CMTime) throws {
+        room.lock()
+        while inFlight >= Self.maxInFlight && !hasFailed { room.wait(until: Date(timeIntervalSinceNow: 0.05)) }
+        inFlight += 1
+        room.unlock()
         let status = VTCompressionSessionEncodeFrame(session, imageBuffer: buffer, presentationTimeStamp: time, duration: duration,
                                                      frameProperties: nil, infoFlagsOut: nil) { [weak self] status, _, sample in
             self?.receive(status, sample)
         }
         guard status == noErr else { throw ExportError.encoder(status) }
     }
+
+    private var hasFailed: Bool { lock.lock(); defer { lock.unlock() }; return failure != noErr }
 
     func finish() throws {
         let status = VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
@@ -426,8 +771,9 @@ private final class Encoder: @unchecked Sendable {
 
     private func receive(_ status: OSStatus, _ sample: CMSampleBuffer?) {
         lock.lock()
-        defer { lock.unlock() }
         if status != noErr { failure = status } else if let sample { ready.append(sample) }
+        lock.unlock()
+        room.lock(); inFlight -= 1; room.broadcast(); room.unlock()
     }
 }
 
@@ -441,12 +787,13 @@ private final class Sink {
 
     init(writer: AVAssetWriter, audio: AudioMixReader?) { self.writer = writer; self.audio = audio }
 
-    func append(_ samples: [CMSampleBuffer]) async throws {
+    /// Blocks while the writer is not ready for more, so it runs on the encoder's own thread.
+    func append(_ samples: [CMSampleBuffer]) throws {
         for sample in samples {
             let input = try self.input ?? start(with: sample)
             while !input.isReadyForMoreMediaData {
                 if writer.status == .failed { throw ExportError.writer(writer.error?.localizedDescription ?? "the file could not be written") }
-                try await Task.sleep(nanoseconds: 1_000_000)
+                Thread.sleep(forTimeInterval: 0.001)
             }
             guard input.append(sample) else { throw ExportError.writer(writer.error?.localizedDescription ?? "a frame could not be written") }
         }

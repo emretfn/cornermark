@@ -16,6 +16,7 @@ let package = Package(
         .executableTarget(name: "HarnessDesign", dependencies: ["CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "HarnessEditor", dependencies: ["CornermarkEditor"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "HarnessShell", dependencies: ["CornermarkShell"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "HarnessExport", dependencies: ["CornermarkVideoEditor", "CornermarkCapture", "CornermarkCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "HarnessReadme", dependencies: ["CornermarkShell", "CornermarkCapture", "CornermarkEditor", "CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "CornermarkCoreTests", dependencies: ["CornermarkCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "CornermarkVideoEditorTests", dependencies: ["CornermarkVideoEditor"], swiftSettings: [.swiftLanguageMode(.v5)]),

@@ -48,16 +48,17 @@ public enum GifConverter {
     /// Pixels ImageIO may hold at once, about 160 MB.
     static let batchPixels = 15_000_000
 
-    public static func convert(_ video: URL, to gif: URL, options: GifOptions = .standard) async throws -> GifReport {
+    /// `workers` caps the threads that scale and encode frames; the file is the same whatever it is.
+    public static func convert(_ video: URL, to gif: URL, options: GifOptions = .standard, workers: Int? = nil) async throws -> GifReport {
         let asset = AVURLAsset(url: video)
         guard let track = try? await asset.loadTracks(withMediaType: .video).first else { throw GifError.unreadable("no video track") }
         let duration = (try? await asset.load(.duration).seconds) ?? 0
         let natural = (try? await track.load(.naturalSize)) ?? .zero
         guard duration > 0, natural.width >= 1, natural.height >= 1 else { throw GifError.unreadable("empty video") }
-        return try encode(asset: asset, track: track, duration: duration, natural: natural, to: gif, options: options)
+        return try encode(asset: asset, track: track, duration: duration, natural: natural, to: gif, options: options, tuning: workers.map { GifTuning(workers: max(1, $0), qos: .userInitiated) } ?? .standard)
     }
 
-    private static func encode(asset: AVURLAsset, track: AVAssetTrack, duration: Double, natural: CGSize, to gif: URL, options: GifOptions) throws -> GifReport {
+    private static func encode(asset: AVURLAsset, track: AVAssetTrack, duration: Double, natural: CGSize, to gif: URL, options: GifOptions, tuning: GifTuning) throws -> GifReport {
         let k = min(1, Double(options.maxPixel) / Double(max(natural.width, natural.height)))
         let width = max(1, Int((natural.width * k).rounded())), height = max(1, Int((natural.height * k).rounded()))
         let reader: AVAssetReader
@@ -72,44 +73,100 @@ public enum GifConverter {
         func centis(_ slot: Int) -> Int { Int((Double(slot) * 100 / fps).rounded()) }
 
         let assembler = try GifAssembler(url: gif, width: width, height: height)
-        var batch = GifBatch(capacity: max(4, batchPixels / (width * height)))
-        let scaler = try Scaler(width: width, height: height)
+        var batches = GifBatches(capacity: max(4, batchPixels / (width * height)), assembler: assembler)
         var frames = 0, totalCentis = 0
         // The picture on screen from slot `held.start`, waiting to learn how long it stays.
         var held: (image: CGImage, start: Int)?
         var latest: CMSampleBuffer?
         var slot = 0
+        // Pictures to show, each from a slot on. They are scaled together, since scaling is most of the work, and then taken in order.
+        var shown: [(sample: CMSampleBuffer, start: Int)] = []
+        // A scaler keeps its bitmap between frames, so each picture it makes is its own copy and nothing else holds the bitmap's memory.
+        let idle = ScalerPool(width: width, height: height)
+
+        func scaleAndTake() throws {
+            guard !shown.isEmpty else { return }
+            let work = shown
+            shown.removeAll(keepingCapacity: true)
+            var images = [CGImage?](repeating: nil, count: work.count)
+            let lock = NSLock()
+            var failure: Error?
+            let lanes = min(tuning.workers, work.count)
+            DispatchQueue.concurrentPerform(iterations: lanes) { lane in
+                for i in stride(from: lane, to: work.count, by: lanes) {
+                    autoreleasepool {
+                        do {
+                            let scaler = try idle.take()
+                            defer { idle.give(scaler) }
+                            let image = try scaler.image(of: work[i].sample)
+                            lock.lock(); images[i] = image; lock.unlock()
+                        } catch { lock.lock(); failure = failure ?? error; lock.unlock() }
+                    }
+                }
+            }
+            if let failure { throw failure }
+            for (i, item) in work.enumerated() {
+                if let h = held {
+                    let delay = centis(item.start) - centis(h.start)
+                    try batches.add(h.image, centis: delay)
+                    frames += 1; totalCentis += delay
+                }
+                held = images[i].map { ($0, item.start) }
+            }
+        }
 
         func show(_ sample: CMSampleBuffer, from start: Int) throws {
-            if let h = held {
-                let delay = centis(start) - centis(h.start)
-                try batch.add(h.image, centis: delay, into: assembler)
-                frames += 1; totalCentis += delay
-            }
-            held = try scaler.image(of: sample).map { ($0, start) }
+            shown.append((sample, start))
+            if shown.count >= tuning.workers { try scaleAndTake() }
         }
 
         while slot < slots, let sample = autoreleasepool(invoking: { output.copyNextSampleBuffer() }) {
             let t = CMSampleBufferGetPresentationTimeStamp(sample).seconds
             // Slots before this frame show the latest one before it.
             if let latest, Double(slot) / fps < t - 1e-6 {
-                try autoreleasepool { try show(latest, from: slot) }
+                try show(latest, from: slot)
                 while slot < slots, Double(slot) / fps < t - 1e-6 { slot += 1 }
             }
             latest = sample
         }
         if reader.status == .failed { throw GifError.unreadable(reader.error?.localizedDescription ?? "reader failed") }
-        reader.cancelReading()
         if let latest, slot < slots { try show(latest, from: slot) }
+        try scaleAndTake()
+        reader.cancelReading()
         if let h = held {
             let delay = max(1, centis(slots) - centis(h.start))
-            try batch.add(h.image, centis: delay, into: assembler)
+            try batches.add(h.image, centis: delay)
             frames += 1; totalCentis += delay
         }
-        try batch.flush(into: assembler)
+        try batches.finish()
         let bytes = try assembler.finish()
         return GifReport(url: gif, width: width, height: height, frames: frames, duration: Double(totalCentis) / 100, bytes: bytes)
     }
+}
+
+/// How hard a conversion works: the user-initiated class, since the person waits on it, on at most half the cores.
+struct GifTuning {
+    var workers: Int
+    var qos: QualityOfService
+    static var standard: GifTuning { GifTuning(workers: min(6, max(1, ProcessInfo.processInfo.activeProcessorCount / 2)), qos: .userInitiated) }
+}
+
+/// Scalers waiting for a frame, one for each frame being scaled at the same time.
+private final class ScalerPool: @unchecked Sendable {
+    let width: Int, height: Int
+    private let lock = NSLock()
+    private var idle: [Scaler] = []
+
+    init(width: Int, height: Int) { self.width = width; self.height = height }
+
+    func take() throws -> Scaler {
+        lock.lock()
+        let kept = idle.popLast()
+        lock.unlock()
+        return try kept ?? Scaler(width: width, height: height)
+    }
+
+    func give(_ scaler: Scaler) { lock.lock(); idle.append(scaler); lock.unlock() }
 }
 
 /// Draws decoded frames at the GIF's size.
@@ -141,33 +198,33 @@ private final class Scaler {
 }
 
 /// Frames waiting for ImageIO. A full batch is encoded and handed to the assembler.
-private struct GifBatch {
+///
+/// Batches are encoded one at a time on the calling thread: encoded on other threads beside the scaling, ImageIO's memory was not given
+/// back as it went and the conversion grew to over twice the memory for a third less time.
+private struct GifBatches {
     let capacity: Int
-    private var destination: CGImageDestination?
-    private var data = NSMutableData()
-    private var count = 0
+    private let assembler: GifAssembler
+    private var current: [(image: CGImage, centis: Int)] = []
 
-    init(capacity: Int) { self.capacity = capacity }
+    init(capacity: Int, assembler: GifAssembler) { self.capacity = capacity; self.assembler = assembler }
 
-    mutating func add(_ image: CGImage, centis: Int, into assembler: GifAssembler) throws {
-        if destination == nil {
-            data = NSMutableData()
-            destination = CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString, capacity, nil)
-            guard destination != nil else { throw GifError.encoder("no GIF destination") }
-        }
-        let delay = Double(centis) / 100
-        let properties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay, kCGImagePropertyGIFUnclampedDelayTime: delay]] as CFDictionary
-        CGImageDestinationAddImage(destination!, image, properties)
-        count += 1
-        if count == capacity { try flush(into: assembler) }
+    mutating func add(_ image: CGImage, centis: Int) throws {
+        current.append((image, centis))
+        if current.count == capacity { try finish() }
     }
 
-    mutating func flush(into assembler: GifAssembler) throws {
-        guard let destination, count > 0 else { return }
+    mutating func finish() throws {
+        guard !current.isEmpty else { return }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString, current.count, nil) else { throw GifError.encoder("no GIF destination") }
+        for frame in current {
+            let delay = Double(frame.centis) / 100
+            let properties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay, kCGImagePropertyGIFUnclampedDelayTime: delay]] as CFDictionary
+            CGImageDestinationAddImage(destination, frame.image, properties)
+        }
+        current = []
         guard CGImageDestinationFinalize(destination) else { throw GifError.encoder("ImageIO could not finish a batch") }
         try assembler.append(data as Data)
-        self.destination = nil
-        count = 0
     }
 }
 
