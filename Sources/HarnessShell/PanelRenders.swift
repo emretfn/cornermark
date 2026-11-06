@@ -67,6 +67,35 @@ enum PanelRenders {
             try write(full.cropping(to: CGRect(x: selection.minX * 2, y: flippedY * 2, width: selection.width * 2, height: selection.height * 2)),
                       out.appendingPathComponent("panel-in-480x270-selection.png"))
         }
+        // Every source on, then every source off. The overlay keeps the panel dark, so the same toggles are also drawn on a window
+        // surface in both appearances, to show the component on the light tokens.
+        let toggles = try RecordingSource.allCases.map { source in
+            guard let toggle = findView("cornermark.record.source.\(source.rawValue)", in: content) as? IconButton else { throw FilmError.missing(source.rawValue) }
+            return toggle
+        }
+        for on in [true, false] {
+            for toggle in toggles where toggle.isSelected != on { toggle.performClick(nil) }
+            guard await waitUntil(5, { toggles.allSatisfy { $0.isSelected == on } }) else { throw FilmError.missing("every source \(on ? "on" : "off")") }
+            let name = on ? "on" : "off"
+            try write(image(panel, scale: 3), out.appendingPathComponent("panel-sources-\(name).png"))
+            let pitch = toggles[1].frame.minX - toggles[0].frame.minX
+            notes.append("panel sources \(name): pitch \(Int(pitch)) pt, gap \(Int(pitch - toggles[0].frame.width)) pt")
+            for dark in [false, true] {
+                let host = NSView(frame: CGRect(x: 0, y: 0, width: 16 + CGFloat(toggles.count) * pitch, height: DS.Size.control + 24))
+                host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                host.wantsLayer = true
+                host.effectiveAppearance.performAsCurrentDrawingAppearance { host.layer?.backgroundColor = DS.Color.bgWindow.cgColor }
+                for (i, toggle) in toggles.enumerated() {
+                    let copy = IconButton(symbol: toggle.symbol, label: toggle.accessibilityLabel() ?? "", size: toggle.size)
+                    copy.selection = toggle.selection
+                    copy.marksSelection = toggle.marksSelection
+                    copy.isSelected = toggle.isSelected
+                    copy.frame.origin = CGPoint(x: 12 + CGFloat(i) * pitch, y: 12)
+                    host.addSubview(copy)
+                }
+                try write(image(host, scale: 3), out.appendingPathComponent("toggles-\(name)-\(dark ? "dark" : "light").png"))
+            }
+        }
         let pill = panel.bounds.insetBy(dx: 32, dy: 32)
         notes.append("panel pill size: \(Int(pill.width)) x \(Int(pill.height)) pt; selection 480 x 270 pt; fits with 12 pt margins: \(pill.width <= 456 && pill.height <= 246)")
 

@@ -27,17 +27,30 @@ public final class IconButton: Pressable {
         didSet { needsDisplay = true }
     }
 
-    /// Draws a small check in the corner while selected, so a toggle that is on shows it in shape as well as in fill.
+    /// Shows a small check over the bottom-right corner while selected, so a toggle that is on shows it in shape as well as in fill.
+    /// The check overflows the corner like a badge, so the glyph stays centred in both states. Leave room for it beside the button.
     public var marksSelection = false {
-        didSet { needsDisplay = true }
+        didSet { updateMark() }
+    }
+
+    /// The colour behind the button, drawn as a ring around the check so it reads apart from the tile.
+    public var markBackdrop = DS.Color.bgWindow {
+        didSet { mark?.backdrop = markBackdrop }
     }
 
     public var isSelected = false {
         didSet {
             setAccessibilityValue(isSelected ? "Selected" : "Not selected")
             needsDisplay = true
+            updateMark()
         }
     }
+
+    public override var isEnabled: Bool {
+        didSet { updateMark() }
+    }
+
+    private var mark: CheckBadge?
 
     public init(symbol: String, label: String, size: ComponentSize = .regular, tone: Tone = .plain) {
         self.symbol = symbol
@@ -48,6 +61,8 @@ public final class IconButton: Pressable {
         setAccessibilityLabel(label)
         setAccessibilityValue("Not selected")
         if tone == .overlay { appearance = NSAppearance(named: .darkAqua) }
+        // The check overflows the corner, so the button must not clip its own subviews.
+        clipsToBounds = false
         frame.size = intrinsicContentSize
     }
 
@@ -66,38 +81,35 @@ public final class IconButton: Pressable {
         if let border = look.border { Paint.strokeInside(path, border) }
         // A circle has less room than a rounded square, so the same glyph needs a smaller size to keep clear of its edge.
         let pointSize = glyphSize ?? (tone == .overlay ? DS.Size.iconSmall : size.iconSize)
-        guard marksSelection else {
-            Paint.symbol(symbol, in: bounds, pointSize: pointSize, look.text)
-            return
+        Paint.symbol(symbol, in: bounds, pointSize: pointSize, look.text)
+    }
+
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        mark?.frame = markFrame
+    }
+
+    private func updateMark() {
+        if marksSelection, mark == nil {
+            let badge = CheckBadge(frame: markFrame)
+            badge.backdrop = markBackdrop
+            addSubview(badge)
+            mark = badge
         }
-        // A toggle that can carry the check keeps its glyph up and away from the check's corner in both states, so turning it on
-        // never moves the glyph, and the glyph is never drawn under the check or the gap around it.
-        let mark = markRect
-        let up = isFlipped ? -Self.markNudge : Self.markNudge
-        NSGraphicsContext.saveGraphicsState()
-        let clear = NSBezierPath(rect: bounds)
-        clear.append(NSBezierPath(ovalIn: mark.insetBy(dx: -Self.markGap, dy: -Self.markGap)))
-        clear.windingRule = .evenOdd
-        clear.addClip()
-        Paint.symbol(symbol, in: bounds.offsetBy(dx: -Self.markNudge, dy: up), pointSize: pointSize, look.text)
-        NSGraphicsContext.restoreGraphicsState()
-        guard isSelected, state != .disabled else { return }
-        Paint.fill(NSBezierPath(ovalIn: mark), DS.Color.bgInverse)
-        Paint.symbol("checkmark", in: mark, pointSize: Self.markGlyph, DS.Color.onInverse)
+        mark?.isHidden = !(marksSelection && isSelected && isEnabled)
     }
 
-    /// The check sits in the corner itself, on whole points, so it stays sharp and clear of the glyph.
-    var markRect: CGRect {
+    /// The check's frame, on whole points, centred on the corner's curve so it overflows the tile by `markOverflow` on both sides.
+    var markFrame: CGRect {
         let d = Self.markDiameter
-        return CGRect(x: bounds.maxX - d, y: isFlipped ? bounds.maxY - d : bounds.minY, width: d, height: d)
+        let inside = d - Self.markOverflow
+        return CGRect(x: bounds.maxX - inside, y: isFlipped ? bounds.maxY - inside : bounds.minY - Self.markOverflow, width: d, height: d)
     }
 
-    static let markDiameter: CGFloat = 9
-    static let markGlyph: CGFloat = 6
-    /// How far the glyph of a checkable toggle sits up and left of centre, so even the widest source glyph keeps `markGap` from the check.
-    static let markNudge: CGFloat = 2
-    /// The ring left empty around the check, in the button's own fill, so check and glyph never touch.
-    static let markGap: CGFloat = 1.5
+    /// The check's outer size, its ring included.
+    static let markDiameter: CGFloat = 12
+    /// How far the check reaches past the tile's right and bottom edges. A row of checkable toggles needs a wider gap than this.
+    public static let markOverflow: CGFloat = 4
 
     func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, selection: selection, state) }
 
@@ -119,5 +131,32 @@ public final class IconButton: Pressable {
         case (.overlay, .pressed): return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
         case (.overlay, .disabled): return ButtonAppearance(fill: c.bgHud, text: c.textDisabled)
         }
+    }
+}
+
+/// The check a selected toggle shows over its corner. A ring in the backdrop colour cuts it out of the tile. It never takes clicks,
+/// so a click on its overflow reaches whatever lies under it, and the button alone speaks to VoiceOver.
+private final class CheckBadge: NSView {
+    var backdrop = DS.Color.bgWindow {
+        didSet { needsDisplay = true }
+    }
+
+    static let ring: CGFloat = 1.5
+    static let glyph: CGFloat = 6
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("CheckBadge is created in code") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        Paint.fill(NSBezierPath(ovalIn: bounds), backdrop)
+        let dot = bounds.insetBy(dx: Self.ring, dy: Self.ring)
+        Paint.fill(NSBezierPath(ovalIn: dot), DS.Color.bgInverse)
+        Paint.symbol("checkmark", in: dot, pointSize: Self.glyph, DS.Color.onInverse)
     }
 }
