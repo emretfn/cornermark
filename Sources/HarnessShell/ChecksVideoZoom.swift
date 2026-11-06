@@ -146,8 +146,9 @@ func checkVideoZoom() async throws {
 
     section("video editor: a zoom's menu")
     guard let menu = hand.menu(x: hand.x(2)) else { return check(false, "a right click on a zoom opens its menu") }
-    check(menu.items.map(\.title) == ["Level", "Apply Level to All", "Mode", "", "Split at Playhead", "Duplicate", "", "Remove Zoom", "Remove All Zooms"],
-          "the menu offers level, apply level to all, mode, split, duplicate, remove and remove all", detail: "\(menu.items.map(\.title))")
+    check(menu.items.map(\.title) == ["Level", "Apply Level to All", "Mode", "", "Animation Settings\u{2026}", "", "Split at Playhead", "Duplicate", "", "Remove Zoom",
+                                       "Remove All Zooms"],
+          "the menu offers level, apply level to all, mode, animation settings, split, duplicate, remove and remove all", detail: "\(menu.items.map(\.title))")
     let levels = menu.items.first { $0.title == "Level" }?.submenu?.items ?? []
     check(levels.map(\.title) == ["100%", "150%", "200%", "300%", "400%"] && levels.first { $0.state == .on }?.title == "200%",
           "Level lists 100% to 400% and checks the zoom's own", detail: "\(levels.map(\.title))")

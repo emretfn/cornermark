@@ -7,7 +7,7 @@ final class ZoomCurveTests: XCTestCase {
     private func scale(_ t: Double, _ zooms: [Zoom]? = nil) -> Double { ZoomCamera.rect(zooms ?? [zoom], at: t).scale }
 
     func testTheMoveInMirrorsTheMoveOut() {
-        let d = ZoomCurve.duration
+        let d = ZoomAnimation().duration
         for k in 0...68 {
             let u = Double(k) / 68 * d
             XCTAssertEqual(scale(zoom.start + u), scale(zoom.end - u), accuracy: 1e-12, "in at +\(u) s equals out at -\(u) s")
@@ -15,7 +15,7 @@ final class ZoomCurveTests: XCTestCase {
     }
 
     func testTheMoveTakesExactlyItsDurationAndIsFastestHalfway() {
-        let d = ZoomCurve.duration, step = 1.0 / 600
+        let d = ZoomAnimation().duration, step = 1.0 / 600
         XCTAssertEqual(scale(zoom.start), 1)
         XCTAssertEqual(scale(zoom.start + d), 2, accuracy: 1e-12)
         XCTAssertLessThan(scale(zoom.start + d - step), 2)
@@ -60,7 +60,7 @@ final class ZoomCurveTests: XCTestCase {
 
     func testAZoomShorterThanTwoMovesSplitsItsLengthBetweenThem() {
         let short = Zoom(start: 0, end: 1, scale: 3)
-        XCTAssertEqual(ZoomCurve.ramp(short), 0.5)
+        XCTAssertEqual(ZoomAnimation().ramp(short), 0.5)
         XCTAssertEqual(scale(0.5, [short]), 3, accuracy: 1e-12)
         XCTAssertEqual(scale(0.25, [short]), scale(0.75, [short]), accuracy: 1e-12)
     }
@@ -73,16 +73,16 @@ final class ZoomCurveTests: XCTestCase {
         while t <= 3.5 { lowest = min(lowest, scale(t, [a, b])); t += 1.0 / 120 }
         XCTAssertEqual(lowest, 2, accuracy: 1e-9, "the camera never pulls back to the whole picture between them")
         XCTAssertEqual(ZoomCamera.rect([a, b], at: 2.2), ZoomCamera.target(a), "it waits on the first zoom across the gap")
-        XCTAssertEqual(ZoomCamera.rect([a, b], at: 2.5 + ZoomCurve.duration), ZoomCamera.target(b))
-        XCTAssertEqual(scale(2.5 + ZoomCurve.duration / 2, [a, b]), (2.0 * 3).squareRoot(), accuracy: 1e-12, "the handover is the same curve, halfway in ratio")
+        XCTAssertEqual(ZoomCamera.rect([a, b], at: 2.5 + ZoomAnimation().duration), ZoomCamera.target(b))
+        XCTAssertEqual(scale(2.5 + ZoomAnimation().duration / 2, [a, b]), (2.0 * 3).squareRoot(), accuracy: 1e-12, "the handover is the same curve, halfway in ratio")
 
-        let apart = Zoom(start: 2 + ZoomCurve.joinGap, end: 6, scale: 3)
-        XCTAssertEqual(scale(2 + ZoomCurve.joinGap / 2, [a, apart]), 1, "zooms far apart each return to the whole picture")
+        let apart = Zoom(start: 2 + ZoomAnimation().joinGap, end: 6, scale: 3)
+        XCTAssertEqual(scale(2 + ZoomAnimation().joinGap / 2, [a, apart]), 1, "zooms far apart each return to the whole picture")
     }
 
     func testAMoveTakesSeventyEightHundredthsOfASecondAndHandoverGapIsTwoMoves() {
-        XCTAssertEqual(ZoomCurve.duration, 0.78)
-        XCTAssertEqual(ZoomCurve.joinGap, 1.56, accuracy: 1e-12)
+        XCTAssertEqual(ZoomAnimation().duration, 0.78)
+        XCTAssertEqual(ZoomAnimation().joinGap, 1.56, accuracy: 1e-12)
         let a = Zoom(start: 0, end: 2, scale: 2), joined = Zoom(start: 3.5, end: 6, scale: 3), apart = Zoom(start: 3.6, end: 6, scale: 3)
         XCTAssertEqual(ZoomCamera.rect([a, joined], at: 2.9), ZoomCamera.target(a), "1.5 s apart is less than two moves, so it hands over")
         XCTAssertEqual(ZoomCamera.rect([a, apart], at: 2.9), .full, "1.6 s apart is more than two moves, so it returns to the whole picture")

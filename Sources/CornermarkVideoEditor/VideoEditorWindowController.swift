@@ -19,6 +19,8 @@ public struct VideoEditorState: Equatable {
     public var exportSettings = ExportSettings()
     /// The clip Delete removes, picked on the clip lane. Without one, Delete removes the clip under the playhead.
     public var selectedClip: Int?
+    /// Animation Settings floats over the settings column.
+    public var showsZoomAnimation = false
 
     public init(project: RecordingProject) {
         self.project = project
@@ -128,6 +130,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private let inspector = InspectorView()
     private let header = HeaderBar()
     private let exportPanel = ExportPanel()
+    private let animationPanel = ZoomAnimationPanel()
+    private var animationPanelTop: NSLayoutConstraint?
     private var exportJob: Task<ExportReport, Error>?
     private let bottomRule = Separator(axis: .horizontal)
     private var editingConstraints: [NSLayoutConstraint] = []
@@ -217,11 +221,17 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private func buildContent(in window: NSWindow) {
         let content = NSView()
         window.contentView = content
-        for v in [header, inspector, preview, transportBar, bottomRule, timeline, exportPanel] as [NSView] {
+        for v in [header, inspector, preview, transportBar, bottomRule, timeline, exportPanel, animationPanel] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
         exportPanel.isHidden = true
+        animationPanel.isHidden = true
+        inspector.zoomPanel.target.aspect = timeline.aspect
+        let animationTop = animationPanel.topAnchor.constraint(equalTo: content.topAnchor)
+        // Below the window's own size, so a panel that would reach the timeline rises instead of growing the window.
+        animationTop.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 10)
+        animationPanelTop = animationTop
         preview.pointSize = CGSize(width: max(state.project.source.pointWidth, 1), height: max(state.project.source.pointHeight, 1))
         timeline.timeline = state.project.timeline
         timeline.frameStep = 1 / Double(max(state.project.source.fps, 1))
@@ -244,6 +254,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             timeline.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             timeline.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             timeline.heightAnchor.constraint(equalToConstant: TimelineView.Metrics.height),
+            // Over the settings column, so the preview stays whole while the moves are tried out.
+            animationPanel.leadingAnchor.constraint(equalTo: inspector.leadingAnchor, constant: DS.Space.s4 - ZoomAnimationPanel.inset),
+            // It rises from its button's level when it would otherwise cover the timeline, whose zooms it changes.
+            animationPanel.bottomAnchor.constraint(lessThanOrEqualTo: bottomRule.topAnchor, constant: ZoomAnimationPanel.inset - DS.Space.s8),
+            animationPanel.topAnchor.constraint(greaterThanOrEqualTo: header.bottomAnchor, constant: DS.Space.s4 - ZoomAnimationPanel.inset),
+            animationTop,
         ])
         editingConstraints = [
             preview.topAnchor.constraint(equalTo: header.bottomAnchor),
@@ -301,6 +317,9 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         lane.menuForZoom = { [unowned self] in zoomMenu(for: $0) }
         lane.onKey = { [unowned self] in zoomKey($0) }
         inspector.zoomPanel.onChange = { [unowned self] in zoomPanelChanged($0) }
+        animationPanel.onChange = { [unowned self] in setZoomAnimation($0, coalescing: $1) }
+        animationPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
+        animationPanel.onClose = { [unowned self] in closeZoomAnimation() }
     }
 
     private func prepare() async {
@@ -545,6 +564,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         switch change {
         case .scale(let s, let dragging): setZoomScale(s, of: id, dragging: dragging)
         case .mode(let mode): setZoomMode(mode, of: id)
+        case .center(let center, let phase):
+            setZoomCenter(center, of: id, coalescing: phase == .key ? CoalescingKey("zoom.key.center-\(id)") : CoalescingKey("zoom.center-\(id)"))
+            if phase == .ended { history.endCoalescing() }
+        case .animationSettings: state.showsZoomAnimation ? closeZoomAnimation() : openZoomAnimation()
         case .applyToAll: applyZoomLevelToAll(from: id)
         case .remove: removeZoom(id)
         }
@@ -584,6 +607,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         }
         menu.addItem(mode)
         menu.addItem(.separator())
+        menu.addItem(item("Animation Settings\u{2026}") { [unowned self] in
+            selectZoom(id)
+            openZoomAnimation()
+        })
+        menu.addItem(.separator())
         menu.addItem(item("Split at Playhead", enabled: zoomLane.splitting(id, at: playhead) != nil) { [unowned self] in splitZoom(id) })
         menu.addItem(item("Duplicate", enabled: zoomLane.duplicating(id) != nil) { [unowned self] in duplicateZoom(id) })
         menu.addItem(.separator())
@@ -597,6 +625,64 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         edits.zooms = lane.zooms
         commit(edits, coalescing: key)
     }
+
+    /// Aims a zoom at `center`, held where its view stays inside the picture. `key` folds one drag or a run of arrow presses into one
+    /// undo step.
+    public func setZoomCenter(_ center: ZoomPoint, of id: UUID, coalescing key: CoalescingKey? = nil) {
+        guard let zoom = zoomLane.zoom(id) else { return }
+        let c = ZoomCamera.reachable(center, scale: zoom.scale)
+        commitZooms(zoomLane.updating(id) { $0.center = c }, coalescing: key)
+    }
+
+    /// How every zoom of the video moves. `key` folds one slider drag into one undo step.
+    public func setZoomAnimation(_ animation: ZoomAnimation, coalescing key: CoalescingKey? = nil) {
+        var edits = state.project.edits
+        edits.zoomAnimation = animation
+        commit(edits, coalescing: key)
+    }
+
+    /// Opens Animation Settings over the settings column, level with its button, or higher when that would cover the timeline. It needs
+    /// a picked zoom, whose panel holds the button.
+    public func openZoomAnimation() {
+        guard state.selectedZoom != nil, !state.showsZoomAnimation, !state.isPreviewOnly, let content = window?.contentView else { return }
+        closeExport()
+        state.showsZoomAnimation = true
+        content.layoutSubtreeIfNeeded()
+        let button = inspector.zoomPanel.animationSettings
+        let frame = content.convert(button.bounds, from: button)
+        animationPanelTop?.constant = (content.isFlipped ? frame.minY : content.bounds.height - frame.maxY) - ZoomAnimationPanel.inset
+        animationPanel.show(state.project.edits.zoomAnimation)
+        content.layoutSubtreeIfNeeded()
+        // It grows from its top-left corner, the one beside the button that opened it.
+        let corner = CGPoint(x: ZoomAnimationPanel.inset, y: animationPanel.bounds.height - ZoomAnimationPanel.inset)
+        animationPanel.fade(visible: true, growsFrom: corner) { true }
+        window?.makeFirstResponder(animationPanel.firstControl)
+    }
+
+    public func closeZoomAnimation() {
+        guard state.showsZoomAnimation else { return }
+        state.showsZoomAnimation = false
+        history.endCoalescing()
+        animationPanel.fade(visible: false, growsFrom: .zero) { [weak self] in self?.state.showsZoomAnimation == false }
+        // Focus inside the panel, or nowhere, returns to the button that opened it, or to the lane when that button has gone with its zoom.
+        let focused = window?.firstResponder
+        guard focused === window || (focused as? NSView)?.isDescendant(of: animationPanel) == true else { return }
+        let button = inspector.zoomPanel.animationSettings
+        window?.makeFirstResponder(button.isHiddenOrHasHiddenAncestor ? timeline.zoomLane : button)
+    }
+
+    /// Shows the recording at the middle of the Manual zoom behind its target.
+    private func showTargetPicture(for zoom: Zoom) {
+        let project = state.project
+        let fps = Double(max(project.source.fps, 1))
+        let t = (project.timeline.sourceTime(at: (zoom.start + zoom.end) / 2) * fps).rounded() / fps
+        let thumbnails = timeline.thumbnails, duration = project.source.duration
+        let standIn = thumbnails.isEmpty || duration <= 0 ? nil : thumbnails[min(max(Int(t / duration * Double(thumbnails.count)), 0), thumbnails.count - 1)]
+        inspector.zoomPanel.target.showFrame(of: videoURL, at: t, fps: fps, standIn: standIn)
+    }
+
+    /// Returns once the zoom target shows the exact frame it asked for.
+    public func zoomTargetSettled() async { await inspector.zoomPanel.target.pictureSettled() }
 
     // MARK: Undo
 
@@ -737,6 +823,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     private func escape() -> Bool {
+        if state.showsZoomAnimation { closeZoomAnimation(); return true }
         if state.isPreviewOnly { setPreviewOnly(false); return true }
         if state.selectedZoom != nil { selectZoom(nil); return true }
         guard state.selectedClip != nil else { return false }
@@ -782,6 +869,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     public func openExport() {
         guard state.export == .closed, !state.isPreviewOnly else { return }
+        closeZoomAnimation()
         state.export = .choosing
         refresh()
         setPanelVisible(true)
@@ -1026,6 +1114,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                        origin: project.source.origin, hasAudio: frames.hasAudio)
         timeline.zoomLane.zooms = zooms
         timeline.zoomLane.selection = state.selectedZoom
+        animationPanel.show(project.edits.zoomAnimation)
+        let picked = zooms.first { $0.id == state.selectedZoom }
+        if picked == nil || state.isPreviewOnly { closeZoomAnimation() }
+        if let picked, picked.mode == .manual { showTargetPicture(for: picked) }
         header.show(state.export)
         let edited = state.project != saved
         header.show(document: edited ? .edited : hasSaved ? .saved : .unchanged)
