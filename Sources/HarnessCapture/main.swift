@@ -32,6 +32,7 @@ Task { @MainActor in
     await runGifTests()
     await runRecordingSettingsTests()
     await runRecordingControlTests()
+    await runStreamSafetyTests()
     await runProjectTimelineTests()
     await runInputTests()
     await runCameraTests()

@@ -2,8 +2,9 @@ import AVFoundation
 import CornermarkCapture
 import CornermarkCore
 
-/// One small file per recording in progress, written once its first frame is on disk and removed when it ends. A file still here at
-/// launch belongs to a recording the app never finished, because it crashed or was killed.
+/// One small file per recording in progress, written as soon as the recorder has started and removed when it ends. A file still here at
+/// launch belongs to a recording the app never finished, because it crashed or was killed. A crash before the first frame leaves no
+/// frames to recover, which `RecordingRecovery.finish` reports as missing or unreadable, so the entry is dropped with a log line.
 struct RecordingJournal {
     struct Entry: Codable, Equatable {
         var id = UUID()

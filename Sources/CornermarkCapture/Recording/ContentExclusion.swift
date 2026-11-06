@@ -14,6 +14,11 @@ public struct ContentExclusion: Equatable, Sendable {
         self.hidesDesktopIcons = hidesDesktopIcons
     }
 
+    /// True when the list can go stale while recording. The stream can exclude only an `SCRunningApplication` taken from
+    /// `SCShareableContent.applications`, never a bundle identifier, so a Notification Center process that was not listed when the
+    /// stream was prepared, or a Finder window opened since, joins the filter only through a later look.
+    public var needsRefresh: Bool { hidesNotifications || hidesDesktopIcons }
+
     public static let notificationCenter = "com.apple.notificationcenterui"
     public static let finder = "com.apple.finder"
 
@@ -57,5 +62,26 @@ public struct ContentExclusion: Equatable, Sendable {
             }
         }
         return Plan(excludedApps: excluded, exceptedWindows: excepted)
+    }
+}
+
+/// Keeps the plan of a running recording current. `observe` takes a fresh look at the running applications and windows and hands
+/// back a plan only when it differs from the one in force, so the stream's filter is replaced only when the list changed.
+public struct ExclusionTracker: Sendable {
+    public let exclusion: ContentExclusion
+    public let ownPID: pid_t
+    public private(set) var plan: ContentExclusion.Plan
+
+    public init(exclusion: ContentExclusion, plan: ContentExclusion.Plan, ownPID: pid_t) {
+        self.exclusion = exclusion
+        self.plan = plan
+        self.ownPID = ownPID
+    }
+
+    public mutating func observe(apps: [ContentExclusion.App], windows: [ContentExclusion.Window]) -> ContentExclusion.Plan? {
+        let next = exclusion.plan(apps: apps, windows: windows, ownPID: ownPID)
+        guard next != plan else { return nil }
+        plan = next
+        return next
     }
 }
