@@ -20,8 +20,8 @@ public final class IconButton: Pressable {
     }
 
     /// How the selected state looks. A tool picks with the accent; a button that only switches what a panel shows stays neutral,
-    /// because navigation never takes the accent.
-    public enum Selection: CaseIterable { case accent, neutral }
+    /// because navigation never takes the accent. `inverse` is the strong neutral of a rail's open section, a graphite tile.
+    public enum Selection: CaseIterable { case accent, neutral, inverse }
 
     public var selection = Selection.accent {
         didSet { needsDisplay = true }
@@ -119,6 +119,7 @@ public final class IconButton: Pressable {
             switch selection {
             case .accent: return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
             case .neutral: return ButtonAppearance(fill: c.bgControlActive, text: c.textPrimary)
+            case .inverse: return ButtonAppearance(fill: state == .normal ? c.bgInverse : c.bgInverseHover, text: c.onInverse)
             }
         }
         switch (tone, state) {

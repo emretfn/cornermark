@@ -125,7 +125,8 @@ final class InspectorView: NSView {
         rail.setAccessibilityIdentifier("video.rail")
         for section in EditorSection.allCases {
             let b = IconButton(symbol: section.symbol, label: section.title, size: .regular)
-            b.selection = .neutral
+            // The open section is a graphite tile: unmistakable at a glance, and still neutral, since the rail is navigation.
+            b.selection = .inverse
             b.setAccessibilityIdentifier("video.rail.\(section.rawValue)")
             b.target = self
             b.action = #selector(railPressed(_:))

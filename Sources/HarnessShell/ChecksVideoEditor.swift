@@ -410,7 +410,8 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
     check(railButtons.count == 7 && railButtons.map { $0.accessibilityLabel() ?? "" } == ["Cursor", "Clicks", "Keystrokes", "Audio", "Camera", "Background", "Motion Blur"],
           "the rail holds Cursor, Clicks, Keystrokes, Audio, Camera, Background and Motion Blur in that order")
     check(railButtons.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil }, "every rail symbol exists")
-    check(railButtons.allSatisfy { $0.selection == .neutral } && railButtons.first?.isSelected == true, "the rail is navigation: neutral selection, Cursor chosen first")
+    check(railButtons.allSatisfy { $0.selection == .inverse } && railButtons.first?.isSelected == true,
+          "the rail is navigation: the open section is a neutral inverse tile, never the accent, Cursor chosen first")
 
     let title = editor.view(identifier: "video.panel.title") as? NSTextField
     let note = editor.view(identifier: "video.panel.note") as? NSTextField
