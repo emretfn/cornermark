@@ -12,12 +12,12 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     private let audioQueue = DispatchQueue(label: "cornermark.stream-audio", qos: .userInteractive)
     /// What the Mac plays, when the options ask for it. It needs only Screen Recording, no audio driver.
     public let systemAudio = StreamAudio()
-    private var stream: SCStream?
+    /// The running stream and the recorder's handler, shared with the sample queue and the delegate callback.
+    private let link = StreamLink<SCStream>()
     private var prepared: (filter: SCContentFilter, config: SCStreamConfiguration, format: FrameFormat)?
-    private var deliver: ((VideoFrame) -> Void)?
     private var display: SCDisplay?
     private var refresh: Task<Void, Never>?
-    private var plan: ContentExclusion.Plan?
+    private var tracker: ExclusionTracker?
     public private(set) var pointArea = CGRect.zero
 
     public init(target: RecordingTarget, options: RecordingOptions) {
@@ -65,7 +65,7 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
         }
         config.width = format.width
         config.height = format.height
-        self.plan = plan
+        tracker = plan.map { ExclusionTracker(exclusion: options.exclusion, plan: $0, ownPID: ProcessInfo.processInfo.processIdentifier) }
         prepared = (filter, config, format)
         return format
     }
@@ -73,49 +73,61 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
     public func start(_ deliver: @escaping (VideoFrame) -> Void) async throws {
         if prepared == nil { _ = try await prepare() }
         guard let prepared else { throw RecordingError.source("Nothing prepared") }
-        self.deliver = deliver
+        link.open(deliver)
         let stream = SCStream(filter: prepared.filter, configuration: prepared.config, delegate: self)
         do {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             if options.capturesSystemAudio { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue) }
             try await stream.startCapture()
         } catch {
+            _ = link.close()
             throw Self.map(error)
         }
-        self.stream = stream
-        // Finder windows are filmed by name while desktop icons are hidden, so one opened mid-recording joins the filter here.
-        if display != nil, options.exclusion.hidesDesktopIcons { refresh = Task { [weak self] in await self?.refreshFilter() } }
-    }
-
-    private func refreshFilter() async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard let stream, let display, let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else { continue }
-            let (next, plan) = Self.filter(display, content, options.exclusion)
-            guard plan != self.plan else { continue }
-            try? await stream.updateContentFilter(next)
-            self.plan = plan
+        link.attach(stream)
+        // A filter can exclude only an application the stream was handed as an object, never a bundle identifier. Notification Center
+        // may have had no window when the stream was prepared, and a Finder window may open mid-recording, so the list is looked at again.
+        if let display, let tracker, options.exclusion.needsRefresh {
+            refresh = Task { [weak self] in await self?.refreshFilter(stream, display, tracker) }
         }
     }
 
-    /// The exclusion plan as a content filter: excluded applications, and the windows of theirs that are filmed anyway.
-    static func filter(_ display: SCDisplay, _ content: SCShareableContent, _ exclusion: ContentExclusion) -> (SCContentFilter, ContentExclusion.Plan) {
+    /// Looks once a second and replaces the filter only when the plan changed. A failed replacement is tried again at the next look.
+    private func refreshFilter(_ stream: SCStream, _ display: SCDisplay, _ initial: ExclusionTracker) async {
+        var tracker = initial
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled, let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else { continue }
+            let before = tracker
+            let (apps, windows) = Self.snapshot(content)
+            guard !Task.isCancelled, tracker.observe(apps: apps, windows: windows) != nil else { continue }
+            do { try await stream.updateContentFilter(Self.filter(display, content, tracker.plan)) } catch { tracker = before }
+        }
+    }
+
+    private static func snapshot(_ content: SCShareableContent) -> ([ContentExclusion.App], [ContentExclusion.Window]) {
         let apps = content.applications.map { ContentExclusion.App(pid: $0.processID, bundleID: $0.bundleIdentifier) }
         let windows = content.windows.compactMap { w in
             w.owningApplication.map { ContentExclusion.Window(id: w.windowID, ownerPID: $0.processID, layer: w.windowLayer) }
         }
+        return (apps, windows)
+    }
+
+    /// The exclusion plan as a content filter: excluded applications, and the windows of theirs that are filmed anyway.
+    static func filter(_ display: SCDisplay, _ content: SCShareableContent, _ exclusion: ContentExclusion) -> (SCContentFilter, ContentExclusion.Plan) {
+        let (apps, windows) = snapshot(content)
         let plan = exclusion.plan(apps: apps, windows: windows, ownPID: ProcessInfo.processInfo.processIdentifier)
-        let filter = SCContentFilter(display: display, excludingApplications: content.applications.filter { plan.excludedApps.contains($0.processID) },
-                                     exceptingWindows: content.windows.filter { plan.exceptedWindows.contains($0.windowID) })
-        return (filter, plan)
+        return (filter(display, content, plan), plan)
+    }
+
+    private static func filter(_ display: SCDisplay, _ content: SCShareableContent, _ plan: ContentExclusion.Plan) -> SCContentFilter {
+        SCContentFilter(display: display, excludingApplications: content.applications.filter { plan.excludedApps.contains($0.processID) },
+                        exceptingWindows: content.windows.filter { plan.exceptedWindows.contains($0.windowID) })
     }
 
     public func stop() async {
         refresh?.cancel()
         refresh = nil
-        deliver = nil
-        guard let stream else { return }
-        self.stream = nil
+        guard let stream = link.close() else { return }
         try? await stream.stopCapture()
     }
 
@@ -125,12 +137,11 @@ public final class StreamFrameSource: NSObject, FrameSource, SCStreamOutput, SCS
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
               let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        deliver?(VideoFrame(pixels: pixels, time: sampleBuffer.presentationTimeStamp))
+        link.send(VideoFrame(pixels: pixels, time: sampleBuffer.presentationTimeStamp))
     }
 
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
-        guard self.stream != nil else { return }
-        self.stream = nil
+        guard link.fail() != nil else { return }
         onFailure?(Self.map(error))
     }
 
