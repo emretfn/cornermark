@@ -50,14 +50,7 @@ public enum InputOverlayPainter {
         let padX = k.size.fontSize * 0.6, padY = k.size.fontSize * 0.36
         let w = min(size.width + padX * 2, area.width * 0.9), h = size.height + padY * 2
         let margin = max(12, min(area.width, area.height) * 0.05)
-        let x: Double
-        switch k.position {
-        case .bottomLeft: x = margin
-        case .bottomRight: x = area.width - margin - w
-        case .bottomCenter, .topCenter: x = (area.width - w) / 2
-        }
-        let y = k.position == .topCenter ? margin : area.height - margin - h
-        return CGRect(x: x, y: y, width: w, height: h)
+        return k.position.place(CGSize(width: w, height: h), in: area, margin: margin)
     }
 
     private static func draw(_ badge: KeyBadge, area: CGSize, _ k: KeystrokeDisplay, _ ink: InputOverlayInk, _ ctx: CGContext) {

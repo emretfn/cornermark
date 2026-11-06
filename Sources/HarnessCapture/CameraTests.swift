@@ -84,7 +84,7 @@ func runCameraTests() async {
         let look = CameraLook(CameraBubble())
         let (report, url, _) = try await record("camera-video", editing: false, seconds: 2.4, look: look) { t, _ in
             if abs(t - 1.0) < 1e-9 { look.update { $0.isMirrored = false } }
-            if abs(t - 1.5) < 1e-9 { look.update { $0.shape = .rectangle; $0.corner = .topRight; $0.size = .large } }
+            if abs(t - 1.5) < 1e-9 { look.update { $0.shape = .rectangle; $0.position = .topRight; $0.size = .large } }
             if abs(t - 2.0) < 1e-9 { look.setFullScreen(true, at: t) }
         }
         check(report.camera?.file == nil && report.project.source.camera == nil, "Record Video keeps no camera file: the camera is in its picture")
@@ -102,7 +102,7 @@ func runCameraTests() async {
         } else {
             check(false, "frames of the video could be read")
         }
-        let wide = CameraBubble(shape: .rectangle, size: .large, corner: .topRight, isMirrored: false)
+        let wide = CameraBubble(shape: .rectangle, size: .large, position: .topRight, isMirrored: false)
         let rect = CameraLayout.bubbleRect(wide, area: area)
         if let moved = await frame(of: url, at: 1.75) {
             let fill = CameraBubblePainter.aspectFill(CGSize(width: 640, height: 360), in: rect)

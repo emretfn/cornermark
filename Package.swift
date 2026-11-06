@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "CornermarkCore", swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "CornermarkDesign", swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CornermarkDesign", dependencies: ["CornermarkCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "CornermarkCapture", dependencies: ["CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "CornermarkEditor", dependencies: ["CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "CornermarkVideoEditor", dependencies: ["CornermarkCore", "CornermarkDesign"], swiftSettings: [.swiftLanguageMode(.v5)]),

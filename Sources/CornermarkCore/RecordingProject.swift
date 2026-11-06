@@ -109,10 +109,12 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         public var clips: [Clip]
         public var background: VideoBackground
         public var camera: CameraBubble
+        public var audio: AudioEdits
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble()) {
+                    clips: [Clip] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble(), audio: AudioEdits = AudioEdits()) {
             self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.background = background; self.camera = camera
+            self.audio = audio
         }
 
         public init(from decoder: Decoder) throws {
@@ -123,8 +125,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             camera = (try? c.decodeIfPresent(CameraBubble.self, forKey: .camera)) ?? CameraBubble()
             clips = try c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)?.compactMap(\.value) ?? []
             background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
+            audio = (try? c.decodeIfPresent(AudioEdits.self, forKey: .audio)) ?? AudioEdits()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background, camera }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, background, camera, audio }
     }
 
     public var version: Int
@@ -188,9 +191,11 @@ public struct FrameState: Equatable, Sendable {
     public var cursor: CursorFrame?
     /// Where the camera goes. Its picture is the camera file at `sourceTime`. Nil when the recording has no camera or the viewer hid it.
     public var camera: CameraFrame?
+    /// The keystroke badge, drawn as the project's `edits.keystrokes` says.
+    public var input: InputOverlayState
 
-    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil) {
-        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera
+    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil, input: InputOverlayState = InputOverlayState()) {
+        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera; self.input = input
     }
 }
 
@@ -199,12 +204,14 @@ public func frameState(_ project: RecordingProject, outputTime: Double) -> Frame
     let sourceTime = project.timeline.sourceTime(at: outputTime)
     let area = CGSize(width: project.source.pointWidth, height: project.source.pointHeight)
     let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
+    // The editor has no control for click rings yet, so a recording's rings stay out of the video and only the badge is drawn.
+    let input = InputOverlay.state(clicks: [], keys: project.events.keys, highlight: project.edits.clicks, keystrokes: project.edits.keystrokes, at: sourceTime)
     let settings = project.edits.cursor
     guard settings.isVisible, let at = PointerTrack.position(project.events.pointer, at: sourceTime) else {
-        return FrameState(sourceTime: sourceTime, cursor: nil, camera: camera)
+        return FrameState(sourceTime: sourceTime, cursor: nil, camera: camera, input: input)
     }
     let scale = min(max(settings.scale, CursorSettings.scaleRange.lowerBound), CursorSettings.scaleRange.upperBound)
-    return FrameState(sourceTime: sourceTime, cursor: CursorFrame(x: at.x, y: at.y, scale: scale), camera: camera)
+    return FrameState(sourceTime: sourceTime, cursor: CursorFrame(x: at.x, y: at.y, scale: scale), camera: camera, input: input)
 }
 
 public enum PointerTrack {

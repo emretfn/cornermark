@@ -43,7 +43,7 @@ enum CameraFilm {
         f.layers = { f.windowLayer(window, at: f.settingsOrigin) }
         f.status = {
             let cam = w.settings.value.recording.camera
-            return "settings.recording.camera: isVisible=\(cam.isVisible) shape=\(cam.shape.rawValue) size=\(cam.size.rawValue) corner=\(cam.corner.rawValue) mirrored=\(cam.isMirrored)  CameraAccess.requests=\(CameraAccess.requests) LiveCameraSource.sessionsOpened=\(LiveCameraSource.sessionsOpened)"
+            return "settings.recording.camera: isVisible=\(cam.isVisible) shape=\(cam.shape.rawValue) size=\(cam.size.rawValue) corner=\(cam.position.rawValue) mirrored=\(cam.isMirrored)  CameraAccess.requests=\(CameraAccess.requests) LiveCameraSource.sessionsOpened=\(LiveCameraSource.sessionsOpened)"
         }
         f.refresh()
         f.hold(1.2, "Settings > Camera, camera off: its look cannot be changed yet")
@@ -58,7 +58,7 @@ enum CameraFilm {
             }
         }
         f.choose("camera.size", 1, in: sw, note: "Size: Medium")
-        f.choose("camera.corner", 0, in: sw, note: "Position: Bottom left")
+        f.choose("camera.position", 0, in: sw, note: "Position: Bottom left")
         f.hold(1.0, "Mirror camera is on by default; camera access reads Allowed in this harness and is never asked for")
         window.close()
 
@@ -100,7 +100,7 @@ enum CameraFilm {
             let look = c.recording.cameraLook?.current
             let panel = c.controls.camera.panel
             let window = panel.map { "window \"\($0.title)\" sharingType=\($0.sharingType == .none ? "none" : "readOnly") frame=\(NSStringFromRect($0.frame))" } ?? "no camera window"
-            return "phase=\(c.recording.phase) look: \(look.map { "\($0.shape.rawValue) \($0.size.rawValue) \($0.corner.rawValue) mirrored=\($0.isMirrored)" } ?? "none") fullScreen=\(c.recording.cameraLook?.isFullScreen ?? false) picture=\(c.controls.camera.view?.image.map { "\($0.width)x\($0.height)" } ?? "none") pictures=\(cameras.last?.picturesDelivered ?? 0)  \(window)"
+            return "phase=\(c.recording.phase) look: \(look.map { "\($0.shape.rawValue) \($0.size.rawValue) \($0.position.rawValue) mirrored=\($0.isMirrored)" } ?? "none") fullScreen=\(c.recording.cameraLook?.isFullScreen ?? false) picture=\(c.controls.camera.view?.image.map { "\($0.width)x\($0.height)" } ?? "none") pictures=\(cameras.last?.picturesDelivered ?? 0)  \(window)"
         }
         // The camera's pictures reach the bubble through the main queue, so each film frame gives it a turn.
         func run(_ seconds: Double, _ note: String) async {
@@ -138,7 +138,7 @@ enum CameraFilm {
             panel.setFrameOrigin(NSPoint(x: 60, y: 600))
             await run(0.6, "Drag: the bubble is let go near the top-left")
             view.onDrop(CGPoint(x: panel.frame.midX, y: panel.frame.midY))
-            await run(1.4, "and settles in the nearest corner, which the next recording keeps (settings corner=\(w.settings.value.recording.camera.corner.rawValue))")
+            await run(1.4, "and settles in the nearest corner, which the next recording keeps (settings corner=\(w.settings.value.recording.camera.position.rawValue))")
         }
         _ = m.link("record/stop")
         _ = await waitUntil(10, { m.phase == .idle })

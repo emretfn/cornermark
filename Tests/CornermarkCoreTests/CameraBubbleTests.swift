@@ -5,14 +5,31 @@ import XCTest
 final class CameraBubbleTests: XCTestCase {
     let area = CGSize(width: 1280, height: 720)
 
-    func testEachCornerKeepsTheSameMarginFromItsTwoEdges() {
-        for corner in CameraBubble.Corner.allCases {
-            let r = CameraLayout.bubbleRect(CameraBubble(corner: corner), area: area)
-            let m = CameraLayout.margin(area: area)
-            let left = corner == .bottomLeft || corner == .topLeft, top = corner == .topLeft || corner == .topRight
-            XCTAssertEqual(left ? r.minX : area.width - r.maxX, m, "\(corner)")
-            XCTAssertEqual(top ? r.minY : area.height - r.maxY, m, "\(corner)")
+    func testEveryCellKeepsTheMarginFromTheEdgesItTouchesAndCentresOnTheOthers() {
+        let m = CameraLayout.margin(area: area)
+        for position in GridPosition.allCases {
+            let r = CameraLayout.bubbleRect(CameraBubble(position: position), area: area)
+            switch position.column {
+            case 0: XCTAssertEqual(r.minX, m, "\(position)")
+            case 1: XCTAssertEqual(r.midX, area.width / 2, accuracy: 0.5, "\(position)")
+            default: XCTAssertEqual(area.width - r.maxX, m, "\(position)")
+            }
+            switch position.row {
+            case 0: XCTAssertEqual(r.minY, m, "\(position)")
+            case 1: XCTAssertEqual(r.midY, area.height / 2, accuracy: 0.5, "\(position)")
+            default: XCTAssertEqual(area.height - r.maxY, m, "\(position)")
+            }
         }
+    }
+
+    func testAFileFromBeforeTheGridKeepsItsCorner() throws {
+        let old = try JSONDecoder().decode(CameraBubble.self, from: Data(#"{"corner":"topRight","shape":"square"}"#.utf8))
+        XCTAssertEqual(old.position, .topRight)
+        XCTAssertEqual(old.shape, .square)
+        let centred = CameraBubble(position: .center)
+        let encoded = String(decoding: try JSONEncoder().encode(centred), as: UTF8.self)
+        XCTAssertTrue(encoded.contains(#""position":"center""#), encoded)
+        XCTAssertEqual(try JSONDecoder().decode(CameraBubble.self, from: Data(encoded.utf8)), centred)
     }
 
     func testShapesAndSizes() {
@@ -67,15 +84,15 @@ final class CameraBubbleTests: XCTestCase {
         XCTAssertEqual(damaged.fullScreen, [CameraSpan(from: 0, to: 1)])
         var project = RecordingProject()
         project.source.camera = "camera.mp4"
-        project.edits.camera = CameraBubble(shape: .rectangle, corner: .topRight, fullScreen: [CameraSpan(from: 1, to: 2)])
+        project.edits.camera = CameraBubble(shape: .rectangle, position: .topRight, fullScreen: [CameraSpan(from: 1, to: 2)])
         XCTAssertEqual(try JSONDecoder().decode(RecordingProject.self, from: JSONEncoder().encode(project)), project)
     }
 
     func testTheNearestCornerFollowsTheQuarterTheCentreIsIn() {
-        XCTAssertEqual(CameraLayout.corner(nearest: CGPoint(x: 100, y: 100), area: area), .topLeft)
-        XCTAssertEqual(CameraLayout.corner(nearest: CGPoint(x: 1000, y: 100), area: area), .topRight)
-        XCTAssertEqual(CameraLayout.corner(nearest: CGPoint(x: 100, y: 600), area: area), .bottomLeft)
-        XCTAssertEqual(CameraLayout.corner(nearest: CGPoint(x: 1000, y: 600), area: area), .bottomRight)
+        XCTAssertEqual(GridPosition.corner(nearest: CGPoint(x: 100, y: 100), area: area), .topLeft)
+        XCTAssertEqual(GridPosition.corner(nearest: CGPoint(x: 1000, y: 100), area: area), .topRight)
+        XCTAssertEqual(GridPosition.corner(nearest: CGPoint(x: 100, y: 600), area: area), .bottomLeft)
+        XCTAssertEqual(GridPosition.corner(nearest: CGPoint(x: 1000, y: 600), area: area), .bottomRight)
     }
 
     func testThePainterMirrorsAndClipsToTheShape() throws {

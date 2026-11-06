@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreGraphics
+import CornermarkCore
 import VideoToolbox
 
 /// Pictures of the source video for the preview. The preview asks for the moment `frameState` names, so it shows what export will write.
@@ -15,6 +16,18 @@ public protocol SourceFrames: AnyObject {
     var hasAudio: Bool { get }
     /// 0 to 1, applied to playback.
     var volume: Float { get set }
+    /// Each sound track's gain, as export mixes it. A source without separate tracks ignores it.
+    func setGains(_ gains: [AudioTrack: Double])
+    /// True keeps every sound of the source off, whatever the volume and the gains say.
+    var isSilent: Bool { get set }
+}
+
+extension SourceFrames {
+    public func setGains(_ gains: [AudioTrack: Double]) {}
+    public var isSilent: Bool {
+        get { true }
+        set {}
+    }
 }
 
 /// Decodes the source with a player whose clock follows the editor's. The editor's clock leads, so a later mapping from output
@@ -34,6 +47,12 @@ public final class PlayerFrames: SourceFrames {
         get { player.volume }
         set { player.volume = min(max(newValue, 0), 1) }
     }
+    public var isSilent: Bool {
+        get { player.isMuted }
+        set { player.isMuted = newValue }
+    }
+    /// The sound tracks laid into the player, for a check to read.
+    public var soundTrackCount: Int { soundTracks.count }
 
     /// A playing player may stray from the editor's clock by this much before it is moved back in step.
     static let drift = 0.1
@@ -41,7 +60,16 @@ public final class PlayerFrames: SourceFrames {
     /// More than the few microseconds between the editor reading its clock and this reading the host's, less than any frame.
     static let jump = 0.004
 
-    public init(url: URL) {
+    /// Sound files to lay beside the pictures. `load` puts them into the player, so a cut that moves the player moves the sound too.
+    private let soundFiles: [AudioTrack: URL]
+    private var soundTracks: [AudioTrack: AVAssetTrack] = [:]
+    private var soundAssets: [AVAsset] = []
+    private var gains: [AudioTrack: Double] = [:]
+
+    public convenience init(url: URL) { self.init(url: url, sound: [:]) }
+
+    public init(url: URL, sound: [AudioTrack: URL]) {
+        soundFiles = sound
         let item = AVPlayerItem(asset: AVURLAsset(url: url))
         output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -54,8 +82,56 @@ public final class PlayerFrames: SourceFrames {
     }
 
     public func load() async {
+        if !soundFiles.isEmpty { await laySound() }
         guard let asset = player.currentItem?.asset else { return }
         hasAudio = !((try? await asset.loadTracks(withMediaType: .audio)) ?? []).isEmpty
+    }
+
+    /// Plays the pictures and every sound file as one composition, each track from the start of the recording.
+    private func laySound() async {
+        guard let current = player.currentItem, let picture = try? await current.asset.loadTracks(withMediaType: .video).first,
+              let range = try? await picture.load(.timeRange) else { return }
+        let composition = AVMutableComposition()
+        guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+              (try? video.insertTimeRange(range, of: picture, at: range.start)) != nil else { return }
+        var tracks: [AudioTrack: AVAssetTrack] = [:]
+        for track in AudioTrack.allCases {
+            guard let url = soundFiles[track] else { continue }
+            let asset = AVURLAsset(url: url)
+            // A track read from an asset that was already released inserted nothing in a harness run, so the player keeps the assets.
+            soundAssets.append(asset)
+            guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+                  let whole = try? await source.load(.timeRange),
+                  let into = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
+                  (try? into.insertTimeRange(whole, of: source, at: .zero)) != nil else { continue }
+            tracks[track] = into
+        }
+        guard !tracks.isEmpty else { return }
+        current.remove(output)
+        let item = AVPlayerItem(asset: composition)
+        item.add(output)
+        player.replaceCurrentItem(with: item)
+        soundTracks = tracks
+        parkedAt = nil
+        applyGains()
+    }
+
+    public func setGains(_ next: [AudioTrack: Double]) {
+        guard next != gains else { return }
+        gains = next
+        applyGains()
+    }
+
+    private func applyGains() {
+        guard !soundTracks.isEmpty else { return }
+        let next = gains
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = soundTracks.map { track, asset in
+            let level = AVMutableAudioMixInputParameters(track: asset)
+            level.setVolume(Float(next[track] ?? 0), at: .zero)
+            return level
+        }
+        player.currentItem?.audioMix = mix
     }
 
     public func follow(sourceTime: Double, playing: Bool) {

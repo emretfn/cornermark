@@ -9,12 +9,12 @@ import CornermarkDesign
 func checkRecordingCamera() async throws {
     section("camera settings")
     let d = RecordingPreferences()
-    check(!d.camera.isVisible && d.camera.shape == .circle && d.camera.size == .medium && d.camera.corner == .bottomLeft && d.camera.isMirrored,
+    check(!d.camera.isVisible && d.camera.shape == .circle && d.camera.size == .medium && d.camera.position == .bottomLeft && d.camera.isMirrored,
           "defaults: camera off, a medium mirrored circle in the bottom-left corner")
     let old = try JSONDecoder().decode(Settings.self, from: Data(#"{"recording":{"fps":30}}"#.utf8))
     check(old.recording.camera == d.camera && old.recording.fps == 30, "settings saved before the camera decode with it off")
     var s = Settings()
-    s.recording.camera = CameraBubble(isVisible: true, shape: .rectangle, size: .large, corner: .topRight, isMirrored: false)
+    s.recording.camera = CameraBubble(isVisible: true, shape: .rectangle, size: .large, position: .topRight, isMirrored: false)
     check(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)) == s, "the camera settings round-trip through JSON")
 
     section("camera links")
@@ -98,7 +98,7 @@ func checkRecordingCamera() async throws {
     cameras.last?.advance(3)
     check(await waitUntil { bubble.view?.image != nil }, "camera pictures reach the bubble on screen")
     link("?shape=square&corner=topRight&mirror=0")
-    let square = CameraLayout.frame(CameraBubble(shape: .square, corner: .topRight, isMirrored: false), area: area.size, at: 0)!
+    let square = CameraLayout.frame(CameraBubble(shape: .square, position: .topRight, isMirrored: false), area: area.size, at: 0)!
     check(bubble.panel?.frame == CameraBubbleWindow.screenRect(square, area: area) && bubble.view?.isMirrored == false,
           "a link moves and reshapes it, and turns mirroring off")
     try await Task.sleep(nanoseconds: 300_000_000)
@@ -113,7 +113,7 @@ func checkRecordingCamera() async throws {
         panel.setFrameOrigin(NSPoint(x: area.minX + 20, y: area.minY + 20))
         view.onDrop(CGPoint(x: panel.frame.midX, y: panel.frame.midY))
     }
-    check(c.recording.cameraLook?.current.corner == .bottomLeft && c.settings.value.recording.camera.corner == .bottomLeft,
+    check(c.recording.cameraLook?.current.position == .bottomLeft && c.settings.value.recording.camera.position == .bottomLeft,
           "a drag settles in the nearest corner, and the next recording starts there")
     let record = await stop()
     check(bubble.panel == nil, "the camera's window closes with the recording")
@@ -121,7 +121,7 @@ func checkRecordingCamera() async throws {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.sorted() ?? []
         check(files == ["camera.mp4", "project.json", "screen.mp4"] && project.source.camera == "camera.mp4",
               "Record for Editing keeps the camera as its own file in the project", detail: "\(files)")
-        check(project.edits.camera.shape == .square && project.edits.camera.corner == .bottomLeft && !project.edits.camera.isMirrored
+        check(project.edits.camera.shape == .square && project.edits.camera.position == .bottomLeft && !project.edits.camera.isMirrored
               && project.edits.camera.fullScreen.count == 1, "and the look at the end, with the full-screen stretch", detail: "\(project.edits.camera)")
     } else { check(false, "the project with a camera can be read") }
 

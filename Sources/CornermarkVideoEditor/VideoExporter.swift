@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import CornermarkCore
+import CornermarkDesign
 import VideoToolbox
 
 public struct ExportReport: Equatable, Sendable {
@@ -32,14 +33,17 @@ public enum ExportError: Error, Equatable {
     case writer(String)
 }
 
-/// Draws one frame of the finished video: the background, then the source picture and the pointer `frameState` places, clipped
-/// to the recording's rounded frame, in the recording's points with y down, the way the preview's layers do.
+/// Draws one frame of the finished video: the background, then the source picture, the camera, the click rings and keystroke badge,
+/// and the pointer `frameState` places, clipped to the recording's rounded frame, in the recording's points with y down, the way the
+/// preview's layers do.
 public struct ExportFrameRenderer: @unchecked Sendable {
     public let width: Int
     public let height: Int
     /// The recorded area in points, the unit of pointer positions.
     public let pointSize: CGSize
     public let canvas: VideoCanvas
+    let clicks: ClickHighlight
+    let keystrokes: KeystrokeDisplay
     /// The fill and shadow, made once: the recording is opaque, so nothing behind it changes from frame to frame.
     let backdrop: CGImage?
 
@@ -48,6 +52,8 @@ public struct ExportFrameRenderer: @unchecked Sendable {
         width = plan.width; height = plan.height
         pointSize = CGSize(width: max(project.source.pointWidth, 1), height: max(project.source.pointHeight, 1))
         canvas = project.canvas
+        clicks = project.edits.clicks
+        keystrokes = project.edits.keystrokes
         backdrop = VideoBackdrop.image(canvas, width: plan.width, height: plan.height, picture: folder.flatMap { project.edits.background.picture(in: $0) })
     }
 
@@ -75,10 +81,13 @@ public struct ExportFrameRenderer: @unchecked Sendable {
             ctx.clip()
         }
         if let source { ctx.draw(source, in: frame) }
-        if state.cursor != nil || (state.camera != nil && camera != nil) {
+        if state.cursor != nil || (state.camera != nil && camera != nil) || !state.input.isEmpty {
             ctx.translateBy(x: frame.minX, y: frame.maxY)
             ctx.scaleBy(x: frame.width / pointSize.width, y: -frame.height / pointSize.height)
             if let placed = state.camera, let camera { CameraBubblePainter.draw(camera, placed, in: ctx) }
+            if !state.input.isEmpty {
+                InputOverlayPainter.draw(state.input, area: pointSize, highlight: clicks, keystrokes: keystrokes, ink: .design, in: ctx)
+            }
             if let cursor = state.cursor { PointerShape.draw(cursor, in: ctx) }
         }
         ctx.restoreGState()
@@ -108,7 +117,7 @@ public enum VideoExporter {
         let writer = try AVAssetWriter(outputURL: partial, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
         let folder = video.deletingLastPathComponent()
-        let mix = try await AudioMixReader(files: project.source.audioFiles.map { folder.appendingPathComponent($0) }, clips: project.timeline.clips,
+        let mix = try await AudioMixReader(files: project.audioMix.map { (folder.appendingPathComponent($0.file), $0.gain) }, clips: project.timeline.clips,
                                            duration: plan.duration)
         defer { mix?.cancel() }
         do {

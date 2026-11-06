@@ -25,6 +25,8 @@ extension AppCoordinator {
             hud.show(Self.openFailure(error), symbol: "exclamationmark.triangle.fill")
             return nil
         }
+        // Only an editor someone can see plays the recording's sound. A harness or a scripted instance never orders windows in.
+        editor.playsSound = env.isOnscreen
         editor.exportFolder = { [unowned self] in env.store.incomingDirectory }
         editor.onExport = { [unowned self] event in handleExport(event, project: key) }
         editor.onClose = { [unowned self] closed in

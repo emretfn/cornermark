@@ -74,9 +74,16 @@ struct ParityRow {
     var encoded: PixelDifference
 }
 
+extension Optional {
+    func asyncMap<T>(_ body: (Wrapped) async -> T) async -> T? {
+        guard let self else { return nil }
+        return await body(self)
+    }
+}
+
 @MainActor
 func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, export: URL, plan: ExportPlan, project: RecordingProject,
-                   times: [Double], name: String = "parity") async -> [ParityRow] {
+                   times: [Double], name: String = "parity", camera: StillFrames? = nil) async -> [ParityRow] {
     var rows: [ParityRow] = []
     let renderer = ExportFrameRenderer(plan: plan, project: project, folder: editor.folder)
     let size = CGSize(width: plan.width, height: plan.height)
@@ -84,9 +91,11 @@ func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, c
         editor.seek(to: t)
         let state = frameState(project, outputTime: t)
         await frames.prepare(state.sourceTime)
+        await camera?.prepare(state.sourceTime)
         editor.tick()
+        let cameraPicture = await project.source.camera.asyncMap { await decodedFrame(editor.folder.appendingPathComponent($0), at: state.sourceTime) } ?? nil
         guard let preview = previewFrame(editor, size: size), let source = await decodedFrame(editor.videoURL, at: state.sourceTime),
-              let drawn = renderer.image(state, source: source), let file = await decodedFrame(export, at: t),
+              let drawn = renderer.image(state, source: source, camera: cameraPicture), let file = await decodedFrame(export, at: t),
               let a = PixelDifference(preview, drawn, edge: 4), let b = PixelDifference(preview, file, edge: 4) else { continue }
         for (kind, image) in [("preview", preview), ("drawn", drawn), ("file", file)] {
             let url = URL(fileURLWithPath: scratch + String(format: "%@-%.2f-%@.png", name, t, kind))
