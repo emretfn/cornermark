@@ -68,6 +68,21 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
         relayout()
     }
 
+    /// One tile per label, together exactly `width` wide, so a row of choices ends on the same edge as the rows around it. Each tile
+    /// is as wide as its text plus an equal share of the room left.
+    public init(labels: [String], width: CGFloat, size: ComponentSize = .small) {
+        symbols = []
+        self.size = size
+        quiet = false
+        let texts = labels.map { Paint.width(of: $0, DS.Text.label).rounded(.up) }
+        let share = ((width - CGFloat(labels.count - 1) * DS.Space.s4 - texts.reduce(0, +)) / CGFloat(labels.count)).rounded(.down)
+        tileWidths = texts.map { $0 + max(share, 0) }
+        super.init(frame: .zero)
+        setUp(trackingMode: .selectOne, count: labels.count)
+        for (i, label) in labels.enumerated() { setLabel(label, forSegment: i) }
+        relayout()
+    }
+
     public required init?(coder: NSCoder) { fatalError("Segments is created in code") }
 
     private func setUp(trackingMode: NSSegmentedControl.SwitchTracking, count: Int) {
@@ -145,8 +160,10 @@ public final class Segments: NSSegmentedControl, NSViewToolTipOwner {
 
     static func look(selected: Bool, state: InteractionState, labelled: Bool, quiet: Bool) -> ButtonAppearance {
         let c = DS.Color.self
-        if selected && state != .disabled {
-            return ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
+        if selected {
+            // A choice that cannot change keeps its tile, so what is picked still reads while the control is off.
+            return state == .disabled ? ButtonAppearance(fill: c.bgControl, text: c.textDisabled)
+                : ButtonAppearance(fill: c.accentSubtle, text: c.accentText, border: c.accentBorder)
         }
         // A switched-off group still says which tile is chosen, the way a disabled checkbox keeps its mark.
         if selected { return ButtonAppearance(fill: c.bgControlActive, text: c.textDisabled) }

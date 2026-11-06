@@ -10,7 +10,7 @@ struct CameraChange: Equatable {
     enum FullScreen: String, Equatable { case on, off, toggle }
     var shape: CameraBubble.Shape?
     var size: CameraBubble.Size?
-    var corner: CameraBubble.Corner?
+    var corner: GridPosition?
     var mirrored: Bool?
     var fullScreen: FullScreen?
 
@@ -29,6 +29,8 @@ struct CameraChange: Equatable {
             change.shape = try value("shape").get()
             change.size = try value("size").get()
             change.corner = try value("corner").get()
+            // A recording starts and snaps in a corner; the other cells of the grid are the video editor's.
+            if let corner = change.corner, !GridPosition.corners.contains(corner) { return .failure(.invalidRecording("camera corner")) }
             change.fullScreen = try value("full-screen").get()
         } catch {
             return .failure(error)
@@ -226,7 +228,7 @@ final class CameraBubbleWindow {
     private(set) var view: CameraBubbleView?
     private var area: CGRect?
     /// Called with the corner a drag settled in, so the next recording starts there.
-    var onCorner: (CameraBubble.Corner) -> Void = { _ in }
+    var onCorner: (GridPosition) -> Void = { _ in }
 
     init(env: AppEnvironment, recording: RecordingController) {
         self.env = env
@@ -289,7 +291,7 @@ final class CameraBubbleWindow {
 
     private func settle(at center: CGPoint) {
         guard let area else { return }
-        let corner = CameraLayout.corner(nearest: CGPoint(x: center.x - area.minX, y: area.maxY - center.y), area: area.size)
+        let corner = GridPosition.corner(nearest: CGPoint(x: center.x - area.minX, y: area.maxY - center.y), area: area.size)
         recording.changeCamera(CameraChange(corner: corner))
         onCorner(corner)
     }

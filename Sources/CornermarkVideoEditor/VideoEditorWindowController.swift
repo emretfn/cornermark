@@ -115,7 +115,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private var backgroundPicture: (file: String?, image: CGImage?) = (nil, nil)
     private var frames: SourceFrames
     /// The camera file's pictures, when the recording has a camera. A harness can set its own.
-    public var cameraFrames: SourceFrames?
+    public var cameraFrames: SourceFrames? { didSet { cameraFrames?.isSilent = true } }
+    /// Whether playback may make sound. Off until the app turns it on for an editor on screen, so an editor in a harness or a scripted
+    /// instance never plays the recording's sound.
+    public var playsSound = false { didSet { applyVolume() } }
+    /// The decoder of the source, for a check to read.
+    public var sourceFrames: SourceFrames { frames }
     private let clock: () -> Double
     private let preview = PreviewView()
     private let transportBar = TransportBar()
@@ -142,7 +147,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         do { project = try RecordingProjectFile.read(from: folder) } catch { throw VideoEditorError.noProject(folder.lastPathComponent) }
         let video = folder.appendingPathComponent(project.source.video)
         guard FileManager.default.fileExists(atPath: video.path) else { throw VideoEditorError.noVideo(project.source.video) }
-        let editor = VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video))
+        var sound: [AudioTrack: URL] = [:]
+        for track in project.source.audioTracks {
+            if let name = project.source.file(for: track) { sound[track] = folder.appendingPathComponent(name) }
+        }
+        let editor = VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video, sound: sound))
         if let name = project.source.camera, FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
             let camera = PlayerFrames(url: folder.appendingPathComponent(name))
             camera.volume = 0
@@ -169,6 +178,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         window.isReleasedWhenClosed = false
         window.backgroundColor = DS.Color.bgSurface
         window.collectionBehavior.insert(.fullScreenPrimary)
+        frames.isSilent = true
         buildContent(in: window)
         wire()
         window.center()
@@ -256,6 +266,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         inspector.backgroundPanel.onChange = { [unowned self] in setBackground($0, coalescing: $1) }
         inspector.backgroundPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
         inspector.backgroundPanel.onAddImage = { [unowned self] in addBackgroundImage() }
+        inspector.cameraPanel.onChange = { [unowned self] in setCamera($0) }
+        inspector.keystrokesPanel.onChange = { [unowned self] in setKeystrokes($0) }
+        inspector.audioPanel.onChange = { [unowned self] in setAudio($0, coalescing: $1) }
+        inspector.audioPanel.onSliderEnd = { [unowned self] in history.endCoalescing() }
         transportBar.onCommand = { [unowned self] command in
             switch command {
             case .start: seek(to: 0)
@@ -337,6 +351,28 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let sizeOnly = sameButSize == edits.cursor
         edits.cursor = cursor
         commit(edits, coalescing: sizeOnly ? "cursor.scale" : nil)
+    }
+
+    /// The camera's look, kept apart from the full-screen moments the recording made.
+    public func setCamera(_ camera: CameraBubble) {
+        var edits = state.project.edits
+        var next = camera
+        next.fullScreen = edits.camera.fullScreen
+        edits.camera = next
+        commit(edits)
+    }
+
+    public func setKeystrokes(_ keystrokes: KeystrokeDisplay) {
+        var edits = state.project.edits
+        edits.keystrokes = keystrokes
+        commit(edits)
+    }
+
+    /// `key` folds one level drag into one undo step.
+    public func setAudio(_ audio: AudioEdits, coalescing key: CoalescingKey? = nil) {
+        var edits = state.project.edits
+        edits.audio = audio
+        commit(edits, coalescing: key)
     }
 
     public func setClickHighlight(_ clicks: ClickHighlight) {
@@ -715,6 +751,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     private func applyVolume() {
         frames.volume = state.isMuted ? 0 : state.volume
+        frames.isSilent = !playsSound
         refresh()
     }
 
@@ -870,6 +907,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             cameraFrames.follow(sourceTime: frame.sourceTime, playing: state.transport.isPlaying)
             if let image = cameraFrames.frame(at: frame.sourceTime) { preview.cameraImage = image }
         }
+        preview.keystrokes = state.project.edits.keystrokes
         preview.highlight = state.project.edits.clicks
         preview.state = frame
         preview.canvas = state.project.canvas
@@ -884,6 +922,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public var previewImage: CGImage? { preview.image }
     /// The frame the preview drew last.
     public var previewState: FrameState? { preview.state }
+    /// How many click rings the preview shows, one layer each.
+    public var previewRingLayerCount: Int { preview.visibleRingCount }
 
     private func refresh() {
         let background = state.project.edits.background
@@ -891,13 +931,20 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             backgroundPicture = (background.image, background.picture(in: folder))
             preview.backgroundPicture = backgroundPicture.image
         }
-        let size = ExportPlan(project: state.project, settings: ExportSettings())
+        let project = state.project
+        inspector.available = Set([project.source.camera == nil ? nil : EditorSection.camera, project.events.keys.isEmpty ? nil : .keystrokes,
+                                   project.source.audioTracks.isEmpty ? nil : .audio].compactMap { $0 })
+        inspector.cameraPanel.show(project.edits.camera)
+        inspector.keystrokesPanel.show(project.edits.keystrokes)
+        inspector.audioPanel.show(project.edits.audio, tracks: project.source.audioTracks)
+        frames.setGains(Dictionary(uniqueKeysWithValues: AudioTrack.allCases.map { ($0, project.edits.audio[$0].gain) }))
+        let size = ExportPlan(project: project, settings: ExportSettings())
         inspector.backgroundPanel.videoSize = CGSize(width: size.width, height: size.height)
-        let zooms = state.project.edits.zooms
-        inspector.show(state.section, cursor: state.project.edits.cursor, clicks: state.project.edits.clicks, hasClicks: !state.project.events.clicks.isEmpty,
+        let zooms = project.edits.zooms
+        inspector.show(state.section, cursor: project.edits.cursor, clicks: project.edits.clicks, hasClicks: !project.events.clicks.isEmpty,
                        background: background, picture: backgroundPicture.image,
                        zoom: zooms.first { $0.id == state.selectedZoom }, zoomCount: zooms.count,
-                       origin: state.project.source.origin, hasAudio: frames.hasAudio)
+                       origin: project.source.origin, hasAudio: frames.hasAudio)
         timeline.zoomLane.zooms = zooms
         timeline.zoomLane.selection = state.selectedZoom
         header.show(state.export)

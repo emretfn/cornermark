@@ -22,20 +22,18 @@ public struct CameraBubble: Codable, Equatable, Sendable {
             }
         }
     }
-    public enum Corner: String, Codable, CaseIterable, Sendable { case bottomLeft, bottomRight, topLeft, topRight }
-
     public var isVisible: Bool
     public var shape: Shape
     public var size: Size
-    public var corner: Corner
+    public var position: GridPosition
     /// Shows the camera the way a mirror would, which is how people expect to see themselves.
     public var isMirrored: Bool
     /// Sorted by `from`.
     public var fullScreen: [CameraSpan]
 
-    public init(isVisible: Bool = true, shape: Shape = .circle, size: Size = .medium, corner: Corner = .bottomLeft, isMirrored: Bool = true,
+    public init(isVisible: Bool = true, shape: Shape = .circle, size: Size = .medium, position: GridPosition = .bottomLeft, isMirrored: Bool = true,
                 fullScreen: [CameraSpan] = []) {
-        self.isVisible = isVisible; self.shape = shape; self.size = size; self.corner = corner; self.isMirrored = isMirrored
+        self.isVisible = isVisible; self.shape = shape; self.size = size; self.position = position; self.isMirrored = isMirrored
         self.fullScreen = fullScreen.sorted { $0.from < $1.from }
     }
 
@@ -45,11 +43,12 @@ public struct CameraBubble: Codable, Equatable, Sendable {
         isVisible = (try? c.decodeIfPresent(Bool.self, forKey: .isVisible)) ?? d.isVisible
         shape = (try? c.decodeIfPresent(Shape.self, forKey: .shape)) ?? d.shape
         size = (try? c.decodeIfPresent(Size.self, forKey: .size)) ?? d.size
-        corner = (try? c.decodeIfPresent(Corner.self, forKey: .corner)) ?? d.corner
+        // Files written before the 3×3 grid name one of four corners under `corner`.
+        position = (try? c.decodeIfPresent(GridPosition.self, forKey: .position)) ?? (try? c.decodeIfPresent(GridPosition.self, forKey: .corner)) ?? d.position
         isMirrored = (try? c.decodeIfPresent(Bool.self, forKey: .isMirrored)) ?? d.isMirrored
         fullScreen = ((try? c.decodeIfPresent([CameraSpan].self, forKey: .fullScreen)) ?? nil)?.filter { $0.to >= $0.from }.sorted { $0.from < $1.from } ?? []
     }
-    private enum Keys: String, CodingKey { case isVisible, shape, size, corner, isMirrored, fullScreen }
+    private enum Keys: String, CodingKey { case isVisible, shape, size, position, corner, isMirrored, fullScreen }
 }
 
 /// Where the camera's picture goes in one frame, in points of the recorded area with the origin at its top-left corner.
@@ -72,31 +71,17 @@ public enum CameraLayout {
 
     public static func margin(area: CGSize) -> Double { (min(area.width, area.height) * 0.04).rounded() }
 
-    /// The bubble at rest in its corner.
+    /// The bubble at rest in its cell of the grid.
     public static func bubbleRect(_ bubble: CameraBubble, area: CGSize) -> CGRect {
         let short = min(area.width, area.height)
         let h = (short * bubble.size.fraction).rounded()
         let w = bubble.shape == .rectangle ? (h * rectangleAspect).rounded() : h
-        let m = margin(area: area)
-        let left = bubble.corner == .bottomLeft || bubble.corner == .topLeft
-        let top = bubble.corner == .topLeft || bubble.corner == .topRight
-        return CGRect(x: left ? m : area.width - m - w, y: top ? m : area.height - m - h, width: w, height: h)
+        return bubble.position.place(CGSize(width: w, height: h), in: area, margin: margin(area: area))
     }
 
     public static func cornerRadius(_ shape: CameraBubble.Shape, rect: CGRect) -> Double {
         let short = min(rect.width, rect.height)
         return shape == .circle ? short / 2 : (short * 0.16).rounded()
-    }
-
-    /// The corner whose bubble is nearest `point`, a bubble's centre in the area's points with y down.
-    public static func corner(nearest point: CGPoint, area: CGSize) -> CameraBubble.Corner {
-        let left = point.x < area.width / 2, top = point.y < area.height / 2
-        switch (left, top) {
-        case (true, true): return .topLeft
-        case (false, true): return .topRight
-        case (true, false): return .bottomLeft
-        case (false, false): return .bottomRight
-        }
     }
 
     /// How far the camera has grown toward the full picture at `t`: it grows from each span's start and shrinks from its end, over

@@ -333,7 +333,7 @@ final class RecordingController {
         look.update { b in
             if let shape = change.shape { b.shape = shape }
             if let size = change.size { b.size = size }
-            if let corner = change.corner { b.corner = corner }
+            if let corner = change.corner { b.position = corner }
             if let mirrored = change.mirrored { b.isMirrored = mirrored }
         }
         if let full = change.fullScreen {
@@ -346,7 +346,7 @@ final class RecordingController {
             look.setFullScreen(on, at: recordingClockNow())
         }
         let b = look.current
-        Log.shell.notice("camera changed shape=\(b.shape.rawValue, privacy: .public) size=\(b.size.rawValue, privacy: .public) corner=\(b.corner.rawValue, privacy: .public) mirrored=\(b.isMirrored, privacy: .public) fullScreen=\(look.isFullScreen, privacy: .public)")
+        Log.shell.notice("camera changed shape=\(b.shape.rawValue, privacy: .public) size=\(b.size.rawValue, privacy: .public) corner=\(b.position.rawValue, privacy: .public) mirrored=\(b.isMirrored, privacy: .public) fullScreen=\(look.isFullScreen, privacy: .public)")
         onCameraChange()
     }
 
@@ -425,7 +425,7 @@ final class RecordingController {
             let rate = String(format: "%.3f", report.dropRate * 100)
             if let camera = report.camera {
                 let b = camera.bubble
-                Log.shell.notice("recording camera finished pictures=\(camera.pictures, privacy: .public) filled=\(camera.filled, privacy: .public) file=\(camera.file?.lastPathComponent ?? "none", privacy: .public) fullScreenSpans=\(b.fullScreen.count, privacy: .public) shape=\(b.shape.rawValue, privacy: .public) size=\(b.size.rawValue, privacy: .public) corner=\(b.corner.rawValue, privacy: .public) mirrored=\(b.isMirrored, privacy: .public)")
+                Log.shell.notice("recording camera finished pictures=\(camera.pictures, privacy: .public) filled=\(camera.filled, privacy: .public) file=\(camera.file?.lastPathComponent ?? "none", privacy: .public) fullScreenSpans=\(b.fullScreen.count, privacy: .public) shape=\(b.shape.rawValue, privacy: .public) size=\(b.size.rawValue, privacy: .public) corner=\(b.position.rawValue, privacy: .public) mirrored=\(b.isMirrored, privacy: .public)")
             }
             let marked = recorder.markedFrames
             Log.shell.notice("recording input finished clicks=\(report.clicks.count, privacy: .public) keys=\(report.keys.count, privacy: .public) markedFrames=\(marked.marked, privacy: .public) filledFrames=\(marked.filled, privacy: .public)")

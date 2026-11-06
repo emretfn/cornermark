@@ -138,11 +138,13 @@ public struct RecordingProject: Codable, Equatable, Sendable {
         public var zooms: [Zoom]
         public var background: VideoBackground
         public var camera: CameraBubble
+        public var audio: AudioEdits
 
         public init(cursor: CursorSettings = CursorSettings(), clicks: ClickHighlight = ClickHighlight(), keystrokes: KeystrokeDisplay = KeystrokeDisplay(),
-                    clips: [Clip] = [], zooms: [Zoom] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble()) {
+                    clips: [Clip] = [], zooms: [Zoom] = [], background: VideoBackground = VideoBackground(), camera: CameraBubble = CameraBubble(),
+                    audio: AudioEdits = AudioEdits()) {
             self.cursor = cursor; self.clicks = clicks; self.keystrokes = keystrokes; self.clips = clips; self.zooms = zooms.sorted { $0.start < $1.start }
-            self.background = background; self.camera = camera
+            self.background = background; self.camera = camera; self.audio = audio
         }
 
         public init(from decoder: Decoder) throws {
@@ -154,8 +156,9 @@ public struct RecordingProject: Codable, Equatable, Sendable {
             clips = ((try? c.decodeIfPresent([Lossy<Clip>].self, forKey: .clips)) ?? nil)?.compactMap(\.value) ?? []
             zooms = (((try? c.decodeIfPresent([Lossy<Zoom>].self, forKey: .zooms)) ?? nil)?.compactMap(\.value) ?? []).sorted { $0.start < $1.start }
             background = (try? c.decodeIfPresent(VideoBackground.self, forKey: .background)) ?? VideoBackground()
+            audio = (try? c.decodeIfPresent(AudioEdits.self, forKey: .audio)) ?? AudioEdits()
         }
-        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, zooms, background, camera }
+        private enum Keys: String, CodingKey { case cursor, clicks, keystrokes, clips, zooms, background, camera, audio }
     }
 
     public var version: Int
@@ -251,11 +254,12 @@ public struct FrameState: Equatable, Sendable {
     public var sourceTime: Double
     /// Nil when the viewer hid the pointer or the recording has none.
     public var cursor: CursorFrame?
-    /// The part of the recorded area the picture shows. The pointer is placed in the recording's points, so it moves with the picture.
+    /// The part of the recorded area the picture shows. The pointer and the keystroke badge are placed in the recording's points, so they move with the picture.
     /// The camera bubble is a separate overlay and ignores it.
     public var crop: ZoomRect = .full
     /// Where the camera goes. Its picture is the camera file at `sourceTime`. Nil when the recording has no camera or the viewer hid it.
     public var camera: CameraFrame?
+    /// The click rings and the keystroke badge, drawn as the project's `edits.clicks` and `edits.keystrokes` say. Both sit in the recording's points, so they follow the crop like the pointer.
     public var input: InputOverlayState
 
     public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil, crop: ZoomRect = .full, input: InputOverlayState = InputOverlayState()) {
@@ -270,8 +274,9 @@ public func frameState(_ project: RecordingProject, outputTime: Double) -> Frame
     let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
     // Zooms sit on the finished video's timeline, so the crop follows output time after clips have mapped it to the source.
     let crop = ZoomCamera.rect(project.edits.zooms, at: outputTime)
+    // Rings and the badge are input overlays in recording coordinates, so the crop moves them like the pointer. The camera ignores it.
     return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera, crop: crop,
-                      input: InputOverlayState(rings: project.clickRings(at: sourceTime)))
+                      input: project.inputOverlay(at: sourceTime))
 }
 
 public enum PointerTrack {

@@ -72,7 +72,6 @@ public struct KeystrokeDisplay: Codable, Equatable, Sendable {
 
         public func admits(isCommand: Bool) -> Bool { self == .all || isCommand }
     }
-    public enum Position: String, Codable, CaseIterable, Sendable { case bottomCenter, bottomLeft, bottomRight, topCenter }
     public enum Size: String, Codable, CaseIterable, Sendable {
         case small, medium, large
         /// The label's font size in points.
@@ -88,11 +87,11 @@ public struct KeystrokeDisplay: Codable, Equatable, Sendable {
 
     public var isVisible: Bool
     public var keys: Keys
-    public var position: Position
+    public var position: GridPosition
     public var size: Size
     public var theme: Theme
 
-    public init(isVisible: Bool = false, keys: Keys = .shortcuts, position: Position = .bottomCenter, size: Size = .medium, theme: Theme = .dark) {
+    public init(isVisible: Bool = false, keys: Keys = .shortcuts, position: GridPosition = .bottomCenter, size: Size = .medium, theme: Theme = .dark) {
         self.isVisible = isVisible; self.keys = keys; self.position = position; self.size = size; self.theme = theme
     }
 
@@ -101,7 +100,7 @@ public struct KeystrokeDisplay: Codable, Equatable, Sendable {
         let d = KeystrokeDisplay()
         isVisible = (try? c.decodeIfPresent(Bool.self, forKey: .isVisible)) ?? d.isVisible
         keys = (try? c.decodeIfPresent(Keys.self, forKey: .keys)) ?? d.keys
-        position = (try? c.decodeIfPresent(Position.self, forKey: .position)) ?? d.position
+        position = (try? c.decodeIfPresent(GridPosition.self, forKey: .position)) ?? d.position
         size = (try? c.decodeIfPresent(Size.self, forKey: .size)) ?? d.size
         theme = (try? c.decodeIfPresent(Theme.self, forKey: .theme)) ?? d.theme
     }

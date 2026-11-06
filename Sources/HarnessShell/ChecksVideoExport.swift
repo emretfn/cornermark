@@ -74,9 +74,16 @@ struct ParityRow {
     var encoded: PixelDifference
 }
 
+extension Optional {
+    func asyncMap<T>(_ body: (Wrapped) async -> T) async -> T? {
+        guard let self else { return nil }
+        return await body(self)
+    }
+}
+
 @MainActor
 func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, clock: ScriptedClock, export: URL, plan: ExportPlan, project: RecordingProject,
-                   times: [Double], name: String = "parity") async -> [ParityRow] {
+                   times: [Double], name: String = "parity", camera: StillFrames? = nil) async -> [ParityRow] {
     var rows: [ParityRow] = []
     let renderer = ExportFrameRenderer(plan: plan, project: project, folder: editor.folder)
     let size = CGSize(width: plan.width, height: plan.height)
@@ -84,9 +91,11 @@ func measureParity(_ editor: VideoEditorWindowController, frames: StillFrames, c
         editor.seek(to: t)
         let state = frameState(project, outputTime: t)
         await frames.prepare(state.sourceTime)
+        await camera?.prepare(state.sourceTime)
         editor.tick()
+        let cameraPicture = await project.source.camera.asyncMap { await decodedFrame(editor.folder.appendingPathComponent($0), at: state.sourceTime) } ?? nil
         guard let preview = previewFrame(editor, size: size), let source = await decodedFrame(editor.videoURL, at: state.sourceTime),
-              let drawn = renderer.image(state, source: source), let file = await decodedFrame(export, at: t),
+              let drawn = renderer.image(state, source: source, camera: cameraPicture), let file = await decodedFrame(export, at: t),
               let a = PixelDifference(preview, drawn, edge: 4), let b = PixelDifference(preview, file, edge: 4) else { continue }
         for (kind, image) in [("preview", preview), ("drawn", drawn), ("file", file)] {
             let url = URL(fileURLWithPath: scratch + String(format: "%@-%.2f-%@.png", name, t, kind))
@@ -345,7 +354,9 @@ private func checkCursorExport(_ c: AppCoordinator, folder: URL, clock: Scripted
     section("video export: cursor style, motion and hiding match the preview")
     let copy = try clickingCopy(of: folder, in: root)
     var typed = try RecordingProjectFile.read(from: copy)
-    typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false)]
+    // The Command key, a moment after the third click, puts a badge on screen with the rings. Command keys leave the pointer showing.
+    typed.events.keys = [KeyEvent(t: 1.2, label: "a", isCommand: false), KeyEvent(t: 1.3, label: "b", isCommand: false),
+                         KeyEvent(t: 1.6, label: "\u{2318}K", isCommand: true)]
     try RecordingProjectFile.write(typed, to: copy)
     guard let editor = c.openVideoEditor(copy), let frames = decoder(copy) else { return check(false, "the moving-pointer copy opens in the editor") }
     defer { editor.window?.close() }

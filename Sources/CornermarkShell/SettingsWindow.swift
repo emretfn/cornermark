@@ -280,7 +280,7 @@ final class RecordingPane: SettingsPane {
     private let clickAnimation = Form.checkbox("Animate clicks", id: "recording.clickAnimation")
     private let keys = Form.checkbox("Show keystrokes", id: "recording.keys")
     private let keyMode = Form.popup(KeystrokeDisplay.Keys.allCases.map(\.title), id: "recording.keyMode")
-    private let keyPosition = Form.popup(KeystrokeDisplay.Position.allCases.map(\.title), id: "recording.keyPosition")
+    private let keyPosition = Form.popup(KeystrokeDisplay.panePositions.map(\.title), id: "recording.keyPosition")
     private let keySize = Form.popup(KeystrokeDisplay.Size.allCases.map(\.title), id: "recording.keySize")
     private let keyStyle = Form.popup(KeystrokeDisplay.Theme.allCases.map(\.title), id: "recording.keyStyle")
 
@@ -383,7 +383,7 @@ final class RecordingPane: SettingsPane {
         clickAnimation.onAction { [unowned self] c in change { $0.recording.clicks.animates = (c as! NSButton).state == .on } }
         keys.onAction { [unowned self] c in change { $0.recording.keystrokes.isVisible = (c as! NSButton).state == .on } }
         pick(keyMode, KeystrokeDisplay.Keys.allCases) { $0.keystrokes.keys = $1 }
-        pick(keyPosition, KeystrokeDisplay.Position.allCases) { $0.keystrokes.position = $1 }
+        pick(keyPosition, KeystrokeDisplay.panePositions) { $0.keystrokes.position = $1 }
         pick(keySize, KeystrokeDisplay.Size.allCases) { $0.keystrokes.size = $1 }
         pick(keyStyle, KeystrokeDisplay.Theme.allCases) { $0.keystrokes.theme = $1 }
     }
@@ -397,7 +397,7 @@ final class RecordingPane: SettingsPane {
         ([clickColor, clickStyle, clickSize, clickAnimation] as [NSControl]).forEach { $0.isEnabled = r.clicks.isVisible }
         keys.state = r.keystrokes.isVisible ? .on : .off
         keyMode.selectItem(at: KeystrokeDisplay.Keys.allCases.firstIndex(of: r.keystrokes.keys) ?? 0)
-        keyPosition.selectItem(at: KeystrokeDisplay.Position.allCases.firstIndex(of: r.keystrokes.position) ?? 0)
+        keyPosition.selectItem(at: KeystrokeDisplay.panePositions.firstIndex(of: r.keystrokes.position) ?? 0)
         keySize.selectItem(at: KeystrokeDisplay.Size.allCases.firstIndex(of: r.keystrokes.size) ?? 0)
         keyStyle.selectItem(at: KeystrokeDisplay.Theme.allCases.firstIndex(of: r.keystrokes.theme) ?? 0)
         [keyMode, keyPosition, keySize, keyStyle].forEach { $0.isEnabled = r.keystrokes.isVisible }
@@ -446,15 +446,9 @@ extension KeystrokeDisplay.Keys {
     var title: String { self == .all ? "All keys" : "Shortcuts only" }
 }
 
-extension KeystrokeDisplay.Position {
-    var title: String {
-        switch self {
-        case .bottomCenter: return "Bottom center"
-        case .bottomLeft: return "Bottom left"
-        case .bottomRight: return "Bottom right"
-        case .topCenter: return "Top center"
-        }
-    }
+extension KeystrokeDisplay {
+    /// The places the Recording pane offers. The video editor can move the badge to any cell of the grid later.
+    static let panePositions: [GridPosition] = [.bottomCenter, .bottomLeft, .bottomRight, .topCenter]
 }
 
 extension KeystrokeDisplay.Size {

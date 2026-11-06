@@ -23,14 +23,19 @@ let zoomCurve = ProcessInfo.processInfo.environment["CORNERMARK_ZOOM_CURVE"]
 let cursorFilming = ProcessInfo.processInfo.environment["CORNERMARK_CURSOR_FILM"]
 let cameraFilming = ProcessInfo.processInfo.environment["CORNERMARK_CAMERA_FILM"]
 let backgroundFilming = ProcessInfo.processInfo.environment["CORNERMARK_BACKGROUND_FILM"]
+let afterFilming = ProcessInfo.processInfo.environment["CORNERMARK_AFTER_FILM"]
 let projectFilming = ProcessInfo.processInfo.environment["CORNERMARK_PROJECT_FILM"]
 let aspectFilming = ProcessInfo.processInfo.environment["CORNERMARK_ASPECT_FILM"]
-DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, projectFilming, aspectFilming].allSatisfy { $0 == nil } ? 300 : 900)) {
+DispatchQueue.global().asyncAfter(deadline: .now() + ([filming, editorFilming, exportFilming, filmingControls, filmingGifs, filmingInput, trimFilming, zoomFilming, zoomCurve, cursorFilming, backgroundFilming, cameraFilming, afterFilming, projectFilming, aspectFilming].allSatisfy { $0 == nil } ? 300 : 900)) {
     print("FAIL harness timed out")
     exit(2)
 }
 
 Task { @MainActor in
+    if let afterFilming {
+        let ok = await VideoAfterRecordingFilm.run(out: URL(fileURLWithPath: afterFilming, isDirectory: true))
+        filmDone(ok)
+    }
     if let aspectFilming {
         let ok = await VideoAspectFilm.run(out: URL(fileURLWithPath: aspectFilming, isDirectory: true))
         filmDone(ok)
@@ -128,6 +133,7 @@ Task { @MainActor in
         try await checkVideoExport()
         try await checkVideoProjects()
         try await checkVideoZoom()
+        try await checkVideoAfterRecording()
         try await takeSnapshots()
     } catch {
         check(false, "harness threw", detail: "\(error)")

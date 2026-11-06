@@ -28,7 +28,7 @@ final class ProjectPackageTests: XCTestCase {
     }
 
     func testEveryFieldOfAProjectDecodesLeniently() throws {
-        let json = #"{"source": {"video": "a.mov", "origin": "file", "camera": 7, "microphone": 3}, "edits": {"cursor": 5, "clips": "x", "zooms": 9, "background": "x", "camera": [], "clicks": 1, "keystrokes": 2}}"#
+        let json = #"{"source": {"video": "a.mov", "origin": "file", "camera": 7, "microphone": 3}, "edits": {"cursor": 5, "clips": "x", "zooms": 9, "background": "x", "camera": [], "clicks": 1, "keystrokes": 2, "audio": "loud"}}"#
         let p = try JSONDecoder().decode(RecordingProject.self, from: Data(json.utf8))
         XCTAssertEqual(p.source.origin, .file)
         XCTAssertNil(p.source.camera)
@@ -37,6 +37,8 @@ final class ProjectPackageTests: XCTestCase {
         XCTAssertTrue(p.edits.zooms.isEmpty)
         XCTAssertEqual(p.edits.background, VideoBackground())
         XCTAssertEqual(p.edits.camera, CameraBubble())
+        XCTAssertEqual(p.edits.keystrokes, KeystrokeDisplay())
+        XCTAssertEqual(p.edits.audio, AudioEdits())
         XCTAssertEqual(p.edits.clips.count, 1, "damaged clips fall back to the whole recording")
     }
 

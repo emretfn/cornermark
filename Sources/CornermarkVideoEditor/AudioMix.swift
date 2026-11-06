@@ -1,8 +1,8 @@
 import AVFoundation
 import CornermarkCore
 
-/// Several sound files read as one: every track is summed into 48 kHz stereo. A finished video carries one track, because a player
-/// plays one track at a time. The tracks share the video's timeline, so the same clips cut both.
+/// Several sound files read as one: every track, scaled by its gain, is summed into 48 kHz stereo. A finished video carries one track,
+/// because a player plays one track at a time. The tracks share the video's timeline, so the same clips cut both.
 final class AudioMixReader {
     static let aacSettings: [String: Any] = [
         AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 160_000,
@@ -15,16 +15,20 @@ final class AudioMixReader {
     private let reader: AVAssetReader
     private let output: AVAssetReaderAudioMixOutput
 
-    /// Nil when none of the files has sound. `clips` are the stretches of the source kept, back to back, nil for all of it, and
-    /// `duration` cuts the mix at the output's end.
-    init?(files: [URL], clips: [Clip]? = nil, duration: Double) async throws {
+    /// Nil when none of the files has sound. `gain` multiplies a file's samples, 1 as recorded. `clips` are the stretches of the source
+    /// kept, back to back, nil for all of it, and `duration` cuts the mix at the output's end.
+    init?(files: [(url: URL, gain: Double)], clips: [Clip]? = nil, duration: Double) async throws {
         let composition = AVMutableComposition()
         var tracks: [AVAssetTrack] = []
-        for file in files where FileManager.default.fileExists(atPath: file.path) {
+        var levels: [AVMutableAudioMixInputParameters] = []
+        for (file, gain) in files where FileManager.default.fileExists(atPath: file.path) {
             let asset = AVURLAsset(url: file)
             guard let source = try await asset.loadTracks(withMediaType: .audio).first,
                   let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
             let whole = try await source.load(.timeRange)
+            let level = AVMutableAudioMixInputParameters(track: track)
+            level.setVolume(Float(gain), at: .zero)
+            levels.append(level)
             guard let clips else {
                 try track.insertTimeRange(whole, of: source, at: .zero)
                 tracks.append(track)
@@ -43,6 +47,9 @@ final class AudioMixReader {
         reader = try AVAssetReader(asset: composition)
         reader.timeRange = CMTimeRange(start: .zero, duration: CMTime(seconds: duration, preferredTimescale: 48_000))
         output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: Self.pcmSettings)
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = levels
+        output.audioMix = mix
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else { return nil }
         reader.add(output)
@@ -84,7 +91,7 @@ public enum AudioMux {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
         let duration = try await asset.load(.duration).seconds
-        guard let mix = try await AudioMixReader(files: audio, duration: duration) else { throw ExportError.writer("there is no sound to add") }
+        guard let mix = try await AudioMixReader(files: audio.map { ($0, 1) }, duration: duration) else { throw ExportError.writer("there is no sound to add") }
         defer { mix.cancel() }
         let reader = try AVAssetReader(asset: asset)
         let pictures = AVAssetReaderTrackOutput(track: track, outputSettings: nil)

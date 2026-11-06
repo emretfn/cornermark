@@ -33,6 +33,9 @@ public enum ExportError: Error, Equatable {
     case writer(String)
 }
 
+/// Draws one frame of the finished video: the background, then the source picture, the camera, the click rings and keystroke badge,
+/// and the pointer `frameState` places, clipped to the recording's rounded frame, in the recording's points with y down, the way the
+/// preview's layers do.
 public struct ExportFrameRenderer: @unchecked Sendable {
     public let width: Int
     public let height: Int
@@ -131,7 +134,8 @@ public enum VideoExporter {
         writer.shouldOptimizeForNetworkUse = true
         let folder = video.deletingLastPathComponent()
         // A video opened from a file carries its sound in its own file; a recording's video has none, so it adds nothing to the mix.
-        let mix = try await AudioMixReader(files: [video] + project.source.audioFiles.map { folder.appendingPathComponent($0) }, clips: project.timeline.clips,
+        // The recording's own tracks come in at the editor's levels, and a track that is off is left out.
+        let mix = try await AudioMixReader(files: [(video, 1)] + project.audioMix.map { (folder.appendingPathComponent($0.file), $0.gain) }, clips: project.timeline.clips,
                                            duration: plan.duration)
         defer { mix?.cancel() }
         do {

@@ -16,6 +16,12 @@ final class InspectorView: NSView {
 
     private(set) var railButtons: [EditorSection: IconButton] = [:]
     let backgroundPanel = BackgroundPanel()
+    let cameraPanel = CameraPanel()
+    let keystrokesPanel = KeystrokesPanel()
+    let audioPanel = AudioPanel()
+    /// The sections whose settings this recording can use: it has a camera, keystrokes or sound. The others show a note.
+    var available: Set<EditorSection> = []
+    private var recordingPanels: [EditorSection: SettingsPanel] { [.camera: cameraPanel, .keystrokes: keystrokesPanel, .audio: audioPanel] }
     let clicksPanel = ClicksPanel()
     private let title = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textPrimary)
     private let body = NSStackView()
@@ -49,7 +55,10 @@ final class InspectorView: NSView {
         title.stringValue = zoom == nil ? section.title : "Zoom"
         zoomPanel.isHidden = zoom == nil
         if let zoom { zoomPanel.show(zoom, count: zoomCount) }
-        let note = zoom == nil ? Self.note(section, origin: origin, hasAudio: hasAudio) : ""
+        let panels = recordingPanels
+        for (s, panel) in panels { panel.isHidden = !(s == section && available.contains(s) && zoom == nil) }
+        let hasPanel = panels[section] != nil && available.contains(section)
+        let note = zoom == nil && !hasPanel ? Self.note(section, origin: origin, hasAudio: hasAudio) : ""
         let isCursor = section == .cursor && zoom == nil
         cursorRows.forEach { $0.isHidden = !isCursor || !note.isEmpty }
         emptyNote.isHidden = note.isEmpty
@@ -101,9 +110,9 @@ final class InspectorView: NSView {
         }
         switch section {
         case .cursor, .clicks: return ""
-        case .keystrokes: return "This recording has no keystrokes."
-        case .audio: return "This recording has no sound."
-        case .camera: return "This recording has no camera."
+        case .keystrokes: return "This recording has no keystrokes. Turn on Show keystrokes in Recording settings before you record."
+        case .audio: return "This recording has no sound. Turn on Record microphone or Record system audio in Audio settings before you record."
+        case .camera: return "This recording has no camera. Turn on Show camera in Camera settings before you record."
         case .background: return ""
         case .motionBlur: return "Motion blur is not available yet."
         }
@@ -202,10 +211,12 @@ final class InspectorView: NSView {
         let divider = Separator(axis: .vertical)
         let edge = Separator(axis: .vertical)
         backgroundPanel.isHidden = true
+        let panels = Array(recordingPanels.values)
+        panels.forEach { $0.isHidden = true }
         clicksPanel.isHidden = true
         clicksPanel.onCursor = { [unowned self] in onCursor($0) }
         clicksPanel.onClicks = { [unowned self] in onClicks($0) }
-        for v in [rail, divider, body, edge, rule, backgroundPanel, clicksPanel] as [NSView] {
+        for v in [rail, divider, body, edge, rule, backgroundPanel, clicksPanel] + panels as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -225,6 +236,12 @@ final class InspectorView: NSView {
             backgroundPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
             backgroundPanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
             backgroundPanel.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ] + panels.flatMap { panel in [
+            panel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: DS.Space.s16),
+            panel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            panel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            panel.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ] } + [
             clicksPanel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: DS.Space.s16),
             clicksPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
             clicksPanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),

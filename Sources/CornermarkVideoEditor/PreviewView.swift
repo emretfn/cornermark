@@ -3,8 +3,8 @@ import CornermarkCore
 import CornermarkDesign
 import QuartzCore
 
-/// The finished video at the playhead: the background, the source frame `frameState` names cropped to its zoom, and the pointer it places,
-/// in the look export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
+/// The finished video at the playhead: the background, the source frame `frameState` names cropped to its zoom, the camera, the click rings and
+/// keystroke badge, and the pointer it places, in the look export draws. All are layers, so a new frame costs the main thread a property change and Core Animation composites it.
 /// The video is content, so only the area around it follows the appearance.
 final class PreviewView: NSView {
     /// The recorded area in points, the unit of pointer positions.
@@ -15,8 +15,10 @@ final class PreviewView: NSView {
             withoutAnimation { picture.contents = image }
         }
     }
-    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera(); placeRings() } } }
+    var state: FrameState? { didSet { if oldValue != state { placeCrop(); placeCursor(); placeCamera(); placeRings(); badge.show(state?.input.badge, crop: state?.crop ?? .full) } } }
     var highlight = ClickHighlight() { didSet { if oldValue != highlight { placeRings() } } }
+    /// How the keystroke badge looks, from the project's edits.
+    var keystrokes = KeystrokeDisplay() { didSet { if oldValue != keystrokes { badge.look = keystrokes } } }
     /// Where the recording sits on the finished video.
     var canvas: VideoCanvas? { didSet { if oldValue != canvas { needsLayout = true } } }
     /// The picture the background shows when its fill is an added image.
@@ -41,6 +43,7 @@ final class PreviewView: NSView {
     /// The camera's shadow, and inside it the clipped picture, drawn as `CameraBubblePainter` draws it in export.
     private let cameraHolder = CALayer()
     private let cameraPicture = CALayer()
+    private let badge = BadgeLayer()
     /// What the stage shows now, so a layout that changes nothing draws nothing.
     private var drawnBackdrop: (canvas: VideoCanvas, width: Int, height: Int)?
 
@@ -68,6 +71,7 @@ final class PreviewView: NSView {
         cameraHolder.isHidden = true
         cameraHolder.addSublayer(cameraPicture)
         picture.addSublayer(cameraHolder)
+        picture.addSublayer(badge)
         picture.addSublayer(pointer)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -103,6 +107,9 @@ final class PreviewView: NSView {
             stage.frame = stageRect
             picture.frame = CGRect(x: f.minX * kx, y: stageRect.height - f.maxY * ky, width: f.width * kx, height: f.height * ky)
             picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
+            badge.frame = picture.bounds
+            badge.pointSize = pointSize
+            badge.contentsScale = window?.backingScaleFactor ?? 2
         }
         drawBackdrop(canvas)
         placeCrop()
@@ -171,6 +178,9 @@ final class PreviewView: NSView {
         pointer.lineWidth = look.lineWidth
         pointerStyle = style
     }
+
+    /// How many ring layers show a ring now. The badge layer never paints one.
+    var visibleRingCount: Int { rings.filter { !$0.isHidden }.count }
 
     private func placeRings() {
         withoutAnimation {
@@ -253,5 +263,44 @@ private final class RingLayer: CALayer {
         line.path = path
         line.strokeColor = color
         line.lineWidth = width
+    }
+}
+
+/// The keystroke badge, drawn by the painter export uses into a layer over the picture, through the zoom's crop. Click rings are not its
+/// business: `RingLayer`s draw them, so a ring is drawn once. It redraws only when the badge or the crop change while a badge is on screen.
+private final class BadgeLayer: CALayer {
+    var pointSize = CGSize(width: 16, height: 9) { didSet { if oldValue != pointSize { setNeedsDisplay() } } }
+    var look = KeystrokeDisplay() { didSet { setNeedsDisplay() } }
+    private var badge: KeyBadge?
+    /// The part of the recorded area the picture shows. The badge sits in the recording's points, so the crop moves it like the pointer.
+    private var crop = ZoomRect.full
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+        actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+    }
+
+    override init(layer: Any) {
+        super.init(layer: layer)
+    }
+
+    required init?(coder: NSCoder) { fatalError("BadgeLayer is created in code") }
+
+    func show(_ next: KeyBadge?, crop nextCrop: ZoomRect) {
+        guard next != badge || nextCrop != crop else { return }
+        let drawsSomething = badge != nil || next != nil
+        badge = next
+        crop = nextCrop
+        if drawsSomething { setNeedsDisplay() }
+    }
+
+    override func draw(in ctx: CGContext) {
+        guard let badge, pointSize.width > 0, pointSize.height > 0 else { return }
+        // The layer counts from its bottom-left, the painter in the recording's points from the top-left.
+        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.scaleBy(x: bounds.width / (pointSize.width * crop.width), y: -bounds.height / (pointSize.height * crop.height))
+        ctx.translateBy(x: -crop.x * pointSize.width, y: -crop.y * pointSize.height)
+        InputOverlayPainter.draw(InputOverlayState(badge: badge), area: pointSize, highlight: ClickHighlight(), keystrokes: look, ink: .design, in: ctx)
     }
 }

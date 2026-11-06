@@ -22,15 +22,9 @@ extension CameraBubble.Size {
     var title: String { rawValue.capitalized }
 }
 
-extension CameraBubble.Corner {
-    var title: String {
-        switch self {
-        case .bottomLeft: return "Bottom left"
-        case .bottomRight: return "Bottom right"
-        case .topLeft: return "Top left"
-        case .topRight: return "Top right"
-        }
-    }
+extension CameraBubble {
+    /// The places the Camera pane offers. A recording starts in a corner; the video editor can move the bubble to any cell later.
+    static let paneCorners: [GridPosition] = [.bottomLeft, .bottomRight, .topLeft, .topRight]
 }
 
 final class CameraPane: SettingsPane {
@@ -40,7 +34,7 @@ final class CameraPane: SettingsPane {
     private let shape = Segments(symbols: CameraBubble.Shape.allCases.map(\.symbol), labels: CameraBubble.Shape.allCases.map(\.title), size: .small,
                                  tileWidth: DS.Size.control)
     private let size = Form.popup(CameraBubble.Size.allCases.map(\.title), id: "camera.size")
-    private let corner = Form.popup(CameraBubble.Corner.allCases.map(\.title), id: "camera.corner")
+    private let corner = Form.popup(CameraBubble.paneCorners.map(\.title), id: "camera.corner")
     private let mirror = Form.checkbox("Mirror camera", id: "camera.mirror")
     private let accessStatus = NSTextField.label("", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
     private let accessDot = StatusDot()
@@ -70,7 +64,7 @@ final class CameraPane: SettingsPane {
         }
         corner.onAction { [unowned self] c in
             let i = (c as! NSPopUpButton).indexOfSelectedItem
-            change { $0.recording.camera.corner = CameraBubble.Corner.allCases[i] }
+            change { $0.recording.camera.position = CameraBubble.paneCorners[i] }
         }
         mirror.onAction { [unowned self] c in change { $0.recording.camera.isMirrored = (c as! NSButton).state == .on } }
         accessButton.onAction { [unowned self] _ in
@@ -102,7 +96,7 @@ final class CameraPane: SettingsPane {
         show.state = c.isVisible ? .on : .off
         shape.selectedSegment = CameraBubble.Shape.allCases.firstIndex(of: c.shape) ?? 0
         size.selectItem(at: CameraBubble.Size.allCases.firstIndex(of: c.size) ?? 0)
-        corner.selectItem(at: CameraBubble.Corner.allCases.firstIndex(of: c.corner) ?? 0)
+        corner.selectItem(at: CameraBubble.paneCorners.firstIndex(of: c.position) ?? 0)
         mirror.state = c.isMirrored ? .on : .off
         ([shape, size, corner, mirror] as [NSControl]).forEach { $0.isEnabled = c.isVisible }
         let access = ctx.env.cameraAccess()
