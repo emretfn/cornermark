@@ -29,13 +29,16 @@ enum VideoShortcutsFilm {
         return ok
     }
 
-    static func openScene(_ s: EditorStage) async throws -> VideoEditorWindowController {
+    static func openScene(_ s: EditorStage, pointerZoom: Bool = true, adjust: (inout RecordingProject) -> Void = { _ in }) async throws -> VideoEditorWindowController {
         guard let record = try await s.recordProject(), let folder = record.video?.location else { throw FilmError.missing("the recording") }
         var project = try RecordingProjectFile.read(from: folder)
-        ShortcutScene.apply(&project)
+        ShortcutScene.apply(&project, pointerZoom: pointerZoom)
+        adjust(&project)
         try RecordingProjectFile.write(project, to: folder)
         guard let editor = s.w.coordinator.openVideoEditor(folder) else { throw FilmError.missing("the editor") }
         editor.chooseSaveLocation = { _, _, done in done(nil) }
+        // The recording's own card would sit beside the frame's; the film is about the frame's.
+        for card in s.w.coordinator.overlay.stack { s.w.coordinator.overlay.close(card) }
         await s.show(editor)
         return editor
     }
@@ -85,9 +88,10 @@ enum VideoShortcutsFilm {
         f.dark = false
         window.performClose(nil)
 
-        let editor = try await openScene(s)
+        // One zoom, so Z and Command-D each find a gap long enough for a new 2 s zoom.
+        let editor = try await openScene(s, pointerZoom: false) { $0.edits.zooms.removeLast() }
         guard let editorWindow = editor.window else { throw FilmError.missing("the editor window") }
-        f.hold(1.4, "A recording with two zooms, a background and a moving pointer. Now each key from the list is sent to the editor.")
+        f.hold(1.4, "A recording with one zoom, a background and a moving pointer. Now each key from the list is sent to the editor.")
         func send(_ command: EditorCommand, _ note: String, key index: Int = 0, shift: Bool = false) async {
             let shortcut = EditorShortcuts.shortcut(for: command)
             var chord = shortcut.keys[index]
@@ -105,12 +109,15 @@ enum VideoShortcutsFilm {
         await send(.playPause, "Space plays.")
         await s.play(editor, seconds: 1, note: "Playing.")
         await send(.playPause, "Space again pauses.")
-        editor.seek(to: 8)
+        editor.seek(to: 3.5)
         await s.settle(editor)
         await send(.addZoom, "Z adds a 2 s zoom at the playhead and picks it.")
-        await send(.duplicateZoom, "Command-D duplicates the picked zoom into the next gap.")
+        await send(.duplicateZoom, "Command-D duplicates the picked zoom into the next gap after it.")
         await send(.delete, "Delete removes the picked zoom.")
-        await send(.escape, "Esc lets go of the pick.")
+        editor.selectClip(0)
+        await s.settle(editor)
+        f.hold(0.8, "The harness picks the first clip.")
+        await send(.escape, "Esc lets go of the picked clip.")
         editor.seek(to: 4)
         await s.settle(editor)
         await send(.split, "Command-B splits the clip at the playhead: a cut mark appears on the clip lane.")
@@ -148,16 +155,16 @@ enum VideoShortcutsFilm {
 
     /// The harness's box naming the key it just sent. Not part of the app.
     static func keyBox(_ keys: String, _ title: String) -> [(CGImage, CGRect)] {
-        let box = CGRect(x: Film.stage.width - 430, y: Film.stage.height - 92, width: 410, height: 72)
+        let box = CGRect(x: Film.stage.width - 450, y: EditorStage.editorOrigin.y + EditorStage.editorSize.height + 4, width: 430, height: 58)
         let s: CGFloat = 2
         let ctx = Pix.context(Int(box.width * s), Int(box.height * s))
         ctx.scaleBy(x: s, y: s)
         ctx.setFillColor(CGColor(gray: 0.08, alpha: 0.92))
         ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: box.size), cornerWidth: 10, cornerHeight: 10, transform: nil))
         ctx.fillPath()
-        Pix.draw(ctx, "Harness: key sent", at: CGPoint(x: 14, y: 50), size: 12, color: NSColor(white: 0.7, alpha: 1))
-        Pix.draw(ctx, keys, at: CGPoint(x: 14, y: 14), size: 26, color: NSColor(srgbRed: 1, green: 0.55, blue: 0.1, alpha: 1))
-        Pix.draw(ctx, title, at: CGPoint(x: 150, y: 20), size: 15, color: .white)
+        Pix.draw(ctx, "Harness: key sent", at: CGPoint(x: 14, y: 40), size: 11, color: NSColor(white: 0.7, alpha: 1))
+        Pix.draw(ctx, keys, at: CGPoint(x: 14, y: 8), size: 24, color: NSColor(srgbRed: 1, green: 0.55, blue: 0.1, alpha: 1))
+        Pix.draw(ctx, title, at: CGPoint(x: 150, y: 14), size: 15, color: .white)
         return ctx.makeImage().map { [($0, box)] } ?? []
     }
 
@@ -169,10 +176,10 @@ enum VideoShortcutsFilm {
         guard let window = editor.window else { throw FilmError.missing("the editor window") }
         let project = editor.state.project
         let fps = Double(project.source.fps)
-        let t = (BlurScene.fastestCrop(project, in: 1.0...1.8) * fps).rounded() / fps
+        let t = (6.2 * fps).rounded() / fps
         editor.seek(to: t)
         await s.settle(editor)
-        f.hold(2, String(format: "The playhead at %.3f s, inside a zoom to 300%% with the pointer in view.", t))
+        f.hold(2, String(format: "The playhead at %.3f s, inside a zoom to 200%% with the pointer sweeping across it.", t))
         let menu = menuBox()
         let base = f.layers
         f.layers = { base() + menu }
@@ -182,11 +189,11 @@ enum VideoShortcutsFilm {
         f.refresh()
         f.hold(0.6, "Shift-Command-E")
         let chord = EditorShortcuts.shortcut(for: .exportFrame).keys[0]
-        let historyBefore = s.w.env.store.list(filter: CaptureFilter()).count
+        let historyBefore = Set(s.w.env.store.list().map(\.id))
         Synth.key(window, chord.keyCode, "", modifiers: chord.eventFlags)
         await editor.frameJob?.value
-        guard await waitUntil(5, { s.w.env.store.list(filter: CaptureFilter()).count == historyBefore + 1 }),
-              let record = s.w.env.store.list(filter: CaptureFilter()).first,
+        let added = { s.w.env.store.list().filter { !historyBefore.contains($0.id) } }
+        guard await waitUntil(5, { added().count == 1 }), let record = added().first, record.video == nil,
               let png = NSImage(contentsOf: s.w.env.store.paths(for: record).image)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             throw FilmError.missing("the exported frame in History")
         }
@@ -195,7 +202,7 @@ enum VideoShortcutsFilm {
         f.layers = { [unowned s, unowned editor] in s.layers(editor) + f.cardLayers(s.w) + f.magnified(s.w) }
         f.status = { "History: \(record.kind.rawValue) picture \(png.width) x \(png.height), PNG, pointScale \(record.pointScale)  Quick Access cards: \(s.w.coordinator.overlay.stack.count)" }
         f.refresh()
-        f.hold(3, "The frame lands in History and on a Quick Access card with Copy, Save, Edit, Pin, OCR and Close, the way a screenshot does.")
+        f.hold(3, "The frame lands in History and on a Quick Access card, the way a screenshot does. Hovering the card shows Copy, Save, Edit, Pin, OCR and Close.")
         f.dark = true
         f.refresh()
         f.hold(2, "In Dark appearance.")
@@ -207,7 +214,9 @@ enum VideoShortcutsFilm {
         guard let frame = await decodedFrame(video, at: t), let diff = PixelDifference(png, frame, edge: 4) else { throw FilmError.missing("the video's frame") }
         if let data = AssetStore.pngData(from: frame) { try? data.write(to: out.appendingPathComponent("X5-video-frame.png")) }
         print(String(format: "X5 FRAMEPARITY t=%.4f png=%dx%d video=%dx%d %@", t, png.width, png.height, report.plan.width, report.plan.height, diff.description))
-        guard let board = comparison(png, frame, diff: diff) else { throw FilmError.missing("the comparison") }
+        let focus = ShortcutScene.pointer(project, frameState(project, outputTime: t)) ?? CGPoint(x: 0.5, y: 0.5)
+        guard let board = comparison(png, frame, diff: diff, focus: focus) else { throw FilmError.missing("the comparison") }
+        f.glide(to: CGPoint(x: Film.stage.width - 2, y: 2), "Comparing", frames: 1)
         f.layers = { [(board, CGRect(x: 20, y: 20, width: Film.stage.width - 40, height: Film.stage.height - 40))] }
         f.status = { String(format: "t=%.4f s  PNG %d x %d vs video frame %d x %d  %@", t, png.width, png.height, report.plan.width, report.plan.height, diff.description) }
         f.refresh()
@@ -245,8 +254,8 @@ enum VideoShortcutsFilm {
         return ctx.makeImage().map { [($0, box)] } ?? []
     }
 
-    /// The PNG, the video's frame and their difference times eight, with a close-up of each around the pointer below.
-    static func comparison(_ a: CGImage, _ b: CGImage, diff: PixelDifference) -> CGImage? {
+    /// The PNG, the video's frame and their difference times eight, with a close-up of each around `focus`, fractions from the top-left, below.
+    static func comparison(_ a: CGImage, _ b: CGImage, diff: PixelDifference, focus: CGPoint) -> CGImage? {
         guard let pa = Pix.bytes(a), let pb = Pix.bytes(b) else { return nil }
         let heat = Pix.context(a.width, a.height)
         guard let data = heat.data?.assumingMemoryBound(to: UInt8.self), heat.bytesPerRow == a.width * 4 else { return nil }
@@ -263,7 +272,9 @@ enum VideoShortcutsFilm {
         ctx.interpolationQuality = .high
         let gap: CGFloat = 12, tw = (size.width - gap * 4) / 3, th = tw * CGFloat(a.height) / CGFloat(a.width)
         let labels = ["PNG from Export Current Frame", "Video export, same moment", "Difference x8"]
-        let crop = CGRect(x: CGFloat(a.width) * 0.3, y: CGFloat(a.height) * 0.3, width: CGFloat(a.width) / 4, height: CGFloat(a.height) / 4)
+        let cw = CGFloat(a.width) / 4, ch = CGFloat(a.height) / 4
+        let crop = CGRect(x: min(max(focus.x * CGFloat(a.width) - cw / 2, 0), CGFloat(a.width) - cw),
+                          y: min(max(focus.y * CGFloat(a.height) - ch / 2, 0), CGFloat(a.height) - ch), width: cw, height: ch)
         for (i, image) in [a, b, difference].enumerated() {
             let x = gap + CGFloat(i) * (tw + gap)
             ctx.draw(image, in: CGRect(x: x, y: size.height - 40 - th, width: tw, height: th))
@@ -271,7 +282,7 @@ enum VideoShortcutsFilm {
                 ctx.draw(part, in: CGRect(x: x, y: size.height - 40 - th - gap - 22 - th, width: tw, height: th))
             }
             Pix.draw(ctx, labels[i], at: CGPoint(x: x, y: size.height - 30), size: 18, color: .white)
-            Pix.draw(ctx, "4x close-up of the middle", at: CGPoint(x: x, y: size.height - 40 - th - gap - 20), size: 13, color: NSColor(white: 0.7, alpha: 1))
+            Pix.draw(ctx, "4x close-up around the pointer", at: CGPoint(x: x, y: size.height - 40 - th - gap - 20), size: 13, color: NSColor(white: 0.7, alpha: 1))
         }
         Pix.draw(ctx, "\(a.width) x \(a.height) both.  " + diff.description, at: CGPoint(x: gap, y: 14), size: 16, color: .white)
         return ctx.makeImage()

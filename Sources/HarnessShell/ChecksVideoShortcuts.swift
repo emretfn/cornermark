@@ -6,11 +6,21 @@ import CornermarkDesign
 
 /// A synthetic project with two zooms and a moving pointer, so a frame export shows the crop, the pointer and the background together.
 enum ShortcutScene {
-    static func apply(_ project: inout RecordingProject) {
+    /// `pointerZoom` adds a third zoom over the pointer's sweep, which leaves no gap long enough for a new zoom.
+    static func apply(_ project: inout RecordingProject, pointerZoom: Bool = true) {
         BlurScene.apply(&project)
         project.edits.motionBlur.scope = .off
         project.edits.background.fill = .gradient(index: 3)
         project.edits.background.padding = 48
+        if pointerZoom { project.edits.zooms.append(Zoom(start: 5.6, end: 7.6, scale: 2, mode: .manual, center: ZoomPoint(x: 0.5, y: 0.7))) }
+    }
+
+    /// Where the pointer is drawn in the finished frame, as fractions of the canvas from the top-left.
+    static func pointer(_ project: RecordingProject, _ state: FrameState) -> CGPoint? {
+        guard let c = state.cursor else { return nil }
+        let w = project.source.pointWidth, h = project.source.pointHeight, crop = state.crop, canvas = project.canvas
+        let u = (c.x / w - crop.x) / crop.width, v = (c.y / h - crop.y) / crop.height
+        return CGPoint(x: (canvas.frame.minX + u * canvas.frame.width) / canvas.size.width, y: (canvas.frame.minY + v * canvas.frame.height) / canvas.size.height)
     }
 }
 
