@@ -64,6 +64,10 @@ func runPanelSharpnessTests() async {
     rc.refreshOverlay()
     check(toggles[2].isEnabled && toggles[2].isSelected && toggles[2].interactionState == .normal,
           "once macOS answers, the camera toggle is on and nothing of the waiting state is left", detail: "\(toggles[2].interactionState)")
+    for scale in [CGFloat(1), 2] {
+        let placed = panel.convert(panel.bounds, to: root).origin
+        save(toggleRow(of: panel, row: row, in: root, panelOrigin: CGPoint(x: floor(placed.x), y: floor(placed.y)), scale: scale).image, to: evidence + "toggles-camera-on-\(Int(scale))x.png", zoom: Int(8 / scale))
+    }
     sourcesOn = []
     rc.refreshOverlay()
     let again = compare(1, "1x-after-yield")
@@ -77,6 +81,7 @@ func runPanelSharpnessTests() async {
         let lum = stride(from: 0, to: px.count, by: 4).map { luminance(px[$0], px[$0 + 1], px[$0 + 2]) }
         return (lum.max()! + 0.05) / (lum.min()! + 0.05)
     }
+    print("MEASURE off glyph contrast on the panel " + ratios.map { String(format: "%.2f", $0) }.joined(separator: " "))
     check(ratios.allSatisfy { $0 >= 4.5 }, "every off glyph keeps 4.5:1 against the panel", detail: ratios.map { String(format: "%.2f", $0) }.joined(separator: " "))
 
     Synth.escape(window)
