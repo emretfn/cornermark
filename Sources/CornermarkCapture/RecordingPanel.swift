@@ -13,6 +13,8 @@ final class RecordingPanel: Surface {
 
     /// Holds the `hud` elevation's ambient shadow (blur 24 at y 8) with room to spare.
     private static let inset = DS.Space.s32
+    /// The check on a source toggle overflows its corner, so the toggles sit far enough apart that it keeps clear of the next one.
+    private static let sourceGap = IconButton.markOverflow + DS.Space.s4
     private static let fieldWidth: CGFloat = 52
     private static let aspectWidth: CGFloat = 72
     /// Holds the longest note, Input Monitoring's, in two caption lines beside the toggles. HarnessShell measures every note against it.
@@ -136,7 +138,7 @@ final class RecordingPanel: Surface {
         aspect.setAccessibilityIdentifier("cornermark.record.aspect")
         // The toggles and their note set the narrowest the panel can be. Any width they need past the top row goes to the aspect menu,
         // so the top row still ends at the panel's edge.
-        let sourcesWidth = CGFloat(sources.count) * (DS.Size.control + DS.Space.s4) - DS.Space.s4 + DS.Space.s12 + Self.noteWidth
+        let sourcesWidth = CGFloat(sources.count) * (DS.Size.control + Self.sourceGap) - Self.sourceGap + DS.Space.s12 + Self.noteWidth
         let aspectWidth = max(Self.aspectWidth, left + sourcesWidth - x)
         aspect.frame = CGRect(x: x, y: centred(DS.Size.control), width: aspectWidth, height: DS.Size.control)
         aspect.target = self
@@ -184,15 +186,16 @@ final class RecordingPanel: Surface {
             item.button.frame.origin = CGPoint(x: sx, y: middle)
             item.button.selection = .neutral
             item.button.marksSelection = true
+            item.button.markBackdrop = DS.Color.bgHud.withAlphaComponent(1)
             item.button.target = self
             item.button.action = #selector(sourceClicked(_:))
             item.button.setAccessibilityIdentifier("cornermark.record.source.\(item.source.rawValue)")
             item.button.setAccessibilityRole(.checkBox)
             item.button.setAccessibilityHelp(Self.look(item.source).help)
             addSubview(item.button)
-            sx += DS.Size.control + DS.Space.s4
+            sx += DS.Size.control + Self.sourceGap
         }
-        let noteX = sx - DS.Space.s4 + DS.Space.s12
+        let noteX = sx - Self.sourceGap + DS.Space.s12
         note.frame = CGRect(x: noteX, y: middle, width: left + width - noteX, height: DS.Size.control)
         note.maximumNumberOfLines = 2
         note.lineBreakMode = .byWordWrapping

@@ -92,6 +92,23 @@ func checkRecordingSources() async throws {
 
     toggle(.systemAudio)?.performClick(nil)
     check(prefs().audio.systemAudio && shows([.microphone, .systemAudio]) && total() == 1, "system audio needs no permission of its own and asks nothing")
+    if let mic = toggle(.microphone), let next = toggle(.systemAudio), let panel = mic.superview, let host = panel.superview {
+        let badges = mic.subviews.filter { !$0.isHidden }
+        let badge = badges.first.map { panel.convert($0.frame, from: mic) } ?? .zero
+        func hit(_ p: CGPoint) -> NSView? { panel.hitTest(host.convert(p, from: panel)) }
+        check(badges.count == 1 && badge.maxX > mic.frame.maxX && badge.minY < mic.frame.minY && badge.minX < mic.frame.maxX,
+              "a toggle that is on shows its check over the tile's bottom-right corner, partly outside it", detail: "\(badge) on \(mic.frame)")
+        check(badge.origin.x == badge.origin.x.rounded() && badge.origin.y == badge.origin.y.rounded() && badge.maxX < next.frame.minX,
+              "the check sits on whole points and keeps clear of the next toggle", detail: "\(badge) next \(next.frame)")
+        check(hit(CGPoint(x: badge.maxX - 1, y: badge.midY)) === panel && hit(CGPoint(x: mic.frame.maxX - 2, y: mic.frame.minY + 2)) === mic,
+              "the check takes no clicks: its overflow reaches the panel and its part on the tile reaches the toggle")
+        check(mic.subviews.allSatisfy { !$0.isAccessibilityElement() }, "the check adds nothing for VoiceOver; the toggle's value says it is on")
+        mic.isEnabled = false
+        check(mic.subviews.allSatisfy(\.isHidden), "a toggle that takes no clicks shows no check")
+        mic.isEnabled = true
+    } else {
+        check(false, "the microphone toggle sits in the panel")
+    }
 
     toggle(.camera)?.performClick(nil)
     check(p.requests["camera"] == 1 && c.capture.isOverlayYielding, "turning on the camera before macOS asked asks once, with the overlay out of the way")
