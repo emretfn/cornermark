@@ -30,7 +30,7 @@ The simplest correct way is usually to rebuild the content view from the same bu
 
 Arabic, Hebrew and Persian mirror the interface. `NSApp.userInterfaceLayoutDirection` is fixed at launch, so direction is set per view.
 
-- After building or rebuilding a view tree, call `view.applyLanguageDirection()`. Call it again on subviews added later, such as cells and cards. Leading and trailing constraints and `NSStackView` order then mirror on their own.
+- After building or rebuilding a view tree, call `view.applyLanguageDirection()`. Call it again on subviews added later, such as cells and cards. Leading and trailing constraints and `NSStackView` order then mirror. Inside a window, AppKit keeps an active leading or trailing constraint on the side it resolved to when it was activated, so `applyLanguageDirection()` activates the sided constraints of every view it flips again. Call it on the root you are flipping rather than setting `userInterfaceLayoutDirection` by hand.
 - A view that shows a picture of something (a screenshot, the canvas, a video frame, a thumbnail's image) adopts `KeepsLeftToRight`. It and its subviews are never mirrored.
 - Frame-based `layout()` computes left-to-right frames and writes them through `mirrored(_:)`.
 - Custom `draw(_:)` that places things by side (a hairline on the right edge, a label after an icon) checks `isRightToLeft`.
