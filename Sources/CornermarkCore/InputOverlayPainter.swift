@@ -23,19 +23,23 @@ public enum InputOverlayPainter {
         if let badge = state.badge { draw(badge, area: area, keystrokes, ink, ctx) }
     }
 
+    public static func ringLineWidth(_ h: ClickHighlight) -> Double { max(2, h.size.radius * 0.15) }
+    public static func ringHaloWidth(_ h: ClickHighlight) -> Double { ringLineWidth(h) + 2 }
+    public static let ringFillAlpha = 0.4
+
     private static func draw(_ ring: ClickRing, _ h: ClickHighlight, _ ink: InputOverlayInk, _ ctx: CGContext) {
-        let line = max(2, h.size.radius * 0.15)
+        let line = ringLineWidth(h)
         let circle = CGRect(x: ring.x - ring.radius, y: ring.y - ring.radius, width: ring.radius * 2, height: ring.radius * 2)
         let color = ink.click(h.color)
         ctx.saveGState()
         ctx.setAlpha(ring.opacity)
         ctx.beginTransparencyLayer(auxiliaryInfo: nil)
         if h.style == .filled {
-            ctx.setFillColor(color.copy(alpha: 0.4) ?? color)
+            ctx.setFillColor(color.copy(alpha: ringFillAlpha) ?? color)
             ctx.fillEllipse(in: circle)
         }
         ctx.setStrokeColor(ink.halo)
-        ctx.setLineWidth(line + 2)
+        ctx.setLineWidth(ringHaloWidth(h))
         ctx.strokeEllipse(in: circle)
         ctx.setStrokeColor(color)
         ctx.setLineWidth(line)

@@ -23,6 +23,11 @@ public enum CursorTrack {
     public static let typingFade = 0.15
     /// The pointer is back in full by the time it starts to move.
     public static let returnFade = 0.15
+    /// The recording has no mouse-up time, so a press is a fixed shape from the click.
+    public static let pressDepth = 0.8
+    public static let pressDown = 0.05
+    public static let pressRelease = 0.18
+    public static var pressLength: Double { pressDown + pressRelease }
 
     public static func frame(_ project: RecordingProject, at t: Double) -> CursorFrame? {
         let settings = project.edits.cursor
@@ -30,8 +35,36 @@ public enum CursorTrack {
         let opacity = visibility(path, keys: project.events.keys, settings: settings, at: t)
         guard opacity > 0 else { return nil }
         let at = settings.motion == .smooth ? path.smoothed(at: t) : path.recorded(at: t)
-        let scale = min(max(settings.scale, CursorSettings.scaleRange.lowerBound), CursorSettings.scaleRange.upperBound)
+        var scale = min(max(settings.scale, CursorSettings.scaleRange.lowerBound), CursorSettings.scaleRange.upperBound)
+        if settings.pressesOnClick { scale *= press(project.events.clicks, at: t) }
         return CursorFrame(x: at.x, y: at.y, scale: scale, style: settings.style, opacity: opacity)
+    }
+
+    /// The ring centres on the drawn pointer, not the click point, so under Smooth it meets the pressed pointer instead of leading it.
+    public static func anchor(_ click: ClickEvent, in project: RecordingProject) -> (x: Double, y: Double) {
+        guard let path = PointerPath.of(project.events.pointer) else { return (click.x, click.y) }
+        return project.edits.cursor.motion == .smooth ? path.smoothed(at: click.t) : path.recorded(at: click.t)
+    }
+
+    static func press(_ clicks: [ClickEvent], at t: Double) -> Double {
+        var factor = 1.0
+        for click in clicks[firstIndex(clicks, from: t - pressLength)...] {
+            let age = t - click.t
+            if age < 0 { break }
+            let f = age < pressDown ? 1 - (1 - pressDepth) * ease(age / pressDown)
+                : pressDepth + (1 - pressDepth) * ease((age - pressDown) / pressRelease)
+            factor = min(factor, f)
+        }
+        return factor
+    }
+
+    static func firstIndex(_ clicks: [ClickEvent], from: Double) -> Int {
+        var low = 0, high = clicks.count
+        while low < high {
+            let mid = (low + high) / 2
+            if clicks[mid].t < from { low = mid + 1 } else { high = mid }
+        }
+        return low
     }
 
     /// 1 shows the pointer in full and 0 hides it. Each hiding option fades out after its trigger and fades back in just before the

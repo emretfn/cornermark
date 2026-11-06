@@ -22,11 +22,12 @@ public struct CursorSettings: Codable, Equatable, Sendable {
     public var hidesWhenIdle: Bool
     /// Fades the pointer out at a key press without Command or Control, until it next moves.
     public var hidesWhenTyping: Bool
+    public var pressesOnClick: Bool
 
     public init(isVisible: Bool = true, scale: Double = 1, style: CursorStyle = .white, motion: CursorMotion = .natural,
-                hidesWhenIdle: Bool = false, hidesWhenTyping: Bool = false) {
+                hidesWhenIdle: Bool = false, hidesWhenTyping: Bool = false, pressesOnClick: Bool = false) {
         self.isVisible = isVisible; self.scale = scale; self.style = style; self.motion = motion
-        self.hidesWhenIdle = hidesWhenIdle; self.hidesWhenTyping = hidesWhenTyping
+        self.hidesWhenIdle = hidesWhenIdle; self.hidesWhenTyping = hidesWhenTyping; self.pressesOnClick = pressesOnClick
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,8 +39,9 @@ public struct CursorSettings: Codable, Equatable, Sendable {
         motion = (try? c.decodeIfPresent(CursorMotion.self, forKey: .motion)) ?? d.motion
         hidesWhenIdle = (try? c.decodeIfPresent(Bool.self, forKey: .hidesWhenIdle)) ?? d.hidesWhenIdle
         hidesWhenTyping = (try? c.decodeIfPresent(Bool.self, forKey: .hidesWhenTyping)) ?? d.hidesWhenTyping
+        pressesOnClick = (try? c.decodeIfPresent(Bool.self, forKey: .pressesOnClick)) ?? d.pressesOnClick
     }
-    private enum Keys: String, CodingKey { case isVisible, scale, style, motion, hidesWhenIdle, hidesWhenTyping }
+    private enum Keys: String, CodingKey { case isVisible, scale, style, motion, hidesWhenIdle, hidesWhenTyping, pressesOnClick }
 }
 
 /// A recording and everything that can still change about it. The source video is written once and never touched again,
@@ -254,9 +256,10 @@ public struct FrameState: Equatable, Sendable {
     public var crop: ZoomRect = .full
     /// Where the camera goes. Its picture is the camera file at `sourceTime`. Nil when the recording has no camera or the viewer hid it.
     public var camera: CameraFrame?
+    public var input: InputOverlayState
 
-    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil, crop: ZoomRect = .full) {
-        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera; self.crop = crop
+    public init(sourceTime: Double, cursor: CursorFrame? = nil, camera: CameraFrame? = nil, crop: ZoomRect = .full, input: InputOverlayState = InputOverlayState()) {
+        self.sourceTime = sourceTime; self.cursor = cursor; self.camera = camera; self.crop = crop; self.input = input
     }
 }
 
@@ -267,7 +270,8 @@ public func frameState(_ project: RecordingProject, outputTime: Double) -> Frame
     let camera = project.source.camera == nil ? nil : CameraLayout.frame(project.edits.camera, area: area, at: sourceTime)
     // Zooms sit on the finished video's timeline, so the crop follows output time after clips have mapped it to the source.
     let crop = ZoomCamera.rect(project.edits.zooms, at: outputTime)
-    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera, crop: crop)
+    return FrameState(sourceTime: sourceTime, cursor: CursorTrack.frame(project, at: sourceTime), camera: camera, crop: crop,
+                      input: InputOverlayState(rings: project.clickRings(at: sourceTime)))
 }
 
 public enum PointerTrack {

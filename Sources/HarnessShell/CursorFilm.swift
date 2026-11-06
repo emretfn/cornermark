@@ -5,16 +5,20 @@ import CornermarkCore
 
 /// Films the cursor settings for review: the real editor of a harness world, rendered offscreen and driven by scripted presses on its
 /// own controls and keys sent to its window. The project is recorded from the fixture display, then given a scripted pointer track
-/// with a shaking hand, rests and a typed word, so every setting has something to change. The pointer arrow, the caption strip and the
+/// with a shaking hand, rests, clicks and a typed word, so every setting has something to change. The pointer arrow, the caption strip and the
 /// orange trails are drawn by the harness. Run with `CORNERMARK_CURSOR_FILM=<folder> swift run HarnessShell`.
 @MainActor
 enum CursorFilm {
+    static var folder = URL(fileURLWithPath: NSTemporaryDirectory())
+
     static func run(out: URL) async -> Bool {
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        folder = out
         var ok = true
         let scenes: [(String, (Film, EditorStage, VideoEditorWindowController) async throws -> Void)] =
-            [("C1", c1), ("C2", c2), ("C3", c3), ("C4", c4), ("C5", c5), ("C7", c7)]
-        for (name, scene) in scenes {
+            [("C1", c1), ("C2", c2), ("C3", c3), ("C4", c4), ("C5", c5), ("C6", c6), ("C7", c7)]
+        let only = ProcessInfo.processInfo.environment["CORNERMARK_CURSOR_SCENES"].map { Set($0.split(separator: ",").map(String.init)) }
+        for (name, scene) in scenes where only?.contains(name) ?? true {
             guard let film = Film(url: out.appendingPathComponent("\(name).mp4")) else { return false }
             do {
                 let stage = try await EditorStage(film, frames: 600)
@@ -31,6 +35,8 @@ enum CursorFilm {
     }
 
     // MARK: The scripted track
+
+    static let clickTimes = [1.62, 2.6, 3.4, 3.55, 5.3, 6.05]
 
     /// Moves 0 to 1.6 s, rests until 4.6 s, moves until 6 s, rests while "types" is typed from 6.4 s, moves 8 to 9.4 s, then rests.
     static let keys = ["t", "y", "p", "e", "s"].enumerated().map { KeyEvent(t: 6.4 + 0.2 * Double($0.offset), label: $0.element, isCommand: false) }
@@ -63,6 +69,10 @@ enum CursorFilm {
         var project = try RecordingProjectFile.read(from: folder)
         project.events.pointer = track(width: project.source.pointWidth, height: project.source.pointHeight)
         project.events.keys = keys
+        project.events.clicks = clickTimes.map { t in
+            let at = PointerTrack.position(project.events.pointer, at: t) ?? (0, 0)
+            return ClickEvent(t: t, x: at.x, y: at.y)
+        }
         try RecordingProjectFile.write(project, to: folder)
         guard let editor = s.w.coordinator.openVideoEditor(folder) else { return nil }
         await s.show(editor)
@@ -283,6 +293,139 @@ enum CursorFilm {
         f.dark = true
         f.refresh()
         f.hold(2, "The same in Dark appearance.")
+    }
+
+    static func clickStatus(_ s: EditorStage, _ editor: VideoEditorWindowController) -> String {
+        let t = editor.state.transport.time(at: s.clock.now)
+        let k = editor.state.project.edits.clicks, c = editor.state.project.edits.cursor
+        let state = editor.previewState
+        let rings = state?.input.rings.map { String(format: "r=%.1f a=%.2f", $0.radius, $0.opacity) }.joined(separator: " ") ?? ""
+        return String(format: "t=%@  press=%@ ripple=%@ color=%@ size=%@ style=%@ motion=%@  cursor: visible=%@ motion=%@  drawn: scale=%@ rings=[%@]  undo=%@",
+                      Timecode.text(t), "\(c.pressesOnClick)", "\(k.isVisible)", k.color.rawValue, k.size.rawValue, k.style.rawValue, k.animates ? "grow" : "still",
+                      "\(c.isVisible)", c.motion.rawValue, state?.cursor.map { String(format: "%.2f", $0.scale) } ?? "none", rings, "\(editor.canUndo)")
+    }
+
+    static func clickPoints(_ s: EditorStage, _ editor: VideoEditorWindowController) -> [(CGImage, CGRect)] {
+        guard let preview = editor.view(identifier: "video.preview") as? PreviewView else { return [] }
+        let r = preview.convert(preview.pictureRect, to: nil)
+        let p = editor.state.project
+        guard r.width > 0, p.source.pointWidth > 0 else { return [] }
+        let now = editor.state.transport.time(at: s.clock.now)
+        let live = p.events.clicks.filter { now >= $0.t && now - $0.t < ClickHighlight.lifetime }
+        guard !live.isEmpty else { return [] }
+        let ctx = Pix.context(Int(r.width * 2), Int(r.height * 2))
+        ctx.scaleBy(x: 2, y: 2)
+        ctx.setStrokeColor(cyan)
+        ctx.setLineWidth(2)
+        for c in live {
+            let x = c.x / p.source.pointWidth * r.width, y = r.height - c.y / p.source.pointHeight * r.height
+            ctx.move(to: CGPoint(x: x - 7, y: y)); ctx.addLine(to: CGPoint(x: x + 7, y: y))
+            ctx.move(to: CGPoint(x: x, y: y - 7)); ctx.addLine(to: CGPoint(x: x, y: y + 7))
+        }
+        ctx.strokePath()
+        guard let image = ctx.makeImage() else { return [] }
+        return [(image, r.offsetBy(dx: s.origin.x, dy: s.origin.y))]
+    }
+
+    static func pick(_ f: Film, _ s: EditorStage, _ editor: VideoEditorWindowController, color index: Int, note: String) async {
+        guard let popup = editor.view(identifier: "video.clicks.color") as? NSPopUpButton else { return f.failures.append("no color menu") }
+        f.glide(to: s.point(of: popup, in: editor), note, frames: 12)
+        popup.selectItem(at: index)
+        fire(popup)
+        await s.settle(editor)
+        f.hold(0.2, note)
+    }
+
+    static func c6(_ f: Film, _ s: EditorStage, _ editor: VideoEditorWindowController) async throws {
+        f.title = String(format: "C6  Clicks: the press effect shrinks the pointer for %.2f s at each click, and the ripple draws a ring that grows and fades in %.1f s. Preview and export draw both.",
+                         CursorTrack.pressLength, ClickHighlight.lifetime)
+        f.status = { [unowned s, unowned editor] in clickStatus(s, editor) }
+        await seek(s, editor, to: 1.2)
+        await s.press(try button(editor, "video.rail.clicks"), in: editor, note: "Clicks")
+        f.hold(1.8, "The Clicks section. Both effects start as the recording's settings had them: off. The ring's look is off with Ripple.")
+        await s.press(try button(editor, "video.clicks.ripple"), in: editor, note: "Ripple: on")
+        f.hold(1, "Ripple: on. Color, Size, Style and Motion turn on with it.")
+        await play(f, s, editor, from: 1.2, to: 4.0, note: "Playing: a ring at each click, at rest and for both halves of a double click.")
+        await play(f, s, editor, from: 2.5, to: 3.1, speed: 0.2, note: String(format: "A fifth of real speed: the ring grows from 60%% of its size and fades out by %.1f s.", ClickHighlight.lifetime))
+        await seek(s, editor, to: 2.75)
+        f.hold(1.6, "Paused 0.15 s after a click: the preview redraws the ring at that moment without playing.")
+        await pick(f, s, editor, color: 2, note: "Color: Orange")
+        await choose(f, s, editor, "video.clicks.size", 2, note: "Size: Large")
+        await choose(f, s, editor, "video.clicks.style", 1, note: "Style: Filled")
+        f.hold(1.4, "Orange, large, filled. The swatches are the ring's own colors.")
+        await choose(f, s, editor, "video.clicks.motion", 1, note: "Motion: Still")
+        await play(f, s, editor, from: 2.5, to: 3.1, speed: 0.25, note: "Still: the ring shows at full size, then goes.")
+        await choose(f, s, editor, "video.clicks.motion", 0, note: "Motion: Grow")
+
+        await s.press(try button(editor, "video.rail.cursor"), in: editor, note: "Cursor")
+        guard let size = editor.view(identifier: "video.cursor.size") as? NSSlider else { throw FilmError.missing("Size") }
+        f.glide(to: s.point(of: size, in: editor), "Size")
+        for v in stride(from: 1.0, through: 3.0, by: 0.2) {
+            size.doubleValue = v
+            fire(size)
+            await s.settle(editor)
+            f.hold(0.05, String(format: "Size: %.1fx so the press reads", v))
+        }
+        await s.press(try button(editor, "video.rail.clicks"), in: editor, note: "Clicks")
+        await s.press(try button(editor, "video.clicks.press"), in: editor, note: "Press effect: on")
+        f.hold(1, "Press effect: on")
+        await play(f, s, editor, from: 2.45, to: 2.95, speed: 0.1, note: String(format: "A tenth of real speed: the pointer drops to %.0f%% in %.2f s and grows back in %.2f s, inside the ring.",
+                                                                               CursorTrack.pressDepth * 100, CursorTrack.pressDown, CursorTrack.pressRelease))
+        await seek(s, editor, to: 2.6 + CursorTrack.pressDown)
+        f.hold(1.6, "Paused at the bottom of the press.")
+        await play(f, s, editor, from: 3.3, to: 3.9, speed: 0.25, note: "A double click presses twice.")
+        await play(f, s, editor, from: 1.2, to: 4.0, note: "Both effects at real speed.")
+
+        await s.press(try button(editor, "video.rail.cursor"), in: editor, note: "Cursor")
+        await choose(f, s, editor, "video.cursor.motion", 1, note: "Motion: Smooth")
+        await s.press(try button(editor, "video.rail.clicks"), in: editor, note: "Clicks")
+        f.layers = { [unowned s, unowned editor] in s.layers(editor) + clickPoints(s, editor) }
+        await play(f, s, editor, from: 1.45, to: 2.1, speed: 0.15, note: "Smooth: the pointer is still landing at the click. The ring sits on the drawn pointer. Cyan cross: the recorded click point (harness).")
+        await play(f, s, editor, from: 5.9, to: 6.5, speed: 0.15, note: "The same after the second stop.")
+        f.layers = { [unowned s, unowned editor] in s.layers(editor) }
+        f.refresh()
+
+        await s.press(try button(editor, "video.rail.cursor"), in: editor, note: "Cursor")
+        await s.press(try button(editor, "video.cursor.show"), in: editor, note: "Show cursor: off")
+        await s.press(try button(editor, "video.rail.clicks"), in: editor, note: "Clicks")
+        f.hold(1.8, "With Show cursor off the press effect is off and says why. Ripple stays.")
+        await play(f, s, editor, from: 2.4, to: 3.9, note: "No pointer: the rings still mark each click on the recording.")
+        Synth.key(editor.window!, 6, "z", modifiers: .command)
+        await s.settle(editor)
+        f.hold(1.6, "Command-Z: the cursor is back.")
+        Synth.key(editor.window!, 6, "z", modifiers: .command)
+        await s.settle(editor)
+        f.hold(1.6, "Command-Z: Motion is Natural again.")
+        Synth.key(editor.window!, 6, "Z", modifiers: [.command, .shift])
+        await s.settle(editor)
+        f.hold(1.4, "Shift-Command-Z: Smooth.")
+        f.dark = true
+        f.refresh()
+        await play(f, s, editor, from: 2.4, to: 3.0, speed: 0.25, note: "The same in Dark appearance. The rings are content, so they keep their colors.")
+        f.dark = false
+        f.refresh()
+
+        let out = folder.appendingPathComponent("C6-export.mp4")
+        f.hold(0.8, "Exporting the project")
+        let report = try await VideoExporter.export(project: editor.state.project, video: editor.videoURL, settings: ExportSettings(), to: out)
+        print("C6 export \(out.path) frames=\(report.plan.frameCount)")
+        await f.show(out, label: "the export 0.12 s after the click at 2.6 s", at: 2.72)
+        await f.show(out, label: "the export at the bottom of the press at 2.6 s", at: 2.6 + CursorTrack.pressDown)
+        f.layers = { [unowned s, unowned editor] in s.layers(editor) + f.resultLayers() }
+        await seek(s, editor, to: 2.72)
+        f.hold(3.4, "Frames read back from the exported file: the same ring and pressed pointer as the preview.")
+        var bare = editor.state.project
+        bare.edits.cursor.isVisible = false
+        bare.edits.clicks = ClickHighlight(isVisible: true)
+        let lifetime = folder.appendingPathComponent("C6-lifetime.mp4")
+        _ = try await VideoExporter.export(project: bare, video: editor.videoURL, settings: ExportSettings(), to: lifetime)
+        print("C6 lifetime export \(lifetime.path) clicks=\(bare.events.clicks.map { String(format: "%.2f@%.0f,%.0f", $0.t, $0.x, $0.y) })")
+        editor.window?.close()
+        let stored = try RecordingProjectFile.read(from: editor.folder)
+        f.layers = { [] }
+        f.status = { "project.json after closing: cursor.pressesOnClick=\(stored.edits.cursor.pressesOnClick) clicks=\(stored.edits.clicks)" }
+        f.refresh()
+        f.hold(2.2, "Closing writes both effects to project.json.")
     }
 
     static func c7(_ f: Film, _ s: EditorStage, _ editor: VideoEditorWindowController) async throws {

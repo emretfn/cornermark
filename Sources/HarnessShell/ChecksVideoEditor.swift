@@ -149,6 +149,7 @@ func checkVideoEditor() async throws {
     try await checkVideoEditorSaving(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorClips(w, folder: folder, videoHash: videoHash)
     try await checkVideoEditorCursor(w, folder: folder)
+    try await checkVideoEditorClicks(w, folder: folder)
     try await checkVideoBackground(w, folder: folder)
     try await checkVideoAspect(w, folder: folder)
     try await checkVideoEditorPerformance(folder: folder)
@@ -400,8 +401,8 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
     check(t.minX == 0 && t.width == content.bounds.width && t.maxY <= min(b.minY, p.minY) + 1.5 && t.minY == 0, "the timeline runs the full width at the bottom", detail: "\(t)")
     let ids = EditorSection.allCases.map { "video.rail.\($0.rawValue)" }
     let railButtons = ids.compactMap { editor.view(identifier: $0) as? IconButton }
-    check(railButtons.count == 6 && railButtons.map { $0.accessibilityLabel() ?? "" } == ["Cursor", "Keystrokes", "Audio", "Camera", "Background", "Motion Blur"],
-          "the rail holds Cursor, Keystrokes, Audio, Camera, Background and Motion Blur in that order")
+    check(railButtons.count == 7 && railButtons.map { $0.accessibilityLabel() ?? "" } == ["Cursor", "Clicks", "Keystrokes", "Audio", "Camera", "Background", "Motion Blur"],
+          "the rail holds Cursor, Clicks, Keystrokes, Audio, Camera, Background and Motion Blur in that order")
     check(railButtons.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil }, "every rail symbol exists")
     check(railButtons.allSatisfy { $0.selection == .neutral } && railButtons.first?.isSelected == true, "the rail is navigation: neutral selection, Cursor chosen first")
 
@@ -411,10 +412,11 @@ private func checkVideoEditorLayout(_ w: World, folder: URL) async throws {
     for (i, section) in EditorSection.allCases.enumerated() {
         railButtons[i].performClick(nil)
         let only = railButtons.enumerated().allSatisfy { $0.element.isSelected == ($0.offset == i) }
-        let shows = section == .cursor || section == .background ? (show?.isHidden == (section != .cursor) && note?.isHidden == true)
+        let hasSettings = section == .cursor || section == .clicks || section == .background
+        let shows = hasSettings ? (show?.isHidden == (section != .cursor) && note?.isHidden == true)
             : (show?.isHidden == true && note?.isHidden == false && note?.stringValue.isEmpty == false)
         check(editor.state.section == section && title?.stringValue == section.title && only && shows,
-              "\(section.title): the panel shows its title and \(section == .cursor || section == .background ? "its settings" : "\"\(note?.stringValue ?? "")\"")")
+              "\(section.title): the panel shows its title and \(hasSettings ? "its settings" : "\"\(note?.stringValue ?? "")\"")")
     }
     railButtons[0].performClick(nil)
 
