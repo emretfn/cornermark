@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CornermarkL10n
 
 /// A key plus Carbon modifier bits (`cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
 struct HotKey: Codable, Hashable {
@@ -29,7 +30,12 @@ struct HotKey: Codable, Hashable {
         return UInt32(m)
     }
 
-    var keyName: String { Self.keyNames[keyCode] ?? "Key \(keyCode)" }
+    var keyName: String {
+        if keyCode == Self.spaceKeyCode { return tr("Space") }
+        return Self.keyNames[keyCode] ?? tr("Key {code}", ["code": String(keyCode)])
+    }
+
+    private static let spaceKeyCode: UInt32 = 49
 
     var displayString: String { Self.modifierSymbols(modifiers) + keyName }
 
@@ -48,7 +54,7 @@ struct HotKey: Codable, Hashable {
         45: "N", 31: "O", 35: "P", 12: "Q", 15: "R", 1: "S", 17: "T", 32: "U", 9: "V", 13: "W", 7: "X", 16: "Y", 6: "Z",
         29: "0", 18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6", 26: "7", 28: "8", 25: "9",
         122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8", 101: "F9", 109: "F10",
-        103: "F11", 111: "F12", 49: "Space", 36: "\u{21A9}", 48: "\u{21E5}", 51: "\u{232B}",
+        103: "F11", 111: "F12", 36: "\u{21A9}", 48: "\u{21E5}", 51: "\u{232B}",
         123: "\u{2190}", 124: "\u{2192}", 125: "\u{2193}", 126: "\u{2191}",
         24: "=", 27: "-", 33: "[", 30: "]", 41: ";", 39: "'", 43: ",", 47: ".", 44: "/", 42: "\\", 50: "`",
     ]
@@ -115,6 +121,21 @@ final class HotKeyManager {
     private let onAction: (ActionID) -> Void
     private(set) var status: [ActionID: HotKeyStatus] = [:]
     private var idsByNumber: [UInt32: ActionID] = [:]
+    /// Why each failed shortcut failed, so its message can be written again in another language.
+    private var reasons: [ActionID: Failure] = [:]
+    private var language: LanguageObserver?
+
+    private enum Failure {
+        case duplicate(of: ActionID)
+        case registration(Int32)
+
+        var message: String {
+            switch self {
+            case .duplicate(let other): return tr("Same shortcut as {action}", ["action": ActionTable.spec(other).title])
+            case .registration(let code): return HotKeyManager.message(for: code)
+            }
+        }
+    }
 
     init(backend: HotKeyBackend, onAction: @escaping (ActionID) -> Void) {
         self.backend = backend
@@ -122,17 +143,22 @@ final class HotKeyManager {
         backend.onPressed = { [weak self] number in
             MainActor.assumeIsolated { if let id = self?.idsByNumber[number] { self?.onAction(id) } }
         }
+        language = LanguageObserver { [weak self] in
+            guard let self else { return }
+            for (id, reason) in reasons { status[id] = .failed(reason.message) }
+        }
     }
 
     func apply(_ settings: Settings) {
         backend.unregisterAll()
         status = [:]
+        reasons = [:]
         idsByNumber = [:]
         var taken: [HotKey: ActionID] = [:]
         for (index, spec) in ActionTable.specs.enumerated() {
             guard let key = settings.hotKey(for: spec.id) else { status[spec.id] = .unassigned; continue }
             if let other = taken[key] {
-                status[spec.id] = .failed("Same shortcut as \(ActionTable.spec(other).title)")
+                fail(spec.id, .duplicate(of: other))
                 continue
             }
             taken[key] = spec.id
@@ -142,18 +168,23 @@ final class HotKeyManager {
                 idsByNumber[number] = spec.id
                 status[spec.id] = .registered
             } else {
-                status[spec.id] = .failed(Self.message(for: code))
+                fail(spec.id, .registration(code))
             }
         }
+    }
+
+    private func fail(_ id: ActionID, _ reason: Failure) {
+        reasons[id] = reason
+        status[id] = .failed(reason.message)
     }
 
     var failures: [ActionID: String] {
         status.compactMapValues { if case .failed(let m) = $0 { return m } else { return nil } }
     }
 
-    static func message(for code: Int32) -> String {
+    nonisolated static func message(for code: Int32) -> String {
         code == Int32(eventHotKeyExistsErr)
-            ? "Taken by another app or macOS"
-            : "Registration failed (error \(code))"
+            ? tr("Taken by another app or macOS")
+            : tr("Registration failed (error {code})", ["code": String(code)])
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkL10n
 import CornermarkVideoEditor
 import UniformTypeIdentifiers
 
@@ -16,50 +17,54 @@ enum RecordingControl: Equatable { case pause, resume, restart, discard }
 /// One row per user intent. The menu, the global hotkeys and the URL scheme all read this table.
 struct ActionSpec {
     let id: ActionID
-    let title: String
     let symbol: String
-    /// The name on a capture tile, where `title` would not fit.
-    let shortTitle: String?
     let hotKey: HotKey?
     let urlPath: String?
     let menuGroup: Int?
+    private let titleKey: LocalizedText
+    private let shortTitleKey: LocalizedText?
 
-    init(id: ActionID, title: String, symbol: String, shortTitle: String? = nil, hotKey: HotKey?, urlPath: String?, menuGroup: Int?) {
-        self.id = id; self.title = title; self.symbol = symbol; self.shortTitle = shortTitle
+    init(id: ActionID, title: LocalizedText, symbol: String, shortTitle: LocalizedText? = nil, hotKey: HotKey?, urlPath: String?, menuGroup: Int?) {
+        self.id = id; self.titleKey = title; self.symbol = symbol; self.shortTitleKey = shortTitle
         self.hotKey = hotKey; self.urlPath = urlPath; self.menuGroup = menuGroup
     }
+
+    /// Read in the current language each time, so a table built once follows a language change.
+    var title: String { titleKey.text }
+    /// The name on a capture tile, where `title` would not fit.
+    var shortTitle: String? { shortTitleKey?.text }
 
     var tileTitle: String { shortTitle ?? title }
 }
 
 enum ActionTable {
     static let specs: [ActionSpec] = [
-        ActionSpec(id: .allInOne, title: "Capture All-in-One", symbol: "camera.viewfinder", shortTitle: "All-in-One", hotKey: .ctrlShift(18), urlPath: "all-in-one", menuGroup: 0),
-        ActionSpec(id: .area, title: "Capture Area", symbol: "rectangle.dashed", shortTitle: "Area", hotKey: .ctrlShift(19), urlPath: "capture-area", menuGroup: 0),
-        ActionSpec(id: .window, title: "Capture Window", symbol: "macwindow", shortTitle: "Window", hotKey: .ctrlShift(20), urlPath: "capture-window", menuGroup: 0),
-        ActionSpec(id: .fullscreen, title: "Capture Fullscreen", symbol: "macbook", shortTitle: "Screen", hotKey: .ctrlShift(21), urlPath: "capture-fullscreen", menuGroup: 0),
-        ActionSpec(id: .previousArea, title: "Capture Previous Area", symbol: "arrow.counterclockwise", shortTitle: "Previous", hotKey: .ctrlShift(23), urlPath: "previous-area", menuGroup: 0),
-        ActionSpec(id: .scrolling, title: "Capture Scrolling", symbol: "arrow.up.and.down.square", shortTitle: "Scroll", hotKey: .ctrlShift(22), urlPath: "scrolling", menuGroup: 0),
-        ActionSpec(id: .ocr, title: "Capture Text (OCR)", symbol: "text.viewfinder", shortTitle: "Text", hotKey: .ctrlShift(26), urlPath: "ocr", menuGroup: 0),
-        ActionSpec(id: .timer, title: "Capture with Timer", symbol: "timer", shortTitle: "Timer", hotKey: .ctrlShift(28), urlPath: "timer", menuGroup: 0),
-        ActionSpec(id: .recordScreen, title: "Record Screen", symbol: "record.circle", shortTitle: "Record", hotKey: .ctrlShift(25), urlPath: "record-screen", menuGroup: 0),
-        ActionSpec(id: .restoreOverlay, title: "Restore Last Overlay", symbol: "arrow.uturn.backward", hotKey: nil, urlPath: "restore-overlay", menuGroup: 1),
-        ActionSpec(id: .hideOverlays, title: "Hide Overlays", symbol: "eye.slash", hotKey: nil, urlPath: "hide-overlays", menuGroup: 1),
-        ActionSpec(id: .history, title: "Capture History\u{2026}", symbol: "clock", hotKey: nil, urlPath: "history", menuGroup: 2),
-        ActionSpec(id: .settings, title: "Settings\u{2026}", symbol: "gearshape", hotKey: nil, urlPath: "settings", menuGroup: 2),
-        ActionSpec(id: .checkForUpdates, title: "Check for Updates\u{2026}", symbol: "arrow.triangle.2.circlepath", hotKey: nil, urlPath: "check-for-updates", menuGroup: 2),
-        ActionSpec(id: .whatsNew, title: "What's New\u{2026}", symbol: "sparkles", hotKey: nil, urlPath: "whats-new", menuGroup: 2),
-        ActionSpec(id: .openFile, title: "Open Image", symbol: "photo", hotKey: nil, urlPath: "open", menuGroup: nil),
-        ActionSpec(id: .record, title: "Record", symbol: "record.circle", hotKey: nil, urlPath: "record", menuGroup: nil),
-        ActionSpec(id: .stopRecording, title: "Stop Recording", symbol: "stop.circle", hotKey: nil, urlPath: "record/stop", menuGroup: nil),
-        ActionSpec(id: .pauseRecording, title: "Pause Recording", symbol: "pause.fill", hotKey: nil, urlPath: "record/pause", menuGroup: nil),
-        ActionSpec(id: .resumeRecording, title: "Resume Recording", symbol: "play.fill", hotKey: nil, urlPath: "record/resume", menuGroup: nil),
-        ActionSpec(id: .restartRecording, title: "Restart Recording", symbol: "arrow.counterclockwise", hotKey: nil, urlPath: "record/restart", menuGroup: nil),
-        ActionSpec(id: .discardRecording, title: "Delete Recording", symbol: "trash", hotKey: nil, urlPath: "record/discard", menuGroup: nil),
-        ActionSpec(id: .recordingCamera, title: "Camera Full Screen", symbol: "arrow.up.left.and.arrow.down.right", hotKey: nil, urlPath: "record/camera", menuGroup: nil),
-        ActionSpec(id: .recordTestWindow, title: "Show Recording Test Window", symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
-        ActionSpec(id: .editRecording, title: "Edit Recording", symbol: "slider.horizontal.3", hotKey: nil, urlPath: "edit-recording", menuGroup: nil),
-        ActionSpec(id: .quit, title: "Quit Cornermark", symbol: "power", hotKey: nil, urlPath: nil, menuGroup: 3),
+        ActionSpec(id: .allInOne, title: trKey("Capture All-in-One"), symbol: "camera.viewfinder", shortTitle: trKey("All-in-One"), hotKey: .ctrlShift(18), urlPath: "all-in-one", menuGroup: 0),
+        ActionSpec(id: .area, title: trKey("Capture Area"), symbol: "rectangle.dashed", shortTitle: trKey("Area"), hotKey: .ctrlShift(19), urlPath: "capture-area", menuGroup: 0),
+        ActionSpec(id: .window, title: trKey("Capture Window"), symbol: "macwindow", shortTitle: trKey("Window"), hotKey: .ctrlShift(20), urlPath: "capture-window", menuGroup: 0),
+        ActionSpec(id: .fullscreen, title: trKey("Capture Fullscreen"), symbol: "macbook", shortTitle: trKey("Screen"), hotKey: .ctrlShift(21), urlPath: "capture-fullscreen", menuGroup: 0),
+        ActionSpec(id: .previousArea, title: trKey("Capture Previous Area"), symbol: "arrow.counterclockwise", shortTitle: trKey("Previous"), hotKey: .ctrlShift(23), urlPath: "previous-area", menuGroup: 0),
+        ActionSpec(id: .scrolling, title: trKey("Capture Scrolling"), symbol: "arrow.up.and.down.square", shortTitle: trKey("Scroll"), hotKey: .ctrlShift(22), urlPath: "scrolling", menuGroup: 0),
+        ActionSpec(id: .ocr, title: trKey("Capture Text (OCR)"), symbol: "text.viewfinder", shortTitle: trKey("Text"), hotKey: .ctrlShift(26), urlPath: "ocr", menuGroup: 0),
+        ActionSpec(id: .timer, title: trKey("Capture with Timer"), symbol: "timer", shortTitle: trKey("Timer"), hotKey: .ctrlShift(28), urlPath: "timer", menuGroup: 0),
+        ActionSpec(id: .recordScreen, title: trKey("Record Screen"), symbol: "record.circle", shortTitle: trKey("Record"), hotKey: .ctrlShift(25), urlPath: "record-screen", menuGroup: 0),
+        ActionSpec(id: .restoreOverlay, title: trKey("Restore Last Overlay"), symbol: "arrow.uturn.backward", hotKey: nil, urlPath: "restore-overlay", menuGroup: 1),
+        ActionSpec(id: .hideOverlays, title: trKey("Hide Overlays"), symbol: "eye.slash", hotKey: nil, urlPath: "hide-overlays", menuGroup: 1),
+        ActionSpec(id: .history, title: trKey("Capture History\u{2026}"), symbol: "clock", hotKey: nil, urlPath: "history", menuGroup: 2),
+        ActionSpec(id: .settings, title: trKey("Settings\u{2026}"), symbol: "gearshape", hotKey: nil, urlPath: "settings", menuGroup: 2),
+        ActionSpec(id: .checkForUpdates, title: trKey("Check for Updates\u{2026}"), symbol: "arrow.triangle.2.circlepath", hotKey: nil, urlPath: "check-for-updates", menuGroup: 2),
+        ActionSpec(id: .whatsNew, title: trKey("What's New\u{2026}"), symbol: "sparkles", hotKey: nil, urlPath: "whats-new", menuGroup: 2),
+        ActionSpec(id: .openFile, title: trKey("Open Image"), symbol: "photo", hotKey: nil, urlPath: "open", menuGroup: nil),
+        ActionSpec(id: .record, title: trKey("Record"), symbol: "record.circle", hotKey: nil, urlPath: "record", menuGroup: nil),
+        ActionSpec(id: .stopRecording, title: trKey("Stop Recording"), symbol: "stop.circle", hotKey: nil, urlPath: "record/stop", menuGroup: nil),
+        ActionSpec(id: .pauseRecording, title: trKey("Pause Recording"), symbol: "pause.fill", hotKey: nil, urlPath: "record/pause", menuGroup: nil),
+        ActionSpec(id: .resumeRecording, title: trKey("Resume Recording"), symbol: "play.fill", hotKey: nil, urlPath: "record/resume", menuGroup: nil),
+        ActionSpec(id: .restartRecording, title: trKey("Restart Recording"), symbol: "arrow.counterclockwise", hotKey: nil, urlPath: "record/restart", menuGroup: nil),
+        ActionSpec(id: .discardRecording, title: trKey("Delete Recording"), symbol: "trash", hotKey: nil, urlPath: "record/discard", menuGroup: nil),
+        ActionSpec(id: .recordingCamera, title: trKey("Camera Full Screen"), symbol: "arrow.up.left.and.arrow.down.right", hotKey: nil, urlPath: "record/camera", menuGroup: nil),
+        ActionSpec(id: .recordTestWindow, title: trKey("Show Recording Test Window"), symbol: "macwindow", hotKey: nil, urlPath: "record/test-window", menuGroup: nil),
+        ActionSpec(id: .editRecording, title: trKey("Edit Recording"), symbol: "slider.horizontal.3", hotKey: nil, urlPath: "edit-recording", menuGroup: nil),
+        ActionSpec(id: .quit, title: trKey("Quit Cornermark"), symbol: "power", hotKey: nil, urlPath: nil, menuGroup: 3),
     ]
 
     static func spec(_ id: ActionID) -> ActionSpec { specs.first { $0.id == id }! }

@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// What the controls and the menu bar show: the phase and the length of the video so far.
 struct RecordingStatus: Equatable {
@@ -13,12 +14,12 @@ struct RecordingStatus: Equatable {
     /// The words a screen reader says for the indicator.
     var spoken: String {
         switch phase {
-        case .countingDown(let n): return "Recording starts in \(n)"
-        case .paused: return "Recording paused at \(timeText)"
-        case .recording: return "Recording, \(timeText)"
-        case .starting: return "Preparing to record"
-        case .stopping: return "Saving recording"
-        case .idle: return "Not recording"
+        case .countingDown(let n): return tr("Recording starts in {count}", ["count": n])
+        case .paused: return tr("Recording paused at {time}", ["time": timeText])
+        case .recording: return tr("Recording, {time}", ["time": timeText])
+        case .starting: return tr("Preparing to record")
+        case .stopping: return tr("Saving recording")
+        case .idle: return tr("Not recording")
         }
     }
 }
@@ -73,19 +74,22 @@ struct RecordingBarLook: Equatable {
     var canPause: Bool
     /// Restart and delete both need frames to throw away.
     var canDiscard: Bool
-    var stopTitle: String
+    /// Whether the stop button cancels a recording that has not begun, rather than ending one.
+    var stopCancels: Bool
     var canStop: Bool
+
+    var stopTitle: String { stopCancels ? tr("Cancel") : tr("Stop") }
 
     static func of(_ phase: RecordingController.Phase) -> RecordingBarLook {
         switch phase {
         case .starting, .countingDown:
-            return .init(stopSymbol: "xmark.circle", stopIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canDiscard: false, stopTitle: "Cancel", canStop: true)
+            return .init(stopSymbol: "xmark.circle", stopIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canDiscard: false, stopCancels: true, canStop: true)
         case .recording:
-            return .init(stopSymbol: "stop.circle", stopIsDanger: true, timeIsMuted: false, showsResume: false, canPause: true, canDiscard: true, stopTitle: "Stop", canStop: true)
+            return .init(stopSymbol: "stop.circle", stopIsDanger: true, timeIsMuted: false, showsResume: false, canPause: true, canDiscard: true, stopCancels: false, canStop: true)
         case .paused:
-            return .init(stopSymbol: "stop.circle", stopIsDanger: false, timeIsMuted: true, showsResume: true, canPause: true, canDiscard: true, stopTitle: "Stop", canStop: true)
+            return .init(stopSymbol: "stop.circle", stopIsDanger: false, timeIsMuted: true, showsResume: true, canPause: true, canDiscard: true, stopCancels: false, canStop: true)
         case .idle, .stopping:
-            return .init(stopSymbol: "stop.circle", stopIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canDiscard: false, stopTitle: "Stop", canStop: false)
+            return .init(stopSymbol: "stop.circle", stopIsDanger: false, timeIsMuted: true, showsResume: false, canPause: false, canDiscard: false, stopCancels: false, canStop: false)
         }
     }
 }
@@ -134,14 +138,14 @@ final class RecordingBarView: NSView {
     /// The red stop mark and the time together are the stop button, the one thing a recording most often needs.
     let stop = Button(title: "", variant: .ghost)
     private let divider = Separator(axis: .vertical)
-    let pause = IconButton(symbol: "pause.fill", label: "Pause")
-    let resume = IconButton(symbol: "play.fill", label: "Resume")
-    let restart = IconButton(symbol: "arrow.counterclockwise", label: "Restart")
+    let pause = IconButton(symbol: "pause.fill", label: tr("Pause"))
+    let resume = IconButton(symbol: "play.fill", label: tr("Resume"))
+    let restart = IconButton(symbol: "arrow.counterclockwise", label: tr("Restart"))
     /// Restart throws the take away, so it asks once more in place: a second click within a few seconds confirms.
-    let confirmRestart = Button(title: "Discard take", variant: .dangerGhost)
-    let delete = IconButton(symbol: "trash", label: "Delete")
+    let confirmRestart = Button(title: tr("Discard take"), variant: .dangerGhost)
+    let delete = IconButton(symbol: "trash", label: tr("Delete"))
     /// Delete ends the recording and keeps nothing, so it asks the same way.
-    let confirmDelete = Button(title: "Delete recording", variant: .dangerGhost)
+    let confirmDelete = Button(title: tr("Delete recording"), variant: .dangerGhost)
     let grip = RecordingBarGrip()
     /// The microphone's level, or its warning, shown only when the recording has a microphone.
     let microphone = MicrophoneSlotView()
@@ -166,7 +170,6 @@ final class RecordingBarView: NSView {
         appearance = NSAppearance(named: .darkAqua)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Recording controls")
         time.font = Self.timeFont
         time.textColor = DS.Color.textPrimary
         time.setAccessibilityElement(false)
@@ -177,16 +180,8 @@ final class RecordingBarView: NSView {
         restart.setAccessibilityIdentifier("recording.restart")
         delete.setAccessibilityIdentifier("recording.delete")
         grip.setAccessibilityElement(false)
-        pause.toolTip = "Pause recording"
-        resume.toolTip = "Resume recording"
-        restart.toolTip = "Restart: discard this take and start again"
         confirmRestart.setAccessibilityIdentifier("recording.confirmRestart")
-        confirmRestart.toolTip = "Click again to discard this take and start again"
-        delete.toolTip = "Delete: stop and keep nothing"
-        delete.setAccessibilityHelp("Stops the recording and deletes it. Asks once more first.")
         confirmDelete.setAccessibilityIdentifier("recording.confirmDelete")
-        confirmDelete.toolTip = "Click again to stop and delete this recording"
-        grip.toolTip = "Drag to move"
         for (button, action) in [(pause, #selector(pauseTapped)), (resume, #selector(resumeTapped)), (restart, #selector(restartTapped)),
                                  (confirmRestart, #selector(confirmRestartTapped)), (delete, #selector(deleteTapped)),
                                  (confirmDelete, #selector(confirmDeleteTapped)), (stop, #selector(stopTapped))] as [(NSButton, Selector)] {
@@ -195,10 +190,34 @@ final class RecordingBarView: NSView {
         }
         microphone.isHidden = true
         [stop, indicator, time, microphone, divider, pause, resume, restart, confirmRestart, delete, confirmDelete, grip].forEach(addSubview)
-        apply(RecordingStatus(phase: .idle, seconds: 0))
+        applyLanguageDirection()
+        relocalize()
     }
 
     required init?(coder: NSCoder) { fatalError("RecordingBarView is created in code") }
+
+    /// Writes every label, tooltip and spoken phrase again in the current language, and lays the bar out for its direction.
+    func relocalize() {
+        setAccessibilityLabel(tr("Recording controls"))
+        pause.rename(tr("Pause"))
+        resume.rename(tr("Resume"))
+        restart.rename(tr("Restart"))
+        delete.rename(tr("Delete"))
+        pause.toolTip = tr("Pause recording")
+        resume.toolTip = tr("Resume recording")
+        restart.toolTip = tr("Restart: discard this take and start again")
+        confirmRestart.title = tr("Discard take")
+        confirmRestart.setAccessibilityLabel(tr("Discard take"))
+        confirmRestart.toolTip = tr("Click again to discard this take and start again")
+        delete.toolTip = tr("Delete: stop and keep nothing")
+        delete.setAccessibilityHelp(tr("Stops the recording and deletes it. Asks once more first."))
+        confirmDelete.title = tr("Delete recording")
+        confirmDelete.setAccessibilityLabel(tr("Delete recording"))
+        confirmDelete.toolTip = tr("Click again to stop and delete this recording")
+        grip.toolTip = tr("Drag to move")
+        applyLanguageDirection()
+        apply(lastStatus)
+    }
 
     override var mouseDownCanMoveWindow: Bool { true }
 
@@ -238,9 +257,9 @@ final class RecordingBarView: NSView {
         indicator.color = look.stopIsDanger ? DS.Color.dangerText : (look.canStop ? DS.Color.textSecondary : DS.Color.textDisabled)
         time.stringValue = status.timeText
         time.textColor = look.timeIsMuted ? DS.Color.textSecondary : DS.Color.textPrimary
-        let spoken = look.stopTitle == "Cancel" ? "Cancel recording. \(status.spoken)" : "Stop recording. \(status.spoken)"
+        let spoken = look.stopCancels ? tr("Cancel recording. {status}", ["status": status.spoken]) : tr("Stop recording. {status}", ["status": status.spoken])
         stop.setAccessibilityLabel(spoken)
-        stop.toolTip = look.stopTitle == "Cancel" ? "Cancel recording" : "Stop recording"
+        stop.toolTip = look.stopCancels ? tr("Cancel recording") : tr("Stop recording")
         stop.isEnabled = look.canStop
         pause.isHidden = look.showsResume
         resume.isHidden = !look.showsResume
@@ -298,6 +317,10 @@ final class RecordingBarView: NSView {
         x += deleteWidth + DS.Space.s4
         grip.frame = CGRect(x: x, y: mid - c / 2, width: RecordingBarGrip.width, height: c)
         setFrameSize(NSSize(width: fittingWidth, height: h))
+        // Everything above was placed left to right; a right-to-left language reads the bar from its other end.
+        if isRightToLeft {
+            for view in subviews { view.frame = mirrored(view.frame, within: fittingWidth) }
+        }
         if let window, window.contentView === self, window.frame.size != frame.size { window.setContentSize(frame.size) }
     }
 
@@ -347,6 +370,7 @@ final class RecordingControls {
     private(set) var countdownView: CountdownView?
     private var ticker: Timer?
     private var moved: NSObjectProtocol?
+    private var language: LanguageObserver?
     /// Where the user last dragged the bar, kept for the next recording while the app runs.
     private(set) var rememberedOrigin: CGPoint?
     var onStatus: (RecordingStatus) -> Void = { _ in }
@@ -359,6 +383,23 @@ final class RecordingControls {
         recording.onChange = { [weak self] in self?.update() }
         recording.onCameraChange = { [weak self] in self?.camera.update() }
         recording.onMicrophone = { [weak self] in self?.microphoneChanged() }
+        language = LanguageObserver { [weak self] in self?.relocalize() }
+    }
+
+    /// The bar, the countdown and the panels' titles follow the language while a recording runs. The recording itself is untouched.
+    private func relocalize() {
+        bar?.title = tr("Recording Controls")
+        dim?.title = tr("Recording Dim")
+        countdown?.title = tr("Recording Countdown")
+        barView?.relocalize()
+        if let countdown, let old = countdownView {
+            let view = CountdownView(frame: old.frame, hint: tr("Recording starts"))
+            view.appearance = NSAppearance(named: .darkAqua)
+            view.remaining = old.remaining
+            view.wantsLayer = true
+            countdown.contentView = view
+            countdownView = view
+        }
     }
 
     private var wasSilent = false
@@ -371,7 +412,7 @@ final class RecordingControls {
         wasSilent = silent
         // VoiceOver hears it once when the sound stops and once when it comes back, never each tick.
         if let view = barView {
-            let words = silent ? "No sound from the microphone. Check that it is not muted." : "The microphone has sound again."
+            let words = silent ? tr("No sound from the microphone. Check that it is not muted.") : tr("The microphone has sound again.")
             let priority: NSAccessibilityPriorityLevel = silent ? .high : .medium
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [.announcement: words, .priority: priority.rawValue])
         }
@@ -436,7 +477,7 @@ final class RecordingControls {
         view.apply(status)
         let visible = Self.screen(for: area).visible
         let origin = RecordingBarLayout.origin(size: view.frame.size, area: area, visible: visible, remembered: rememberedOrigin)
-        let panel = RecordingPanel(frame: CGRect(origin: origin, size: view.frame.size), level: .statusBar, title: "Recording Controls")
+        let panel = RecordingPanel(frame: CGRect(origin: origin, size: view.frame.size), level: .statusBar, title: tr("Recording Controls"))
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
         panel.contentView = view
@@ -456,7 +497,7 @@ final class RecordingControls {
         let view = RecordingDimView(frame: CGRect(origin: .zero, size: frame.size))
         view.hole = area.offsetBy(dx: -frame.minX, dy: -frame.minY)
         // Over the Dock and every app, under the menu bar, so the time there stays readable.
-        let panel = RecordingPanel(frame: frame, level: NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1), title: "Recording Dim")
+        let panel = RecordingPanel(frame: frame, level: NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1), title: tr("Recording Dim"))
         panel.ignoresMouseEvents = true
         panel.contentView = view
         dim = panel
@@ -467,9 +508,9 @@ final class RecordingControls {
     private func showCountdown(_ n: Int, area: CGRect) {
         if countdown == nil {
             let size = CountdownView.size
-            let view = CountdownView(frame: CGRect(origin: .zero, size: size), hint: "Recording starts")
+            let view = CountdownView(frame: CGRect(origin: .zero, size: size), hint: tr("Recording starts"))
             let panel = RecordingPanel(frame: CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height),
-                                       level: .statusBar, title: "Recording Countdown")
+                                       level: .statusBar, title: tr("Recording Countdown"))
             panel.ignoresMouseEvents = true
             view.appearance = NSAppearance(named: .darkAqua)
             panel.contentView = view

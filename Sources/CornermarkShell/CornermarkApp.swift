@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkDesign
+import CornermarkL10n
 import CornermarkVideoEditor
 
 @MainActor
@@ -9,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var menuPanel: MenuPanelController?
     private var pendingURLs: [URL] = []
+    private var refreshStatusItem: (() -> Void)?
+    private var language: LanguageObserver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let env: AppEnvironment
@@ -18,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if AppEnvironment.isolatedRoot != nil { return NSApp.terminate(nil) }
             #endif
             let alert = NSAlert()
-            alert.messageText = "Cornermark cannot open its capture history"
+            alert.messageText = tr("Cornermark cannot open its capture history")
             alert.informativeText = error.localizedDescription
             alert.runModal()
             NSApp.terminate(nil)
@@ -39,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.startMaintenance()
         if env.isOnscreen { installStatusItem(coordinator) }
         installMainMenu()
+        language = LanguageObserver { [weak self] in
+            self?.installMainMenu()
+            self?.refreshStatusItem?()
+        }
         pendingURLs.forEach(open)
         pendingURLs = []
     }
@@ -71,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item.length = statusTitle(coordinator.updates.state, recording: recording) == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
             }
             apply()
+            refreshStatusItem = apply
             coordinator.updates.onStateChange = { _ in
                 apply()
                 panel.refresh()
@@ -124,24 +132,24 @@ enum MainMenu {
             }
             return item
         }
-        submenu("").addItem(withTitle: "Quit Cornermark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        let file = submenu("File")
-        add(file, "Open Video\u{2026}", openVideo, .openVideo).target = target
+        submenu("").addItem(withTitle: tr("Quit Cornermark"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let file = submenu(tr("File"))
+        add(file, tr("Open Video\u{2026}"), openVideo, .openVideo).target = target
         file.addItem(.separator())
-        _ = add(file, "Save", Selector(("saveDocument:")), .save)
-        _ = add(file, "Save As\u{2026}", Selector(("saveDocumentAs:")), .saveAs)
+        _ = add(file, tr("Save"), Selector(("saveDocument:")), .save)
+        _ = add(file, tr("Save As\u{2026}"), Selector(("saveDocumentAs:")), .saveAs)
         file.addItem(.separator())
-        _ = add(file, "Export\u{2026}", Selector(("exportVideo:")), .export)
-        _ = add(file, "Export Current Frame as Image", Selector(("exportCurrentFrame:")), .exportFrame)
-        let edit = submenu("Edit")
-        _ = add(edit, "Undo", Selector(("undo:")), .undo)
-        _ = add(edit, "Redo", Selector(("redo:")), .redo)
+        _ = add(file, tr("Export\u{2026}"), Selector(("exportVideo:")), .export)
+        _ = add(file, tr("Export Current Frame as Image"), Selector(("exportCurrentFrame:")), .exportFrame)
+        let edit = submenu(tr("Edit"))
+        _ = add(edit, tr("Undo"), Selector(("undo:")), .undo)
+        _ = add(edit, tr("Redo"), Selector(("redo:")), .redo)
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        submenu("Window").addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        edit.addItem(withTitle: tr("Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: tr("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: tr("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: tr("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        submenu(tr("Window")).addItem(withTitle: tr("Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         return main
     }
 }
@@ -181,13 +189,13 @@ func applyStatusLabel(_ state: UpdateState, recording: RecordingStatus? = nil, t
     case .recording?:
         let red = NSImage.SymbolConfiguration(paletteColors: [DS.Color.dangerText])
         button.image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(red)
-        button.setAccessibilityLabel("\(AppVariant.current.name), \(recording!.spoken)")
+        button.setAccessibilityLabel(tr("{name}, {status}", ["name": AppVariant.current.name, "status": recording!.spoken]))
     case .paused?:
         button.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)
         button.image?.isTemplate = true
-        button.setAccessibilityLabel("\(AppVariant.current.name), \(recording!.spoken)")
+        button.setAccessibilityLabel(tr("{name}, {status}", ["name": AppVariant.current.name, "status": recording!.spoken]))
     default:
         button.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: AppVariant.current.name)
-        button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : "\(AppVariant.current.name), update available")
+        button.setAccessibilityLabel(state.statusLabel == nil ? AppVariant.current.name : tr("{name}, update available", ["name": AppVariant.current.name]))
     }
 }

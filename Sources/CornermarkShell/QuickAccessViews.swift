@@ -1,10 +1,11 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 extension RecordedVideo.Format {
     /// What Quick Access and History call a recording in this format.
-    var noun: String { self == .gif ? "GIF" : "Recording" }
+    var noun: String { self == .gif ? "GIF" : tr("Recording") }
     /// The glyph beside a recording's length.
     var symbol: String { self == .gif ? "photo.stack.fill" : "video.fill" }
 }
@@ -27,16 +28,16 @@ extension CardAction {
 
     var title: String {
         switch self {
-        case .copy: return "Copy"
-        case .save: return "Save"
-        case .annotate: return "Annotate"
-        case .pin: return "Pin to Screen"
-        case .ocr: return "Copy Text (OCR)"
-        case .play: return "Play"
-        case .edit: return "Edit"
-        case .makeGif: return "Convert to GIF"
-        case .reveal: return "Reveal in Finder"
-        case .close: return "Close"
+        case .copy: return tr("Copy")
+        case .save: return tr("Save")
+        case .annotate: return tr("Annotate")
+        case .pin: return tr("Pin to Screen")
+        case .ocr: return tr("Copy Text (OCR)")
+        case .play: return tr("Play")
+        case .edit: return tr("Edit")
+        case .makeGif: return tr("Convert to GIF")
+        case .reveal: return tr("Reveal in Finder")
+        case .close: return tr("Close")
         }
     }
 
@@ -97,9 +98,6 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         setAccessibilityIdentifier("quickaccess.card")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        // A GIF's info line already starts with its noun.
-        let spoken = card.info.replacingOccurrences(of: "  \u{00B7}  ", with: ", ")
-        setAccessibilityLabel(card.record.video?.format == .gif ? spoken : "\(card.record.video?.format.noun ?? "Capture"), \(spoken)")
         for action in card.actions {
             let b = action.makeButton()
             b.target = self
@@ -108,9 +106,22 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
             addSubview(b)
             buttons[action] = b
         }
+        relocalize()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Writes the card's text again in the current language and lays it out for the current direction.
+    func relocalize() {
+        // A GIF's info line already starts with its noun.
+        let spoken = card.info.replacingOccurrences(of: "  \u{00B7}  ", with: ", ")
+        let kind = card.record.video?.format.noun ?? tr("Capture")
+        setAccessibilityLabel(card.record.video?.format == .gif ? spoken : tr("{kind}, {details}", ["kind": kind, "details": spoken]))
+        for (action, button) in buttons { button.rename(action.title) }
+        applyLanguageDirection()
+        needsLayout = true
+        needsDisplay = true
+    }
 
     func setCardSize(_ newSize: CGSize) {
         size = newSize
@@ -156,12 +167,12 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         if let video = card.record.video {
             // The glyph says "video" or "GIF" without relying on the duration's format alone.
             let glyph = NSRect(x: line.minX, y: line.minY, width: DS.Size.iconSmall, height: line.height)
-            Glyph.draw(video.format.symbol, in: glyph, pointSize: DS.Size.iconSmall - 2, DS.Color.textSecondary)
+            Glyph.draw(video.format.symbol, in: mirrored(glyph), pointSize: DS.Size.iconSmall - 2, DS.Color.textSecondary)
             line.origin.x = glyph.maxX + DS.Space.s4
             line.size.width -= glyph.width + DS.Space.s4
         }
         NSAttributedString(string: card.info, attributes: DS.Text.readout.attributes(color: DS.Color.textSecondary))
-            .draw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            .draw(with: mirrored(line), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     /// A 1pt line that stays inside the path, so the shape keeps its size.
@@ -182,8 +193,8 @@ final class QuickAccessCardView: NSView, NSDraggingSource {
         let corner = metrics.corner
         buttons[.close]?.glyphSize = metrics.cornerGlyph
         buttons[.pin]?.glyphSize = metrics.cornerGlyph
-        buttons[.close]?.frame = NSRect(x: area.minX + pad, y: area.minY + pad, width: corner, height: corner)
-        buttons[.pin]?.frame = NSRect(x: area.maxX - pad - corner, y: area.minY + pad, width: corner, height: corner)
+        buttons[.close]?.frame = mirrored(NSRect(x: area.minX + pad, y: area.minY + pad, width: corner, height: corner))
+        buttons[.pin]?.frame = mirrored(NSRect(x: area.maxX - pad - corner, y: area.minY + pad, width: corner, height: corner))
         let middle = card.actions.filter { !CardAction.corners.contains($0) }
         let d = metrics.action
         let gap = DS.Space.s8

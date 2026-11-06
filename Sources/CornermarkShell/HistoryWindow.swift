@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCore
 import CornermarkDesign
 import CornermarkEditor
+import CornermarkL10n
 
 struct HistoryActions {
     var restore: (CaptureRecord) -> Void = { _ in }
@@ -14,7 +15,7 @@ struct HistoryActions {
     var delete: (CaptureRecord) -> Void = { _ in }
 }
 
-final class HistoryItemView: NSView {
+final class HistoryItemView: NSView, KeepsLeftToRight {
     var thumbnail: CGImage? { didSet { needsDisplay = true } }
     var title = "" { didSet { needsDisplay = true } }
     var subtitle = "" { didSet { needsDisplay = true } }
@@ -88,11 +89,15 @@ final class HistoryItemView: NSView {
             let pad = DS.Space.s6, glyph = DS.Size.iconSmall
             let height = readout.lineHeight + DS.Space.s4
             let width = pad + glyph + DS.Space.s4 + ceil(attributed.size().width) + pad
-            let plate = CGRect(x: well.minX + DS.Space.s6, y: well.maxY - DS.Space.s6 - height, width: width, height: height)
+            // The picture is never mirrored, but the plate laid over it starts from the corner the language starts from.
+            let plateX = L10n.isRightToLeft ? well.maxX - DS.Space.s6 - width : well.minX + DS.Space.s6
+            let plate = CGRect(x: plateX, y: well.maxY - DS.Space.s6 - height, width: width, height: height)
             DS.Color.bgHud.setFill()
             NSBezierPath.continuous(plate, radius: DS.Radius.xs).fill()
-            Glyph.draw(durationSymbol, in: CGRect(x: plate.minX + pad, y: plate.minY, width: glyph, height: plate.height), pointSize: glyph - 2, DS.Color.textPrimary)
-            attributed.draw(with: CGRect(x: plate.minX + pad + glyph + DS.Space.s4, y: plate.minY + DS.Space.s2, width: width, height: readout.lineHeight),
+            let glyphX = L10n.isRightToLeft ? plate.maxX - pad - glyph : plate.minX + pad
+            let textX = L10n.isRightToLeft ? plate.minX + pad : plate.minX + pad + glyph + DS.Space.s4
+            Glyph.draw(durationSymbol, in: CGRect(x: glyphX, y: plate.minY, width: glyph, height: plate.height), pointSize: glyph - 2, DS.Color.textPrimary)
+            attributed.draw(with: CGRect(x: textX, y: plate.minY + DS.Space.s2, width: width, height: readout.lineHeight),
                             options: [.usesLineFragmentOrigin])
         }
     }
@@ -118,7 +123,9 @@ final class HistoryItem: NSCollectionViewItem {
         v.durationSymbol = (record.video?.format ?? .video).symbol
         v.setAccessibilityElement(true)
         v.setAccessibilityRole(.group)
-        v.setAccessibilityLabel(record.video.map { "\($0.format.noun), \(ImageOutput.durationText($0.duration)), \(v.subtitle)" } ?? "\(record.kind.title) capture, \(v.subtitle)")
+        v.setAccessibilityLabel(record.video.map {
+            tr("{kind}, {duration}, {date}", ["kind": $0.format.noun, "duration": ImageOutput.durationText($0.duration), "date": v.subtitle])
+        } ?? tr("{kind} capture, {date}", ["kind": record.kind.title, "date": v.subtitle]))
         v.onOpen = onOpen
         v.isSelected = isSelected
     }
@@ -127,7 +134,7 @@ final class HistoryItem: NSCollectionViewItem {
 
     static func timeText(_ date: Date, now: Date) -> String {
         let f = DateFormatter()
-        f.locale = .current
+        f.locale = L10n.locale
         f.setLocalizedDateFormatFromTemplate(Calendar.current.isDate(date, inSameDayAs: now) ? "HH:mm:ss" : "d MMM HH:mm")
         return f.string(from: date)
     }
@@ -182,17 +189,20 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
     private(set) var filter: HistoryFilter = .all
     private(set) var sections: [HistorySection] = []
     let collectionView = HistoryCollectionView()
-    private let filterControl = Segments(labels: HistoryFilter.allCases.map(\.title), trackingMode: .selectOne, size: .small, tilePadding: DS.Space.s8)
-    private let countLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
-    private let emptyLabel = NSTextField.label("No captures yet", style: DS.Text.heading, color: DS.Color.textSecondary)
+    private let scroll = NSScrollView()
+    private var filterControl = Segments(labels: HistoryFilter.allCases.map(\.title), trackingMode: .selectOne, size: .small, tilePadding: DS.Space.s8)
+    private var countLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
+    private var emptyLabel = NSTextField.label("", style: DS.Text.heading, color: DS.Color.textSecondary)
     private(set) var actionButtons: [String: NSButton] = [:]
+    private var language: LanguageObserver?
+    private var titleMetrics: (height: CGFloat, leading: CGFloat)?
 
     init(env: AppEnvironment, thumbnails: ThumbnailCache = ThumbnailCache()) {
         self.env = env
         self.thumbnails = thumbnails
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 920, height: 640),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: true)
-        window.title = "Capture History"
+        window.title = tr("Capture History")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.backgroundColor = DS.Color.bgSurface
@@ -200,9 +210,11 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         window.minSize = NSSize(width: 720, height: 420)
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        configureGrid()
         build(in: window)
         window.center()
         reload()
+        language = LanguageObserver { [weak self] in self?.relocalize() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -215,7 +227,9 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
 
     // MARK: Layout
 
-    private func build(in window: NSWindow) {
+    /// The grid and its scroll view are made once. A language change rebuilds only the chrome around them, so the selection and the
+    /// scroll position stay.
+    private func configureGrid() {
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 204, height: 172)
         layout.minimumInteritemSpacing = 0
@@ -235,9 +249,7 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
                                 withIdentifier: NSUserInterfaceItemIdentifier("header"))
         collectionView.setAccessibilityIdentifier("history.grid")
         collectionView.onDelete = { [weak self] in self?.perform(\.delete) }
-        collectionView.menu = makeMenu()
 
-        let scroll = NSScrollView()
         scroll.documentView = collectionView
         scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay
@@ -245,40 +257,61 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         scroll.backgroundColor = DS.Color.bgWindow
         scroll.automaticallyAdjustsContentInsets = false
         scroll.contentInsets = NSEdgeInsets()
+    }
 
-        filterControl.selectedSegment = 0
+    private func build(in window: NSWindow) {
+        collectionView.menu = makeMenu()
+        actionButtons = [:]
+        countLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
+        emptyLabel = NSTextField.label(tr("No captures yet"), style: DS.Text.heading, color: DS.Color.textSecondary)
+        filterControl = Segments(labels: HistoryFilter.allCases.map(\.title), trackingMode: .selectOne, size: .small, tilePadding: DS.Space.s8)
+        filterControl.selectedSegment = filter.rawValue
         filterControl.target = self
         filterControl.action = #selector(filterChanged)
         filterControl.setAccessibilityIdentifier("history.filter")
-        filterControl.setAccessibilityLabel("Filter")
+        filterControl.setAccessibilityLabel(tr("Filter"))
 
         // The title row is a row of our own under the transparent title bar, on the window buttons' centre line.
-        let (rowHeight, leading) = WindowChrome.titleRowMetrics(for: window, toolbarIdentifier: "cornermark.history")
+        // The toolbar that makes the taller title bar is added once; a rebuild must not grow the window again.
+        let (rowHeight, leading) = titleMetrics ?? WindowChrome.titleRowMetrics(for: window, toolbarIdentifier: "cornermark.history")
+        titleMetrics = (rowHeight, leading)
         let titleRow = HistoryTitleRow()
         let rule = Separator(axis: .horizontal)
         for v in [filterControl, countLabel] { v.translatesAutoresizingMaskIntoConstraints = false; titleRow.addSubview(v) }
+        // The window buttons stay at the top left in every language, so the row keeps clear of them there: the filters start after
+        // them, or in a right-to-left language the count does, with the filters at the far right.
+        if L10n.isRightToLeft {
+            NSLayoutConstraint.activate([
+                filterControl.rightAnchor.constraint(equalTo: titleRow.rightAnchor, constant: -DS.Space.s16),
+                countLabel.leftAnchor.constraint(equalTo: titleRow.leftAnchor, constant: leading),
+                countLabel.rightAnchor.constraint(lessThanOrEqualTo: filterControl.leftAnchor, constant: -DS.Space.s16),
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                filterControl.leftAnchor.constraint(equalTo: titleRow.leftAnchor, constant: leading),
+                countLabel.rightAnchor.constraint(equalTo: titleRow.rightAnchor, constant: -DS.Space.s16),
+                countLabel.leftAnchor.constraint(greaterThanOrEqualTo: filterControl.rightAnchor, constant: DS.Space.s16),
+            ])
+        }
         NSLayoutConstraint.activate([
             titleRow.heightAnchor.constraint(equalToConstant: rowHeight),
-            filterControl.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: leading),
             filterControl.centerYAnchor.constraint(equalTo: titleRow.centerYAnchor),
-            countLabel.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor, constant: -DS.Space.s16),
             countLabel.centerYAnchor.constraint(equalTo: titleRow.centerYAnchor),
-            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: filterControl.trailingAnchor, constant: DS.Space.s16),
         ])
 
         let bar = BarView()
         bar.edge = .top
         let defs: [(String, String, Button.Variant, String?, Selector)] = [
-            ("copy", "Copy", .primary, nil, #selector(copySelected)),
-            ("edit", "Edit", .ghost, nil, #selector(editSelected)),
-            ("restore", "Show Overlay", .ghost, nil, #selector(restoreSelected)),
-            ("reveal", "Reveal in Finder", .ghost, nil, #selector(revealSelected)),
-            ("gif", "Convert to GIF", .ghost, nil, #selector(makeGifSelected)),
+            ("copy", tr("Copy"), .primary, nil, #selector(copySelected)),
+            ("edit", tr("Edit"), .ghost, nil, #selector(editSelected)),
+            ("restore", tr("Show Overlay"), .ghost, nil, #selector(restoreSelected)),
+            ("reveal", tr("Reveal in Finder"), .ghost, nil, #selector(revealSelected)),
+            ("gif", tr("Convert to GIF"), .ghost, nil, #selector(makeGifSelected)),
         ]
         let spacer = NSView()
         spacer.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
         let buttons = defs.map { makeButton($0.0, $0.1, $0.2, $0.3, $0.4) }
-            + [spacer, makeButton("delete", "Delete", .dangerGhost, "trash", #selector(deleteSelected))]
+            + [spacer, makeButton("delete", tr("Delete"), .dangerGhost, "trash", #selector(deleteSelected))]
         let barRow = NSStackView(views: buttons)
         barRow.orientation = .horizontal
         barRow.alignment = .centerY
@@ -310,6 +343,7 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
             emptyLabel.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
         ])
         window.contentView = root
+        root.applyLanguageDirection()
     }
 
     private func makeButton(_ id: String, _ title: String, _ variant: Button.Variant, _ symbol: String?, _ action: Selector) -> Button {
@@ -323,13 +357,13 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Show Overlay", action: #selector(restoreSelected), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Edit", action: #selector(editSelected), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Copy", action: #selector(copySelected), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Reveal in Finder", action: #selector(revealSelected), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Convert to GIF", action: #selector(makeGifSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: tr("Show Overlay"), action: #selector(restoreSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: tr("Edit"), action: #selector(editSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: tr("Copy"), action: #selector(copySelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: tr("Reveal in Finder"), action: #selector(revealSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: tr("Convert to GIF"), action: #selector(makeGifSelected), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Delete", action: #selector(deleteSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: tr("Delete"), action: #selector(deleteSelected), keyEquivalent: "").target = self
         return menu
     }
 
@@ -339,8 +373,9 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         sections = HistoryGrouping.sections(env.store.list(filter: filter.captureFilter), now: env.clock())
         collectionView.reloadData()
         let n = records.count
-        let noun = filter == .recordings ? "recording" : "capture"
-        countLabel.stringValue = n == 1 ? "1 \(noun)" : "\(n) \(noun)s"
+        countLabel.stringValue = filter == .recordings
+            ? trPlural(one: "{count} recording", other: "{count} recordings", count: n)
+            : trPlural(one: "{count} capture", other: "{count} captures", count: n)
         emptyLabel.isHidden = n > 0
         updateButtons()
     }
@@ -349,6 +384,22 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
         filter = f
         filterControl.selectedSegment = f.rawValue
         reload()
+    }
+
+    /// Writes every string again in the new language and lays the window out for its direction. The filter, the selection, the
+    /// scroll position and the focus stay as they were.
+    private func relocalize() {
+        guard let window else { return }
+        let selected = selectedRecords.map(\.id)
+        let origin = scroll.contentView.bounds.origin
+        let focused = window.firstResponder === collectionView
+        window.title = tr("Capture History")
+        build(in: window)
+        reload()
+        select(recordIDs: selected)
+        scroll.contentView.scroll(to: origin)
+        scroll.reflectScrolledClipView(scroll.contentView)
+        if focused { window.makeFirstResponder(collectionView) }
     }
 
     func select(recordIDs: [UUID]) {
@@ -426,6 +477,7 @@ final class HistoryWindowController: NSWindowController, NSCollectionViewDataSou
                         at indexPath: IndexPath) -> NSView {
         let header = collectionView.makeSupplementaryView(ofKind: kind, withIdentifier: NSUserInterfaceItemIdentifier("header"), for: indexPath) as! HistoryHeaderView
         header.title = sections[indexPath.section].title
+        header.applyLanguageDirection()
         return header
     }
 

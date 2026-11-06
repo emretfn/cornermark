@@ -1,6 +1,7 @@
 import AppKit
 import ImageIO
 import CornermarkCore
+import CornermarkL10n
 
 struct HistorySection: Equatable {
     let title: String
@@ -14,10 +15,10 @@ enum HistoryGrouping {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday)!
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday)!
         let buckets: [(String, (Date) -> Bool)] = [
-            ("Today", { $0 >= startOfToday }),
-            ("Yesterday", { $0 >= yesterday && $0 < startOfToday }),
-            ("Previous 7 Days", { $0 >= weekAgo && $0 < yesterday }),
-            ("Earlier", { $0 < weekAgo }),
+            (tr("Today"), { $0 >= startOfToday }),
+            (tr("Yesterday"), { $0 >= yesterday && $0 < startOfToday }),
+            (tr("Previous 7 Days"), { $0 >= weekAgo && $0 < yesterday }),
+            (tr("Earlier"), { $0 < weekAgo }),
         ]
         return buckets.compactMap { title, matches in
             let hit = records.filter { matches($0.createdAt) }
@@ -31,14 +32,14 @@ enum HistoryFilter: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .all: return "All"
-        case .area: return "Area"
-        case .window: return "Window"
-        case .fullscreen: return "Fullscreen"
-        case .scrolling: return "Scrolling"
-        case .timed: return "Timer"
-        case .imported: return "Imported"
-        case .recordings: return "Recordings"
+        case .all: return tr("All")
+        case .area: return tr("Area")
+        case .window: return tr("Window")
+        case .fullscreen: return tr("Fullscreen")
+        case .scrolling: return tr("Scrolling")
+        case .timed: return tr("Timer")
+        case .imported: return tr("Imported")
+        case .recordings: return tr("Recordings")
         }
     }
 
@@ -60,12 +61,12 @@ enum HistoryFilter: Int, CaseIterable {
 extension CaptureKind {
     var title: String {
         switch self {
-        case .area: return "Area"
-        case .window: return "Window"
-        case .fullscreen: return "Fullscreen"
-        case .scrolling: return "Scrolling"
-        case .timed: return "Timer"
-        case .imported: return "Imported"
+        case .area: return tr("Area")
+        case .window: return tr("Window")
+        case .fullscreen: return tr("Fullscreen")
+        case .scrolling: return tr("Scrolling")
+        case .timed: return tr("Timer")
+        case .imported: return tr("Imported")
         }
     }
 }

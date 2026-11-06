@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 import QuartzCore
 import VideoToolbox
 
@@ -71,7 +72,7 @@ final class CameraFeed: @unchecked Sendable {
 
 /// The camera on screen: its picture in the bubble's shape, mirrored when asked. A click fills the recorded area with the camera and
 /// a second click brings the bubble back. A drag moves it, and it settles in the nearest corner.
-final class CameraBubbleView: NSView {
+final class CameraBubbleView: NSView, KeepsLeftToRight {
     var onToggle: () -> Void = {}
     /// The bubble's centre where the drag ended, in window-relative screen points.
     var onDrop: (CGPoint) -> Void = { _ in }
@@ -84,9 +85,16 @@ final class CameraBubbleView: NSView {
         didSet {
             guard isFullScreen != oldValue else { return }
             hint.symbol = isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
-            setAccessibilityHelp(isFullScreen ? "Shrinks the camera back to a bubble" : "Fills the recording with the camera")
-            setAccessibilityValue(isFullScreen ? "Full screen" : "Bubble")
+            relocalize()
         }
+    }
+
+    /// The bubble shows the camera's picture, which is never mirrored for the language, so only its words are written again.
+    func relocalize() {
+        setAccessibilityLabel(tr("Camera"))
+        setAccessibilityHelp(isFullScreen ? tr("Shrinks the camera back to a bubble") : tr("Fills the recording with the camera"))
+        setAccessibilityValue(isFullScreen ? tr("Full screen") : tr("Bubble"))
+        needsLayout = true
     }
 
     private let picture = CALayer()
@@ -109,9 +117,7 @@ final class CameraBubbleView: NSView {
         addSubview(hint)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Camera")
-        setAccessibilityHelp("Fills the recording with the camera")
-        setAccessibilityValue("Bubble")
+        relocalize()
         setAccessibilityIdentifier("recording.camera")
     }
 
@@ -128,7 +134,7 @@ final class CameraBubbleView: NSView {
         let s = HintBadge.side
         // The badge stays inside a circle's edge: on the diagonal at the bubble's radius, minus its own size.
         let inset = max(DS.Space.s8, (min(cornerRadius, bounds.height / 2)) * (1 - 1 / 2.squareRoot()) - s / 4)
-        hint.frame = CGRect(x: bounds.maxX - inset - s, y: inset, width: s, height: s)
+        hint.frame = CGRect(x: L10n.isRightToLeft ? bounds.minX + inset : bounds.maxX - inset - s, y: inset, width: s, height: s)
     }
 
     override func updateTrackingAreas() {
@@ -227,12 +233,17 @@ final class CameraBubbleWindow {
     private(set) var panel: RecordingPanel?
     private(set) var view: CameraBubbleView?
     private var area: CGRect?
+    private var language: LanguageObserver?
     /// Called with the corner a drag settled in, so the next recording starts there.
     var onCorner: (GridPosition) -> Void = { _ in }
 
     init(env: AppEnvironment, recording: RecordingController) {
         self.env = env
         self.recording = recording
+        language = LanguageObserver { [weak self] in
+            self?.panel?.title = tr("Recording Camera")
+            self?.view?.relocalize()
+        }
     }
 
     /// The bubble's place on screen: the area's points have y down, the screen's y up.
@@ -280,7 +291,7 @@ final class CameraBubbleWindow {
         view.onToggle = { [weak self] in self?.recording.changeCamera(.toggleFullScreen) }
         view.onDrop = { [weak self] center in self?.settle(at: center) }
         // Over the darkening and under the control bar, so Stop stays in reach while the camera fills the screen.
-        let panel = RecordingPanel(frame: frame, level: NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1), title: "Recording Camera")
+        let panel = RecordingPanel(frame: frame, level: NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1), title: tr("Recording Camera"))
         panel.hasShadow = true
         panel.contentView = view
         self.panel = panel
