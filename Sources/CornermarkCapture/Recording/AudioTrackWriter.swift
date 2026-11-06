@@ -54,6 +54,9 @@ enum AudioPlacement {
 final class AudioTrackWriter {
     /// A difference this small between where a chunk belongs and where the track has got to is clock jitter, not a gap.
     static let tolerance = 0.002
+    /// Every track is written at this rate. A device may send any rate, and change it mid-recording, as a Bluetooth headset does when its
+    /// microphone opens, and the encoder refuses rates under 32 kHz at these bit rates, so any other rate is resampled to it.
+    static let rate = 48_000.0
     let kind: AudioTrackReport.Kind
     private let url: URL
     private let mono: Bool
@@ -64,8 +67,9 @@ final class AudioTrackWriter {
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var format: CMAudioFormatDescription?
-    private var rate = 0.0
+    private let rate = AudioTrackWriter.rate
     private var channels = 0
+    private var run: Run?
     private var written = 0
     private var filled = 0
     private var finished = false
@@ -85,21 +89,30 @@ final class AudioTrackWriter {
     }
 
     /// Writes what is left up to `videoEnd` seconds, pads the track with silence to that length, and closes the file.
-    /// Nil when no sound ever arrived, so there is no file.
+    /// Nil when no sound ever arrived, so there is no file. Throws when the file could not be opened or a buffer was refused.
     func finish(videoEnd: Double) async throws -> AudioTrackReport? {
-        let (made, input) = lock.withLock { () -> (AVAssetWriter?, AVAssetWriterInput?) in
+        let (made, input, failed) = lock.withLock { () -> (AVAssetWriter?, AVAssetWriterInput?, String?) in
             var final = mapping()
             final.settled = .infinity
             final.paused = false
             flush(final, end: videoEnd)
-            if self.writer != nil { pad(to: Int((videoEnd * rate).rounded())) }
+            if self.writer != nil {
+                let last = Int((videoEnd * rate).rounded())
+                endRun(limit: last)
+                pad(to: last)
+            }
             finished = true
-            return (self.writer, self.input)
+            return (self.writer, self.input, failure)
         }
-        guard let writer = made, let input else { return nil }
+        guard let writer = made, let input else {
+            if let failed { throw RecordingError.writer(failed) }
+            return nil
+        }
         input.markAsFinished()
         await writer.finishWriting()
-        guard writer.status == .completed else { throw RecordingError.writer(writer.error?.localizedDescription ?? "the sound was not finished") }
+        guard writer.status == .completed, failed == nil else {
+            throw RecordingError.writer(writer.error?.localizedDescription ?? failed ?? "the sound was not finished")
+        }
         return lock.withLock {
             AudioTrackReport(kind: kind, url: url, rate: rate, channels: channels, frames: written, filled: Double(filled) / max(rate, 1))
         }
@@ -134,31 +147,72 @@ final class AudioTrackWriter {
     }
 
     private func write(_ chunk: AudioChunk, _ piece: AudioPlacement.Piece, end: Double?) {
-        guard prepare(rate: chunk.rate, sourceChannels: chunk.channels.count) else { return }
+        guard prepare(sourceChannels: chunk.channels.count) else { return }
+        let limit = end.map { Int(($0 * rate).rounded()) }
+        if run?.rate != chunk.rate {
+            endRun(limit: limit)
+            let resampler = chunk.rate == rate ? nil : Resampler(from: chunk.rate, to: rate, channels: channels)
+            guard chunk.rate == rate || resampler != nil else {
+                failure = "sound at \(chunk.rate) Hz cannot be resampled"
+                return
+            }
+            run = Run(rate: chunk.rate, resampler: resampler, start: written)
+        }
+        guard let current = run else { return }
+        let toSource = chunk.rate / rate
         var at = Int((piece.videoTime * rate).rounded())
         var offset = piece.offset, count = piece.count
-        if abs(at - written) <= Int(Self.tolerance * rate) { at = written }
-        if let end, at >= Int((end * rate).rounded()) { return }
-        if at > written { pad(to: at) }
-        if at < written {
-            let skip = written - at
+        let cursor = current.cursor(rate)
+        if abs(at - cursor) <= Int(Self.tolerance * rate) { at = cursor }
+        if let limit, at >= limit { return }
+        if at > cursor {
+            filled += at - cursor
+            feed([[Float]](repeating: [Float](repeating: 0, count: Int((Double(at - cursor) * toSource).rounded())), count: channels), limit: limit)
+        }
+        if at < cursor {
+            let skip = Int((Double(cursor - at) * toSource).rounded())
             guard skip < count else { return }
             offset += skip; count -= skip
         }
-        if let end { count = min(count, Int((end * rate).rounded()) - written) }
+        if let limit, let run { count = min(count, Int((Double(limit - run.cursor(rate)) * toSource).rounded())) }
         guard count > 0 else { return }
-        var samples = [Float](repeating: 0, count: count * channels)
-        let source = chunk.channels
-        for i in 0..<count {
-            if mono {
-                var sum: Float = 0
-                for c in source { sum += c[offset + i] }
-                samples[i] = sum / Float(source.count)
-            } else {
-                for c in 0..<channels { samples[i * channels + c] = source[min(c, source.count - 1)][offset + i] }
-            }
+        feed(mix(chunk.channels, offset: offset, count: count), limit: limit)
+    }
+
+    /// The track's channels of `count` samples from `offset`: every source channel mixed into one, or each kept, the last repeated
+    /// when the source has fewer.
+    private func mix(_ source: [[Float]], offset: Int, count: Int) -> [[Float]] {
+        guard mono else { return (0..<channels).map { Array(source[min($0, source.count - 1)][offset..<offset + count]) } }
+        var sum = [Float](repeating: 0, count: count)
+        for c in source { for i in 0..<count { sum[i] += c[offset + i] } }
+        let scale = 1 / Float(source.count)
+        return [sum.map { $0 * scale }]
+    }
+
+    /// Source samples through the current run's resampler onto the end of the track.
+    private func feed(_ planar: [[Float]], limit: Int?) {
+        guard var current = run, let n = planar.first?.count, n > 0 else { return }
+        current.consumed += n
+        run = current
+        append(current.resampler?.convert(planar, last: false) ?? planar, limit: limit)
+    }
+
+    /// Writes what the resampler still holds and ends the run, as the rate changes or the track ends.
+    private func endRun(limit: Int?) {
+        if let resampler = run?.resampler { append(resampler.convert([], last: true), limit: limit) }
+        run = nil
+    }
+
+    private func append(_ planar: [[Float]], limit: Int?) {
+        var frames = planar.first?.count ?? 0
+        if let limit { frames = min(frames, limit - written) }
+        guard frames > 0 else { return }
+        var samples = [Float](repeating: 0, count: frames * channels)
+        for c in 0..<channels {
+            let channel = planar[min(c, planar.count - 1)]
+            for i in 0..<frames { samples[i * channels + c] = channel[i] }
         }
-        append(samples, frames: count)
+        encode(samples, frames: frames)
     }
 
     private func pad(to frame: Int) {
@@ -168,16 +222,15 @@ final class AudioTrackWriter {
         let block = 4096
         while left > 0 {
             let n = min(block, left)
-            append([Float](repeating: 0, count: n * channels), frames: n)
+            encode([Float](repeating: 0, count: n * channels), frames: n)
             left -= n
         }
     }
 
-    /// Opens the file on the first sound, at the source's rate, so nothing is resampled.
-    private func prepare(rate: Double, sourceChannels: Int) -> Bool {
+    /// Opens the file on the first sound.
+    private func prepare(sourceChannels: Int) -> Bool {
         if writer != nil { return true }
         guard failure == nil else { return false }
-        self.rate = rate
         channels = mono ? 1 : min(sourceChannels, 2)
         do {
             let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
@@ -210,7 +263,7 @@ final class AudioTrackWriter {
     }
 
     /// Interleaved samples, `frames` per channel, at the end of the track.
-    private func append(_ samples: [Float], frames: Int) {
+    private func encode(_ samples: [Float], frames: Int) {
         guard let input, let format else { return }
         let bytes = samples.count * 4
         var block: CMBlockBuffer?
@@ -228,6 +281,60 @@ final class AudioTrackWriter {
             waited += 1
         }
         if input.append(sample) { written += frames } else { failure = writer?.error?.localizedDescription ?? "a sound buffer was refused" }
+    }
+}
+
+/// Sound that follows on at one source rate, through one resampler, so its joins make no click.
+private struct Run {
+    let rate: Double
+    /// Nil at the track's rate.
+    let resampler: Resampler?
+    /// The track sample its first sample landed on.
+    let start: Int
+    /// Source samples given to it so far.
+    var consumed = 0
+
+    /// Where its next source sample lands on the track, which is ahead of what is written by what the resampler still holds.
+    func cursor(_ trackRate: Double) -> Int { start + Int((Double(consumed) * trackRate / rate).rounded()) }
+}
+
+/// Changes the rate of planar float sound. The filter keeps its state between calls, so consecutive pieces join without a click.
+final class Resampler {
+    private let converter: AVAudioConverter
+    private let input: AVAudioFormat
+    private let output: AVAudioFormat
+
+    init?(from: Double, to: Double, channels: Int) {
+        guard let input = AVAudioFormat(standardFormatWithSampleRate: from, channels: AVAudioChannelCount(channels)),
+              let output = AVAudioFormat(standardFormatWithSampleRate: to, channels: AVAudioChannelCount(channels)),
+              let converter = AVAudioConverter(from: input, to: output) else { return nil }
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+        self.input = input; self.output = output; self.converter = converter
+    }
+
+    /// `planar` at the new rate, as far as the filter has got. `last` also gives what it still holds, and ends its use.
+    func convert(_ planar: [[Float]], last: Bool) -> [[Float]] {
+        let channels = Int(output.channelCount), n = planar.first?.count ?? 0
+        var given = 0
+        var out = [[Float]](repeating: [], count: channels)
+        while let buffer = AVAudioPCMBuffer(pcmFormat: output, frameCapacity: AVAudioFrameCount(Double(n) * output.sampleRate / input.sampleRate) + 1024) {
+            var error: NSError?
+            let status = converter.convert(to: buffer, error: &error) { wanted, state in
+                let take = min(Int(wanted), n - given)
+                guard take > 0, let piece = AVAudioPCMBuffer(pcmFormat: self.input, frameCapacity: AVAudioFrameCount(take)) else {
+                    state.pointee = last ? .endOfStream : .noDataNow
+                    return nil
+                }
+                piece.frameLength = AVAudioFrameCount(take)
+                for c in 0..<channels { planar[c].withUnsafeBufferPointer { piece.floatChannelData![c].update(from: $0.baseAddress! + given, count: take) } }
+                given += take
+                state.pointee = .haveData
+                return piece
+            }
+            for c in 0..<channels { out[c] += UnsafeBufferPointer(start: buffer.floatChannelData![c], count: Int(buffer.frameLength)) }
+            if status != .haveData || buffer.frameLength == 0 { break }
+        }
+        return out
     }
 }
 

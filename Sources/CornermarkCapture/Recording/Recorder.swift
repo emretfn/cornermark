@@ -22,10 +22,10 @@ public struct AudioRecording {
     public var output: URL
     /// Mixes every channel into one.
     public var mono: Bool
-    /// Each chunk's level and the moment it ended on the recording clock, on the source's queue.
-    public var onLevel: ((AudioLevel, Double) -> Void)?
-    public init(source: AudioSource, output: URL, mono: Bool = false, onLevel: ((AudioLevel, Double) -> Void)? = nil) {
-        self.source = source; self.output = output; self.mono = mono; self.onLevel = onLevel
+    /// Every chunk as it arrives, on the source's queue.
+    public var onChunk: ((AudioChunk) -> Void)?
+    public init(source: AudioSource, output: URL, mono: Bool = false, onChunk: ((AudioChunk) -> Void)? = nil) {
+        self.source = source; self.output = output; self.mono = mono; self.onChunk = onChunk
     }
 }
 
@@ -209,10 +209,10 @@ public final class Recorder {
         for (kind, recording) in audio {
             let track = AudioTrackWriter(kind: kind, url: recording.output, mono: recording.mono, realTime: source.deliversInRealTime,
                                          mapping: { [writer] in writer.mapping })
-            let onLevel = recording.onLevel
+            let onChunk = recording.onChunk
             do {
                 try recording.source.start { chunk in
-                    onLevel?(chunk.level, chunk.end)
+                    onChunk?(chunk)
                     track.append(chunk)
                 }
                 audioWriters.append((recording, track))

@@ -128,9 +128,11 @@ func runMicrophoneFormatTests() async {
             print("FORMAT \(name) track rate=\(Int(track.rate)) seconds=\(String(format: "%.4f", track.duration)) filled=\(String(format: "%.4f", track.filled)) video=\(String(format: "%.4f", videoSeconds))")
             check(abs(facts.duration - videoSeconds) < 0.001 && abs(track.duration - videoSeconds) < 0.001, "the track is exactly as long as the video",
                   detail: "file \(facts.duration) report \(track.duration) video \(videoSeconds)")
-            let voiced = [1.0, 2.0, 3.0, 4.0].map { level($0, $0 + 0.3).rms }
+            let voiced = [1.0, 1.8, 3.0, 4.0].map { level($0, $0 + 0.3).rms }
             print("FORMAT \(name) rms=\(voiced.map { String(format: "%.4f", $0) }) expected=\(String(format: "%.4f", expectedRMS))")
             check(voiced.allSatisfy { abs($0 - expectedRMS) / expectedRMS < 0.1 }, "the voice keeps its level, within 10%", detail: "\(voiced)")
+            let peaks = [1.0, 1.8, 3.0, 4.0].map { level($0, $0 + 0.3).peak }
+            check(peaks.allSatisfy { $0 < amplitude * 1.1 }, "no click where buffers join", detail: "\(peaks)")
             let onsets = clickOnsets(samples, rate: facts.rate)
             let expected = (0..<5).map { clicks.epoch + Double($0) * clicks.period - report.firstFrameTime }
             let residuals = expected.compactMap { e in onsets.min { abs($0 - e) < abs($1 - e) }.map { ($0 - e) * 1000 } }

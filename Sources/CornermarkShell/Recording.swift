@@ -286,8 +286,9 @@ final class RecordingController {
                     Log.shell.notice("recording cancelled before it started project=\(name, privacy: .public)")
                     return reset()
                 }
-                hearing?.restart(at: recordingClockNow())
                 try await recorder.start()
+                // A microphone can take a moment to open, so the wait for its silence starts once it is open.
+                hearing?.restart(at: recordingClockNow())
                 logAudio(request, sound, recorder)
                 journalEntry = env.recordingJournal?.open(location: destination.location, format: destination.format,
                                                           kind: request.target.captureKind, area: recorder.pointArea)
@@ -422,7 +423,7 @@ final class RecordingController {
         stopMeter()
         do {
             let report = try await recorder.stop()
-            logAudioFinished(report, recorder)
+            logAudioFinished(report, recorder, request)
             if destination.format == .video, !report.audio.isEmpty { await mixSound(report, into: destination.film) }
             if destination.format == .project {
                 var project = report.project
@@ -505,8 +506,10 @@ extension RecordingController {
             } else if let mic = env.microphoneSource(prefs.microphoneID) {
                 let hearing = MicrophoneHearing(start: recordingClockNow())
                 self.hearing = hearing
-                sound.microphone = AudioRecording(source: mic, output: RecordingOutput.audioFile(.microphone, for: destination), mono: prefs.mono) { level, end in
-                    hearing.hear(level, until: end)
+                let levels = MicrophoneLevelLog()
+                sound.microphone = AudioRecording(source: mic, output: RecordingOutput.audioFile(.microphone, for: destination), mono: prefs.mono) { chunk in
+                    hearing.hear(chunk.level, until: chunk.end)
+                    levels.add(chunk)
                 }
                 sound.microphoneName = env.microphones().first { $0.id == prefs.microphoneID }?.name ?? "default"
                 sound.kind = mic is ScriptedAudioSource ? "scripted" : "live"
@@ -530,9 +533,12 @@ extension RecordingController {
         }
     }
 
-    private func logAudioFinished(_ report: RecordingReport, _ recorder: Recorder) {
-        guard !report.audio.isEmpty || !recorder.audioFailures.isEmpty else { return }
-        let tracks = report.audio.map {
+    /// Also logs a recording that asked for sound and got none, which is what a source that never delivered looks like.
+    private func logAudioFinished(_ report: RecordingReport, _ recorder: Recorder, _ request: Request) {
+        let prefs = request.preferences.audio(for: request.style)
+        guard prefs.microphone || prefs.systemAudio || !report.audio.isEmpty || !recorder.audioFailures.isEmpty else { return }
+        let failures = recorder.audioFailures.map { "\($0.key.rawValue):\($0.value)" }.sorted().joined(separator: ",")
+        let tracks = report.audio.isEmpty ? "tracks=none failure=\(failures.isEmpty ? "none" : failures)" : report.audio.map {
             "\($0.kind.rawValue)=\($0.url.lastPathComponent) seconds=\(String(format: "%.3f", $0.duration)) channels=\($0.channels) rate=\(Int($0.rate)) filled=\(String(format: "%.3f", $0.filled))"
         }.joined(separator: " ")
         Log.shell.notice("recording audio finished \(tracks, privacy: .public) videoSeconds=\(String(format: "%.3f", report.project.source.duration), privacy: .public) devicesOpened=\(LiveMicrophoneSource.sessionsOpened, privacy: .public) accessRequests=\(MicrophoneAccess.requests, privacy: .public)")
@@ -584,6 +590,30 @@ extension RecordingController {
             }
         }
         if next != was { onMicrophone() }
+    }
+}
+
+/// One line a second while recording, so a live test shows what the microphone sent: its rate and channels as read, and how loud it was.
+/// Used on the sound's queue only.
+final class MicrophoneLevelLog {
+    private var windowEnd: Double?
+    private var squares = 0.0
+    private var samples = 0
+    private var peak: Float = 0
+    private var chunks = 0
+
+    func add(_ chunk: AudioChunk) {
+        let level = chunk.level, count = chunk.frames * chunk.channels.count
+        squares += Double(level.rms * level.rms) * Double(count)
+        samples += count
+        peak = max(peak, level.peak)
+        chunks += 1
+        let end = windowEnd ?? chunk.time
+        guard chunk.end >= end else { return }
+        let rms = Float((squares / Double(max(samples, 1))).squareRoot())
+        Log.shell.notice("recording microphone level rate=\(Int(chunk.rate), privacy: .public) channels=\(chunk.channels.count, privacy: .public) chunks=\(self.chunks, privacy: .public) rmsDb=\(String(format: "%.1f", AudioLevel.decibels(rms)), privacy: .public) peakDb=\(String(format: "%.1f", AudioLevel.decibels(self.peak)), privacy: .public) clock=\(String(format: "%.3f", chunk.end), privacy: .public)")
+        windowEnd = chunk.end + 1
+        squares = 0; samples = 0; peak = 0; chunks = 0
     }
 }
 

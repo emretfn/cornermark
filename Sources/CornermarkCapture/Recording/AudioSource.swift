@@ -1,5 +1,6 @@
 import AVFoundation
 import CornermarkCore
+import os
 
 /// A run of sound. `time` is the first sample's moment on the clock the pictures use, so the recorder can place it beside the video.
 /// Each channel holds the same number of samples, as floats where 1 is full scale.
@@ -19,10 +20,10 @@ public struct AudioChunk {
         guard let description = CMSampleBufferGetFormatDescription(sample) else { return nil }
         let format = AVAudioFormat(cmAudioFormatDescription: description)
         let count = AVAudioFrameCount(CMSampleBufferGetNumSamples(sample))
-        guard count > 0, format.channelCount > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count),
-              CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(count), into: pcm.mutableAudioBufferList) == noErr
-        else { return nil }
+        guard count > 0, format.channelCount > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { return nil }
+        // The buffer list's byte sizes follow the frame length, and the copy refuses a list that holds no bytes.
         pcm.frameLength = count
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(count), into: pcm.mutableAudioBufferList) == noErr else { return nil }
         guard let floats = Self.floats(pcm) else { return nil }
         time = clock(CMSampleBufferGetPresentationTimeStamp(sample))
         rate = format.sampleRate
@@ -92,12 +93,21 @@ public enum MicrophoneAccess: String, Equatable, Sendable {
 }
 
 /// The real microphone. It never asks for access: without it, `start` throws `notPermitted` and opens nothing.
+/// It logs the device it opens, the format of the first buffer and every change of it, and how many buffers it read, so a live test
+/// shows what the device sent.
 public final class LiveMicrophoneSource: NSObject, AudioSource, AVCaptureAudioDataOutputSampleBufferDelegate {
     public private(set) static var sessionsOpened = 0
+    private static let log = Logger(subsystem: "local.emretufan.cornermark", category: "microphone")
     private let deviceID: String?
     private let queue = DispatchQueue(label: "cornermark.microphone", qos: .userInteractive)
     private var session: AVCaptureSession?
     private var deliver: ((AudioChunk) -> Void)?
+    private var deviceName = ""
+    private var opened = 0.0
+    /// Read on `queue`.
+    private var buffers = 0
+    private var unreadable = 0
+    private var format = "none"
 
     /// Nil, or an ID no device has, records from the system's default input.
     public init(deviceID: String?) { self.deviceID = deviceID }
@@ -110,7 +120,8 @@ public final class LiveMicrophoneSource: NSObject, AudioSource, AVCaptureAudioDa
 
     public func start(_ deliver: @escaping (AudioChunk) -> Void) throws {
         guard MicrophoneAccess.current == .allowed else { throw AudioUnavailable.notPermitted }
-        guard let device = deviceID.flatMap(AVCaptureDevice.init(uniqueID:)) ?? AVCaptureDevice.default(for: .audio) else { throw AudioUnavailable.noDevice }
+        let chosen = deviceID.flatMap(AVCaptureDevice.init(uniqueID:))
+        guard let device = chosen ?? AVCaptureDevice.default(for: .audio) else { throw AudioUnavailable.noDevice }
         let session = AVCaptureSession()
         let output = AVCaptureAudioDataOutput()
         output.audioSettings = [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
@@ -128,25 +139,55 @@ public final class LiveMicrophoneSource: NSObject, AudioSource, AVCaptureAudioDa
         output.setSampleBufferDelegate(self, queue: queue)
         self.deliver = deliver
         self.session = session
+        deviceName = device.localizedName
+        opened = recordingClockNow()
         Self.sessionsOpened += 1
+        let deviceFormat = device.formats.isEmpty ? "unknown" : Self.describe(device.activeFormat.formatDescription)
+        Self.log.notice("microphone opened name=\(device.localizedName, privacy: .public) id=\(device.uniqueID, privacy: .public) asked=\(self.deviceID ?? "default", privacy: .public) fallback=\(self.deviceID != nil && chosen == nil, privacy: .public) deviceFormat=\(deviceFormat, privacy: .public)")
         session.startRunning()
+        Self.log.notice("microphone running=\(session.isRunning, privacy: .public) name=\(device.localizedName, privacy: .public) startSeconds=\(String(format: "%.3f", recordingClockNow() - self.opened), privacy: .public)")
     }
 
     public func stop() {
         session?.stopRunning()
         session = nil
-        queue.sync { deliver = nil }
+        let (buffers, unreadable, format) = queue.sync { () -> (Int, Int, String) in
+            deliver = nil
+            return (self.buffers, self.unreadable, self.format)
+        }
+        Self.log.notice("microphone closed name=\(self.deviceName, privacy: .public) buffers=\(buffers, privacy: .public) unreadable=\(unreadable, privacy: .public) format=\(format, privacy: .public)")
     }
 
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let deliver, let clock = session?.synchronizationClock else { return }
-        if let chunk = Self.chunk(sampleBuffer, clock: clock) { deliver(chunk) }
+        guard let deliver else { return }
+        let next = CMSampleBufferGetFormatDescription(sampleBuffer).map(Self.describe) ?? "none"
+        if next != format {
+            let what = buffers == 0 ? "first buffer" : "format changed"
+            Self.log.notice("microphone \(what, privacy: .public) name=\(self.deviceName, privacy: .public) format=\(next, privacy: .public) afterSeconds=\(String(format: "%.3f", recordingClockNow() - self.opened), privacy: .public)")
+            format = next
+        }
+        buffers += 1
+        guard let clock = session?.synchronizationClock, let chunk = Self.chunk(sampleBuffer, clock: clock) else {
+            unreadable += 1
+            if unreadable == 1 { Self.log.error("microphone buffer unreadable name=\(self.deviceName, privacy: .public) format=\(next, privacy: .public) hasClock=\(self.session?.synchronizationClock != nil, privacy: .public)") }
+            return
+        }
+        deliver(chunk)
     }
 
     /// One capture buffer as sound on the recording clock. `clock` is the session's synchronization clock, which the buffer is stamped on.
     static func chunk(_ sample: CMSampleBuffer, clock: CMClockOrTimebase) -> AudioChunk? {
         let host = CMClockGetHostTimeClock()
         return AudioChunk(sample, clock: { CMSyncConvertTime($0, from: clock, to: host).seconds })
+    }
+
+    /// A sound format in a few words, such as "24000 Hz 1 ch float32 planar".
+    static func describe(_ description: CMFormatDescription) -> String {
+        guard let a = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee else { return "not audio" }
+        guard a.mFormatID == kAudioFormatLinearPCM else { return "\(Int(a.mSampleRate)) Hz \(a.mChannelsPerFrame) ch format \(a.mFormatID)" }
+        let float = a.mFormatFlags & kAudioFormatFlagIsFloat != 0
+        let planar = a.mFormatFlags & kAudioFormatFlagIsNonInterleaved != 0
+        return "\(Int(a.mSampleRate)) Hz \(a.mChannelsPerFrame) ch \(float ? "float" : "int")\(a.mBitsPerChannel) \(planar ? "planar" : "interleaved")"
     }
 }
 
