@@ -80,6 +80,14 @@ final class ZoomCurveTests: XCTestCase {
         XCTAssertEqual(scale(2 + ZoomCurve.joinGap / 2, [a, apart]), 1, "zooms far apart each return to the whole picture")
     }
 
+    func testAMoveTakesSeventyEightHundredthsOfASecondAndHandoverGapIsTwoMoves() {
+        XCTAssertEqual(ZoomCurve.duration, 0.78)
+        XCTAssertEqual(ZoomCurve.joinGap, 1.56, accuracy: 1e-12)
+        let a = Zoom(start: 0, end: 2, scale: 2), joined = Zoom(start: 3.5, end: 6, scale: 3), apart = Zoom(start: 3.6, end: 6, scale: 3)
+        XCTAssertEqual(ZoomCamera.rect([a, joined], at: 2.9), ZoomCamera.target(a), "1.5 s apart is less than two moves, so it hands over")
+        XCTAssertEqual(ZoomCamera.rect([a, apart], at: 2.9), .full, "1.6 s apart is more than two moves, so it returns to the whole picture")
+    }
+
     func testTheCropFollowsOutputTimeAfterClipsMapItToTheSource() {
         let zoom = Zoom(start: 1, end: 3, scale: 2)
         var project = RecordingProject(source: .init(pointWidth: 100, pointHeight: 50, duration: 8), edits: .init(zooms: [zoom]))

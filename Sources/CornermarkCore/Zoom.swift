@@ -82,7 +82,7 @@ public struct Zoom: Codable, Equatable, Sendable, Identifiable {
 /// How the camera moves into and out of a zoom.
 public enum ZoomCurve {
     /// Seconds a full move into or out of a zoom takes.
-    public static let duration = 0.68
+    public static let duration = 0.78
     /// A rest at the whole picture shorter than this between two zooms would read as a bounce, so the camera goes from the first
     /// zoom straight to the second.
     public static let joinGap = 2 * duration
