@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import Foundation
 import CornermarkDesign
+import CornermarkL10n
 @testable import CornermarkShell
 
 try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
@@ -151,6 +152,7 @@ Task { @MainActor in
     let standardKeysBefore = Set(UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("cornermark") })
     print("screens: \(NSScreen.screens.count), activation policy prohibited: \(NSApp.activationPolicy() == .prohibited)")
     check(NSApp.activationPolicy() == .prohibited, "activation policy is .prohibited")
+    check(L10n.language == .en && !L10n.isRightToLeft, "the harness starts in English whatever the Mac's language is", detail: L10n.language.rawValue)
     do {
         try await checkActionTable()
         try await checkURLScheme()
@@ -172,6 +174,7 @@ Task { @MainActor in
         try await checkUpdates()
         try await checkMenuPanel()
         try await checkSettingsWindow()
+        try await checkLocalization()
         try await checkSmallWindows()
         try await checkIsolatedEnvironment()
         try await checkRecording()

@@ -2,13 +2,20 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 extension AppEnvironment {
     static let cameraPaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!
 }
 
 extension CameraBubble.Shape {
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .circle: return tr("Circle")
+        case .square: return tr("Square")
+        case .rectangle: return tr("Rectangle")
+        }
+    }
     var symbol: String {
         switch self {
         case .circle: return "circle"
@@ -19,7 +26,13 @@ extension CameraBubble.Shape {
 }
 
 extension CameraBubble.Size {
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .small: return tr("Small")
+        case .medium: return tr("Medium")
+        case .large: return tr("Large")
+        }
+    }
 }
 
 extension CameraBubble {
@@ -28,24 +41,29 @@ extension CameraBubble {
 }
 
 final class CameraPane: SettingsPane {
-    override var paneTitle: String { "Camera" }
+    override var paneID: String { "camera" }
+    override var paneTitle: String { tr("Camera") }
     override var symbol: String { "web.camera" }
-    private let show = Form.checkbox("Show camera", id: "camera.show")
+    private let show = Form.checkbox(id: "camera.show")
     private let shape = Segments(symbols: CameraBubble.Shape.allCases.map(\.symbol), labels: CameraBubble.Shape.allCases.map(\.title), size: .small,
                                  tileWidth: DS.Size.control)
-    private let size = Form.popup(CameraBubble.Size.allCases.map(\.title), id: "camera.size")
-    private let corner = Form.popup(CameraBubble.paneCorners.map(\.title), id: "camera.corner")
-    private let mirror = Form.checkbox("Mirror camera", id: "camera.mirror")
+    private let size = Form.popup(id: "camera.size")
+    private let corner = Form.popup(id: "camera.corner")
+    private let mirror = Form.checkbox(id: "camera.mirror")
     private let accessStatus = NSTextField.label("", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
     private let accessDot = StatusDot()
     private let accessNote = Form.caption("")
-    private let accessButton = Button(title: "Allow Camera Access", variant: .secondary, size: .small)
+    private let accessButton = Button(title: "", variant: .secondary, size: .small)
 
     override func buildForm() -> FormPage {
+        for (i, s) in CameraBubble.Shape.allCases.enumerated() {
+            shape.setImage(NSImage(systemSymbolName: s.symbol, accessibilityDescription: s.title), forSegment: i)
+            shape.setToolTip(s.title, forSegment: i)
+        }
+        size.setTitles(CameraBubble.Size.allCases.map(\.title))
+        corner.setTitles(CameraBubble.paneCorners.map(\.title))
         shape.setAccessibilityIdentifier("camera.shape")
-        shape.setAccessibilityLabel("Shape")
-        size.setAccessibilityLabel("Size")
-        corner.setAccessibilityLabel("Position")
+        shape.setAccessibilityLabel(tr("Shape"))
         accessStatus.setAccessibilityIdentifier("camera.access")
         accessButton.setAccessibilityIdentifier("camera.access.button")
         show.onAction { [unowned self] c in
@@ -76,17 +94,17 @@ final class CameraPane: SettingsPane {
         }
         return Form.page(title: paneTitle, groups: [
             .init(rows: [
-                Form.row(title: "Show camera", caption: Form.caption("Shows you in a bubble over the recording. Record Project keeps the camera as its own track, so you can still change it later."),
+                Form.row(title: tr("Show camera"), caption: Form.caption(tr("Shows you in a bubble over the recording. Record Project keeps the camera as its own track, so you can still change it later.")),
                          control: show),
             ]),
-            .init("Bubble", rows: [
-                Form.row(title: "Shape", control: Form.hstack([shape])),
-                Form.row(title: "Size", control: size),
-                Form.row(title: "Position", caption: Form.caption("You can also drag the bubble to another corner while recording."), control: corner),
-                Form.row(title: "Mirror camera", caption: Form.caption("Shows you the way a mirror does. Turn it off to make text behind you readable."), control: mirror),
-            ], footer: "While recording, click the bubble to fill the recording with the camera, and click again to bring the bubble back."),
+            .init(tr("Bubble"), rows: [
+                Form.row(title: tr("Shape"), control: Form.hstack([shape])),
+                Form.row(title: tr("Size"), control: size),
+                Form.row(title: tr("Position"), caption: Form.caption(tr("You can also drag the bubble to another corner while recording.")), control: corner),
+                Form.row(title: tr("Mirror camera"), caption: Form.caption(tr("Shows you the way a mirror does. Turn it off to make text behind you readable.")), control: mirror),
+            ], footer: tr("While recording, click the bubble to fill the recording with the camera, and click again to bring the bubble back.")),
             .init(rows: [
-                Form.row(title: "Camera access", caption: accessNote, control: Form.hstack([accessDot, accessStatus, accessButton], spacing: DS.Space.s6)),
+                Form.row(title: tr("Camera access"), caption: accessNote, control: Form.hstack([accessDot, accessStatus, accessButton], spacing: DS.Space.s6)),
             ]),
         ])
     }
@@ -102,26 +120,26 @@ final class CameraPane: SettingsPane {
         let access = ctx.env.cameraAccess()
         let blocking = access != .allowed && c.isVisible
         switch access {
-        case .allowed: accessStatus.stringValue = "Allowed"
-        case .notAsked: accessStatus.stringValue = "Not asked yet"
-        case .denied: accessStatus.stringValue = "Not allowed"
+        case .allowed: accessStatus.stringValue = tr("Allowed")
+        case .notAsked: accessStatus.stringValue = tr("Not asked yet")
+        case .denied: accessStatus.stringValue = tr("Not allowed")
         }
         accessStatus.textColor = access == .allowed ? DS.Color.successText : blocking ? DS.Color.dangerText : DS.Color.textSecondary
         accessDot.color = accessStatus.textColor ?? DS.Color.textSecondary
         accessNote.textColor = blocking ? DS.Color.dangerText : DS.Color.textSecondary
         switch access {
         case .allowed:
-            accessNote.stringValue = "Cornermark uses the camera only while it records with the camera on."
+            accessNote.stringValue = tr("Cornermark uses the camera only while it records with the camera on.")
         case .notAsked:
             accessNote.stringValue = blocking
-                ? "Recordings leave the camera out until you allow it. Click Allow Camera Access."
-                : "macOS asks the first time you turn the camera on."
+                ? tr("Recordings leave the camera out until you allow it. Click Allow Camera Access.")
+                : tr("macOS asks the first time you turn the camera on.")
         case .denied:
             accessNote.stringValue = blocking
-                ? "Recordings leave the camera out. Turn on Cornermark in System Settings > Privacy & Security > Camera."
-                : "The camera needs it. Recording works without it."
+                ? tr("Recordings leave the camera out. Turn on Cornermark in System Settings > Privacy & Security > Camera.")
+                : tr("The camera needs it. Recording works without it.")
         }
-        accessButton.title = access == .notAsked ? "Allow Camera Access" : "Open System Settings"
+        accessButton.relabel(access == .notAsked ? tr("Allow Camera Access") : tr("Open System Settings"))
         accessButton.variant = blocking ? .primary : .secondary
         accessButton.isHidden = access == .allowed
     }
