@@ -9,6 +9,8 @@ import QuartzCore
 final class PreviewView: NSView {
     /// The recorded area in points, the unit of pointer positions.
     var pointSize = CGSize(width: 16, height: 9) { didSet { needsLayout = true } }
+    /// The recorded area in pixels, the size original export draws the recording at.
+    var pixelSize = CGSize(width: 16, height: 9) { didSet { needsLayout = true } }
     var image: CGImage? {
         didSet {
             guard image !== oldValue else { return }
@@ -129,7 +131,7 @@ final class PreviewView: NSView {
             picture.cornerRadius = canvas.cornerRadius * min(kx, ky)
             badge.frame = picture.bounds
             badge.pointSize = pointSize
-            badge.contentsScale = window?.backingScaleFactor ?? 2
+            badge.pixelSize = pixelSize
         }
         drawBackdrop(canvas)
         placeCrop()
@@ -286,10 +288,13 @@ private final class RingLayer: CALayer {
     }
 }
 
-/// The keystroke badge, drawn by the painter export uses into a layer over the picture, through the zoom's crop. Click rings are not its
-/// business: `RingLayer`s draw them, so a ring is drawn once. It redraws only when the badge or the crop change while a badge is on screen.
+/// The keystroke badge over the picture, through the zoom's crop. The painter draws it into export's kind of bitmap at the recording's
+/// pixel size, so its glyph edges and shadow land on export's pixels; a layer's own backing store follows the screen's scale and colour
+/// space instead. Click rings are not its business: `RingLayer`s draw them, so a ring is drawn once. It redraws only when the badge or
+/// the crop change while a badge is on screen.
 private final class BadgeLayer: CALayer {
     var pointSize = CGSize(width: 16, height: 9) { didSet { if oldValue != pointSize { setNeedsDisplay() } } }
+    var pixelSize = CGSize(width: 16, height: 9) { didSet { if oldValue != pixelSize { setNeedsDisplay() } } }
     var look = KeystrokeDisplay() { didSet { setNeedsDisplay() } }
     private var badge: KeyBadge?
     /// The part of the recorded area the picture shows. The badge sits in the recording's points, so the crop moves it like the pointer.
@@ -297,7 +302,7 @@ private final class BadgeLayer: CALayer {
 
     override init() {
         super.init()
-        needsDisplayOnBoundsChange = true
+        contentsGravity = .resize
         actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
     }
 
@@ -315,12 +320,18 @@ private final class BadgeLayer: CALayer {
         if drawsSomething { setNeedsDisplay() }
     }
 
-    override func draw(in ctx: CGContext) {
-        guard let badge, pointSize.width > 0, pointSize.height > 0 else { return }
-        // The layer counts from its bottom-left, the painter in the recording's points from the top-left.
-        ctx.translateBy(x: 0, y: bounds.height)
-        ctx.scaleBy(x: bounds.width / (pointSize.width * crop.width), y: -bounds.height / (pointSize.height * crop.height))
+    override func display() {
+        contents = badge.flatMap(drawn)
+    }
+
+    /// The same transform export puts on its frame, with the picture filling the bitmap.
+    private func drawn(_ badge: KeyBadge) -> CGImage? {
+        let w = Int(pixelSize.width.rounded()), h = Int(pixelSize.height.rounded())
+        guard pointSize.width > 0, pointSize.height > 0, let ctx = ExportFrameRenderer.bitmap(width: w, height: h) else { return nil }
+        ctx.translateBy(x: 0, y: CGFloat(h))
+        ctx.scaleBy(x: CGFloat(w) / (pointSize.width * crop.width), y: -CGFloat(h) / (pointSize.height * crop.height))
         ctx.translateBy(x: -crop.x * pointSize.width, y: -crop.y * pointSize.height)
         InputOverlayPainter.draw(InputOverlayState(badge: badge), area: pointSize, highlight: ClickHighlight(), keystrokes: look, ink: .design, in: ctx)
+        return ctx.makeImage()
     }
 }

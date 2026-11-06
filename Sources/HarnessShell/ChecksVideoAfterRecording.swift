@@ -296,7 +296,7 @@ func checkVideoAfterRecording() async throws {
     let rows = await measureParity(parityEditor, frames: video, clock: opener.clock, export: out, plan: plan, project: project, times: [2.95, 4.8],
                                    name: "after-parity", camera: opener.camera)
     for r in rows { print(String(format: "PARITY after t=%.2f preview-vs-drawn %@ preview-vs-file %@", r.time, "\(r.drawn)", "\(r.encoded)")) }
-    check(rows.count == 2 && rows.allSatisfy { $0.drawn.psnr >= 36 && $0.encoded.psnr >= 30 },
+    check(rows.count == 2 && rows.allSatisfy { $0.drawn.psnr >= 38 && $0.encoded.psnr >= 30 },
           "the preview matches export's drawing and the file with the camera at top centre and the badge middle left", detail: rows.map { "\($0.drawn) / \($0.encoded)" }.joined(separator: "; "))
 
     // Where the badge and the bubble land in the file, against the untouched source.

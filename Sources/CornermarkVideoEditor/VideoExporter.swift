@@ -67,6 +67,12 @@ public struct ExportFrameRenderer: @unchecked Sendable {
 
     public static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    /// The bitmap export draws a frame into. The preview draws the keystroke badge into one too, so its glyphs land on the same pixels.
+    static func bitmap(width: Int, height: Int) -> CGContext? {
+        CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+    }
+
     /// The recording's rectangle in the bitmap, y up.
     public var frameRect: CGRect {
         let sx = CGFloat(width) / canvas.size.width, sy = CGFloat(height) / canvas.size.height
@@ -118,16 +124,14 @@ public struct ExportFrameRenderer: @unchecked Sendable {
     }
 
     public func image(_ state: FrameState, source: CGImage?, camera: CGImage? = nil) -> CGImage? {
-        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: Self.colorSpace,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        guard let ctx = Self.bitmap(width: width, height: height) else { return nil }
         draw(state, source: source, camera: camera, in: ctx)
         return ctx.makeImage()
     }
 
     /// The average of `samples`, the frame motion blur draws. One sample is the sharp frame.
     public func image(_ samples: [FrameState], source: CGImage?, camera: CGImage? = nil, accumulator: SampleAccumulator = SampleAccumulator()) -> CGImage? {
-        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: Self.colorSpace,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        guard let ctx = Self.bitmap(width: width, height: height) else { return nil }
         accumulator.draw(samples, with: self, source: source, camera: camera, in: ctx)
         return ctx.makeImage()
     }
