@@ -17,8 +17,8 @@ extension AppEnvironment {
     static func live() throws -> AppEnvironment {
         let fm = FileManager.default
         let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let store = try CaptureStore(root: support.appendingPathComponent("Cornermark/History", isDirectory: true))
-        let drag = fm.temporaryDirectory.appendingPathComponent("CornermarkDrag", isDirectory: true)
+        let store = try CaptureStore(root: support.appendingPathComponent("\(AppVariant.current.name)/History", isDirectory: true))
+        let drag = fm.temporaryDirectory.appendingPathComponent(AppVariant.current.dragFolder, isDirectory: true)
         try? fm.createDirectory(at: drag, withIntermediateDirectories: true)
         let env = AppEnvironment(
             screen: ScreenCaptureKitSource(), store: store, defaults: .standard, pasteboard: .general,
@@ -41,7 +41,7 @@ extension AppEnvironment {
                 NSApp.activate(ignoringOtherApps: true)
                 done(panel.runModal() == .OK ? panel.url : nil)
             },
-            loginItem: MainAppLoginItem(), updateService: UpdateInstaller(),
+            loginItem: MainAppLoginItem(), updateService: AppVariant.current == .development ? NoUpdates() : UpdateInstaller(),
             defaultSaveFolder: fm.urls(for: .desktopDirectory, in: .userDomainMask).first ?? fm.homeDirectoryForCurrentUser,
             dragDirectory: drag,
             quit: { NSApp.terminate(nil) })

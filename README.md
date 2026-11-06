@@ -75,8 +75,8 @@ Press `Ctrl+Shift+7` and select an area. Vision recognizes the text on your devi
 ## Build
 
 ```sh
-scripts/build-app.sh            # debug build, creates build/Cornermark.app
-scripts/build-app.sh --release  # release build
+scripts/build-app.sh            # debug build, creates "build/Cornermark Dev.app"
+scripts/build-app.sh --release  # release build, creates build/Cornermark.app
 scripts/build-app.sh --universal  # arm64 and x86_64 in one binary
 scripts/build-app.sh --no-sign  # skips signing
 scripts/build-dmg.sh            # release, universal, and packed into build/Cornermark.dmg
@@ -84,15 +84,19 @@ scripts/build-dmg.sh            # release, universal, and packed into build/Corn
 
 The script runs `swift build`, assembles `build/Cornermark.app`, and signs it. Move `build/Cornermark.app` to your Applications folder and open it. The version comes from `version.txt`. `scripts/build-dmg.sh` needs [pipx](https://pipx.pypa.io), which runs dmgbuild.
 
-### Sign with a stable certificate
+### Develop next to an installed release
 
-macOS ties the Screen Recording permission to the app's code signature. An ad-hoc signature changes with every build, so macOS forgets the permission each time. The script therefore uses the first "Apple Development" certificate listed by `security find-identity -v -p codesigning`, selected by its SHA-1 hash. To use a different certificate:
+`scripts/build-app.sh` without `--release` creates `build/Cornermark Dev.app`, which runs beside an installed Cornermark. It has an amber icon and a DEV label in the menu bar, and its own bundle ID, settings, history folder, and `cornermark-dev://` links. Its default shortcuts add Option, such as `Ctrl+Option+Shift+4`, and it never updates itself.
+
+macOS ties the Screen Recording permission to the app's code signature, so development builds need a certificate that stays the same. Create it once:
 
 ```sh
-CORNERMARK_SIGN_IDENTITY=<certificate-hash> scripts/build-app.sh
+scripts/make-dev-signing-cert.sh
 ```
 
-If no certificate exists, the script prints a warning and falls back to ad-hoc signing. To create a free Apple Development certificate, go to Xcode > Settings > Accounts > Manage Certificates. Cornermark does not use the hardened runtime, the sandbox, or notarization.
+It adds a self-signed certificate to your login keychain and belongs to no Apple account. The first build asks for your login password to use the key. Choose **Always Allow**, or it asks on every build. Grant the permission to Cornermark Dev once, and it survives rebuilds.
+
+`--release` builds use the identity in `CORNERMARK_SIGN_IDENTITY`, and fall back to an ad-hoc signature that changes with every build. Neither mode picks an identity from your keychain on its own.
 
 ## Grant the Screen Recording permission
 

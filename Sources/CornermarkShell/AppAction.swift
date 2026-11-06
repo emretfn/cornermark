@@ -117,7 +117,7 @@ enum URLCommandError: Error, Equatable {
 }
 
 enum URLCommand {
-    static let scheme = "cornermark"
+    static var scheme: String { AppVariant.current.urlScheme }
 
     /// `cornermark://capture-area` and `cornermark:///capture-area` both name the path `capture-area`.
     static func parse(_ url: URL, timerSeconds: Int = 5) -> Result<AppAction, URLCommandError> {

@@ -10,7 +10,9 @@ struct HotKey: Codable, Hashable {
 
     init(keyCode: UInt32, modifiers: UInt32) { self.keyCode = keyCode; self.modifiers = modifiers }
 
-    static func ctrlShift(_ keyCode: Int) -> HotKey { HotKey(keyCode: UInt32(keyCode), modifiers: controlShift) }
+    static func ctrlShift(_ keyCode: Int) -> HotKey {
+        HotKey(keyCode: UInt32(keyCode), modifiers: controlShift | AppVariant.current.extraShortcutModifiers)
+    }
 
     init?(event: NSEvent) {
         let mods = Self.carbonModifiers(event.modifierFlags)

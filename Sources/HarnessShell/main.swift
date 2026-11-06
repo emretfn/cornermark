@@ -1,10 +1,12 @@
 import AppKit
 import Foundation
+@testable import CornermarkShell
 
 try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
 
 let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
+ShortcutRecorderView.playRefusedSound = {}
 
 DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
     print("FAIL harness timed out")
