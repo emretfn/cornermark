@@ -37,7 +37,6 @@ final class BackgroundPanel: NSView {
     private let more = Button(title: "Show more", variant: .ghost, size: .small)
     private struct SliderRow {
         let slider: TrackingSlider
-        let value: NSTextField
         let unit: String
         let key: CoalescingKey
         let read: (VideoBackground) -> Double
@@ -87,8 +86,6 @@ final class BackgroundPanel: NSView {
         for row in sliders {
             row.slider.isEnabled = framed
             row.slider.doubleValue = row.read(background)
-            row.value.stringValue = "\(Int(row.read(background).rounded()))\(row.unit)"
-            row.value.textColor = framed ? DS.Color.textSecondary : DS.Color.textDisabled
         }
         frameNote.stringValue = background.aspect == .auto
             ? "Pick a background to frame the recording."
@@ -309,17 +306,14 @@ final class BackgroundPanel: NSView {
         slider.minValue = range.lowerBound
         slider.maxValue = range.upperBound
         slider.isContinuous = true
-        slider.controlSize = .small
         slider.setAccessibilityIdentifier(id)
         slider.setAccessibilityLabel(title)
-        let value = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-        value.alignment = .right
-        value.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        slider.format = { "\(Int($0.rounded()))\(unit)" }
         slider.target = self
         slider.action = #selector(sliderMoved(_:))
         slider.onTrackingEnd = { [unowned self] in onSliderEnd() }
-        sliders.append(SliderRow(slider: slider, value: value, unit: unit, key: CoalescingKey("background.\(key)"), read: read, write: write))
-        let stack = NSStackView(views: [label, slider, value])
+        sliders.append(SliderRow(slider: slider, unit: unit, key: CoalescingKey("background.\(key)"), read: read, write: write))
+        let stack = NSStackView(views: [label, slider])
         stack.spacing = DS.Space.s8
         stack.alignment = .centerY
         stack.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true

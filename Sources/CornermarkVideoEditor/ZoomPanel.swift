@@ -2,7 +2,7 @@ import AppKit
 import CornermarkCore
 import CornermarkDesign
 
-/// The settings of the zoom picked on the timeline, in place of a section's panel: its level as presets and a slider, its mode, the
+/// The settings of the zoom picked on the timeline, in place of a section's panel: its level as a slider with the presets as detents, its mode, the
 /// spot a Manual zoom aims at, and the edits that reach beyond it.
 final class ZoomPanel: NSStackView {
     enum Change: Equatable {
@@ -17,9 +17,7 @@ final class ZoomPanel: NSStackView {
 
     var onChange: (Change) -> Void = { _ in }
 
-    private let presets = Segments(labels: Zoom.levels.map(Zoom.percent), width: SettingsPanel.inner)
     private let slider = Slider()
-    private let value = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let mode = NSPopUpButton(frame: .zero, pullsDown: false)
     private let modeNote = NSTextField(wrappingLabelWithString: ZoomPanel.modeNote(.followCursor))
     let target = ZoomTargetView()
@@ -45,9 +43,7 @@ final class ZoomPanel: NSStackView {
 
     func show(_ zoom: Zoom, count: Int) {
         self.zoom = zoom
-        presets.selectedSegment = Zoom.levels.firstIndex { abs($0 - zoom.scale) < 0.005 } ?? -1
         slider.doubleValue = zoom.scale
-        value.stringValue = Zoom.percent(zoom.scale)
         mode.selectItem(at: ZoomMode.allCases.firstIndex(of: zoom.mode) ?? 0)
         modeNote.stringValue = Self.modeNote(zoom.mode)
         target.zoom = zoom
@@ -69,19 +65,14 @@ final class ZoomPanel: NSStackView {
         slider.minValue = Zoom.scaleRange.lowerBound
         slider.maxValue = Zoom.scaleRange.upperBound
         slider.isContinuous = true
-        slider.controlSize = .small
+        slider.style = .field
+        slider.format = Zoom.percent
+        // The presets are detents on the slider: ticks under the field that a drag snaps to.
+        slider.detents = Zoom.levels
         slider.setAccessibilityLabel("Zoom level")
         slider.setAccessibilityIdentifier("video.zoom.level")
         slider.target = self
         slider.action = #selector(sliderMoved)
-        value.alignment = .right
-        value.setContentHuggingPriority(.required, for: .horizontal)
-        value.widthAnchor.constraint(equalToConstant: 36).isActive = true
-
-        presets.setAccessibilityLabel("Zoom level presets")
-        presets.setAccessibilityIdentifier("video.zoom.presets")
-        presets.target = self
-        presets.action = #selector(presetPicked)
 
         for m in ZoomMode.allCases { mode.addItem(withTitle: m.title) }
         mode.controlSize = .small
@@ -103,18 +94,17 @@ final class ZoomPanel: NSStackView {
         remove.setAccessibilityIdentifier("video.zoom.remove")
         remove.onPress { [unowned self] in onChange(.remove) }
 
-        let levelRow = row("Level", [slider, value])
+        let levelRow = row("Level", [slider])
         let modeRow = row("Mode", [mode])
         let buttons = NSStackView(views: [applyToAll, remove])
         buttons.spacing = DS.Space.s8
-        for v in [levelRow, presets, modeRow, modeNote, target, animationSettings, buttons] as [NSView] { addArrangedSubview(v) }
+        for v in [levelRow, modeRow, modeNote, target, animationSettings, buttons] as [NSView] { addArrangedSubview(v) }
         setCustomSpacing(DS.Space.s8, after: levelRow)
         setCustomSpacing(DS.Space.s4, after: modeRow)
         setCustomSpacing(DS.Space.s8, after: modeNote)
         setCustomSpacing(DS.Space.s16, after: target)
         setCustomSpacing(DS.Space.s16, after: animationSettings)
         for v in [levelRow, modeRow, modeNote, target] { v.widthAnchor.constraint(equalTo: widthAnchor).isActive = true }
-        // Five presets need the panel's whole width, so they sit under the level's row rather than in its control column.
     }
 
     private func row(_ label: String, _ views: [NSView]) -> NSStackView {
@@ -135,11 +125,6 @@ final class ZoomPanel: NSStackView {
         var s = (slider.doubleValue * 100).rounded() / 100
         if let near = Zoom.levels.first(where: { abs($0 - s) < 0.03 }) { s = near }
         onChange(.scale(s, dragging: dragging))
-    }
-
-    @objc private func presetPicked() {
-        guard Zoom.levels.indices.contains(presets.selectedSegment) else { return }
-        onChange(.scale(Zoom.levels[presets.selectedSegment], dragging: false))
     }
 
     @objc private func modePicked() {

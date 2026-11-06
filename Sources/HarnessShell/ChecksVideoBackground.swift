@@ -112,8 +112,8 @@ func checkVideoBackground(_ w: World, folder: URL) async throws {
     plan = ExportPlan(project: editor.state.project, settings: ExportSettings())
     check(bg.padding == 140 && bg.shadow == 80 && bg.cornerRadius == 24 && plan.width == even((source.pointWidth + 280) * scale),
           "Padding, Shadow and Corners change the background as they move", detail: "\(bg)")
-    let readout = (padding?.superview as? NSStackView)?.arrangedSubviews.last as? NSTextField
-    check(readout?.stringValue == "140", "the padding readout follows the slider", detail: readout?.stringValue ?? "nil")
+    let readout = (padding as? Slider)?.valueText
+    check(readout == "140", "the padding field writes the value it is set to", detail: readout ?? "nil")
     let exportPanel = editor.view(identifier: "video.export.resolution") as? NSPopUpButton
     check(exportPanel?.itemTitles.first == "\(plan.width) \u{00D7} \(plan.height) (Original)", "the export panel's sizes follow the background",
           detail: exportPanel?.itemTitles.first ?? "nil")

@@ -40,7 +40,8 @@ final class TransportBar: NSView {
         volume.maxValue = 1
         volume.doubleValue = 1
         volume.isContinuous = true
-        volume.controlSize = .small
+        volume.style = .field
+        volume.format = { "\(Int(($0 * 100).rounded()))%" }
         volume.setAccessibilityIdentifier("video.volume")
         volume.setAccessibilityLabel("Volume")
         volume.target = self

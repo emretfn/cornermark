@@ -174,15 +174,24 @@ func checkVideoZoom() async throws {
 
     section("video editor: the zoom panel")
     hand.click(x: hand.x(5))
-    let presets = editor.view(identifier: "video.zoom.presets") as? NSSegmentedControl
-    let slider = editor.view(identifier: "video.zoom.level") as? NSSlider
+    let slider = editor.view(identifier: "video.zoom.level") as? Slider
     let mode = editor.view(identifier: "video.zoom.mode") as? NSPopUpButton
     let picked = { editor.state.project.edits.zooms.first { $0.id == editor.state.selectedZoom } }
-    check(presets?.selectedSegment == 3 && slider?.doubleValue == 3 && mode?.titleOfSelectedItem == "Follow Cursor",
-          "the panel shows the picked zoom's level and mode", detail: "\(presets?.selectedSegment ?? -9) \(slider?.doubleValue ?? -1)")
-    presets?.selectedSegment = 1
-    if let presets { fire(presets) }
-    check(picked()?.scale == 1.5, "a preset sets the level", detail: "\(picked()?.scale ?? -1)")
+    check(slider?.doubleValue == 3 && slider?.valueText == "300%" && mode?.titleOfSelectedItem == "Follow Cursor",
+          "the panel shows the picked zoom's level, written inside the level field, and its mode", detail: "\(slider?.doubleValue ?? -1) \(slider?.valueText ?? "nil")")
+    check(editor.view(identifier: "video.zoom.presets") == nil && slider?.detents == Zoom.levels && slider?.style == .field,
+          "the presets are detents on the level field, not a second row", detail: "\(slider?.detents ?? [])")
+    if let slider, let window = slider.window {
+        // A press a hair off the 150% detent, through the field's own pointer handling: the press sets the value and lands on the detent.
+        let x = slider.bounds.width * CGFloat((1.52 - slider.minValue) / (slider.maxValue - slider.minValue))
+        let at = slider.convert(CGPoint(x: x, y: slider.bounds.midY), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            type == .leftMouseDown ? slider.mouseDown(with: e) : slider.mouseUp(with: e)
+        }
+    }
+    check(picked()?.scale == 1.5 && slider?.valueText == "150%", "a press near a preset's tick sets that preset", detail: "\(picked()?.scale ?? -1)")
     slider?.doubleValue = 2.47
     if let slider { fire(slider) }
     check(picked()?.scale == 2.47 && (editor.view(identifier: "video.zoom.panel")?.subviews.isEmpty == false), "the slider sets any level between", detail: "\(picked()?.scale ?? -1)")

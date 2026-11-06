@@ -59,22 +59,12 @@ class SettingsPanel: NSView {
         s.minValue = range.lowerBound
         s.maxValue = range.upperBound
         s.isContinuous = true
-        s.controlSize = .small
         s.setAccessibilityIdentifier(id)
         s.setAccessibilityLabel(label)
         s.target = self
         s.action = action
         s.onTrackingEnd = { [unowned self] in onSliderEnd() }
         return s
-    }
-
-    func readout() -> NSTextField {
-        let field = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-        field.alignment = .right
-        field.setContentHuggingPriority(.required, for: .horizontal)
-        // Wide enough for 100%, so the slider keeps its length as the number changes.
-        field.widthAnchor.constraint(equalToConstant: 34).isActive = true
-        return field
     }
 
     /// Greys the label column for settings that only matter while the section's switch is on.

@@ -28,7 +28,6 @@ final class InspectorView: NSView {
     private let body = NSStackView()
     private let showCursor = Checkbox(title: "Show cursor")
     private let cursorSize = TrackingSlider()
-    private let cursorSizeValue = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
     private let cursorStyle = Segments(labels: CursorStyle.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
     private let cursorMotion = Segments(labels: CursorMotion.allCases.map(InspectorView.title), width: SettingsPanel.controlWidth)
     private let hideIdle = Checkbox(title: "Hide when not moving")
@@ -71,7 +70,6 @@ final class InspectorView: NSView {
         clicksPanel.show(cursor: cursor, clicks: clicks, hasClicks: hasClicks)
         showCursor.state = cursor.isVisible ? .on : .off
         cursorSize.doubleValue = cursor.scale
-        cursorSizeValue.stringValue = String(format: "%.1f\u{00D7}", cursor.scale)
         cursorStyle.selectedSegment = CursorStyle.allCases.firstIndex(of: cursor.style) ?? 0
         cursorMotion.selectedSegment = CursorMotion.allCases.firstIndex(of: cursor.motion) ?? 0
         hideIdle.state = cursor.hidesWhenIdle ? .on : .off
@@ -79,7 +77,6 @@ final class InspectorView: NSView {
         // Every other setting shapes a pointer that is not drawn while Show cursor is off.
         let on = cursor.isVisible
         for control in [cursorSize, cursorStyle, cursorMotion, hideIdle, hideTyping] as [NSControl] { control.isEnabled = on }
-        cursorSizeValue.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled
         for label in rowLabels { label.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled }
     }
 
@@ -145,14 +142,12 @@ final class InspectorView: NSView {
         cursorSize.minValue = Self.sizeRange.lowerBound
         cursorSize.maxValue = Self.sizeRange.upperBound
         cursorSize.isContinuous = true
-        cursorSize.controlSize = .small
+        cursorSize.format = { String(format: "%.1f\u{00D7}", ($0 * 10).rounded() / 10) }
         cursorSize.onTrackingEnd = { [unowned self] in onCursorSizeEnd() }
         cursorSize.setAccessibilityIdentifier("video.cursor.size")
         cursorSize.setAccessibilityLabel("Cursor size")
         cursorSize.target = self
         cursorSize.action = #selector(sizeChanged)
-        cursorSizeValue.alignment = .right
-        cursorSizeValue.setContentHuggingPriority(.required, for: .horizontal)
         cursorStyle.setAccessibilityIdentifier("video.cursor.style")
         cursorStyle.setAccessibilityLabel("Cursor style")
         for (i, tip) in ["White arrow", "Black arrow", "Translucent dot"].enumerated() { cursorStyle.setToolTip(tip, forSegment: i) }
@@ -178,7 +173,7 @@ final class InspectorView: NSView {
             row.alignment = .centerY
             return row
         }
-        let sizeRow = row("Size", [cursorSize, cursorSizeValue])
+        let sizeRow = row("Size", [cursorSize])
         let styleRow = row("Style", [cursorStyle])
         let motionRow = row("Motion", [cursorMotion])
         // The stack insets its rows, so the line between the look and the hiding options is laid over a spacer of its height.
@@ -295,12 +290,16 @@ final class InspectorView: NSView {
     }
 }
 
-/// A slider that says when a drag ends: `mouseDown` returns only once the pointer lets go.
+/// A field slider that says when a drag or a key step ends, which closes its undo step.
 final class TrackingSlider: Slider {
     var onTrackingEnd: () -> Void = {}
 
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        onTrackingEnd()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        style = .field
     }
+
+    required init?(coder: NSCoder) { fatalError("TrackingSlider is created in code") }
+
+    override func trackingDidEnd() { onTrackingEnd() }
 }

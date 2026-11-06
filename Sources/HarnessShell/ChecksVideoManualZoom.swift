@@ -144,7 +144,7 @@ func checkVideoManualZoom() async throws {
     let hold = editor.view(identifier: "video.zoomAnimation.holdArea") as? TrackingSlider
     let catchUp = editor.view(identifier: "video.zoomAnimation.catchUp") as? TrackingSlider
     let reset = editor.view(identifier: "video.zoomAnimation.reset") as? NSButton
-    func readout(_ slider: NSSlider?) -> String? { (slider?.superview as? NSStackView)?.arrangedSubviews.compactMap { $0 as? NSTextField }.last?.stringValue }
+    func readout(_ slider: NSSlider?) -> String? { (slider as? Slider)?.valueText }
     check(editor.state.showsZoomAnimation && panel?.isHidden == false && window.firstResponder === duration, "the button opens the panel with focus on its first slider")
     check(readout(duration) == "0.78 s" && readout(hold) == "50%" && readout(catchUp) == "0.68 s" && reset?.isEnabled == false,
           "the panel opens on the defaults: 0.78 s moves, a 50% hold area and a 0.68 s catch-up", detail: [duration, hold, catchUp].map { readout($0) ?? "nil" }.joined(separator: " "))

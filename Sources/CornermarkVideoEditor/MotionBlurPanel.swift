@@ -9,7 +9,6 @@ final class MotionBlurPanel: SettingsPanel {
     private(set) var blur = MotionBlur()
     private let scope = Segments(labels: MotionBlur.Scope.allCases.map(MotionBlurPanel.title), width: SettingsPanel.inner)
     private var intensity: TrackingSlider!
-    private var value: NSTextField!
     private var note: NSTextField!
     private var previewCaption: NSTextField!
 
@@ -40,8 +39,8 @@ final class MotionBlurPanel: SettingsPanel {
         scope.action = #selector(picked)
         intensity = slider(id: "video.blur.intensity", label: "Intensity", range: MotionBlur.shutterRange, action: #selector(slid))
         intensity.toolTip = "How long the shutter stays open in each frame. 180° is half a frame, 360° a whole one."
-        value = readout()
-        let intensityRow = row("Intensity", [intensity, value])
+        intensity.format = { Self.degrees(($0 / 5).rounded() * 5) }
+        let intensityRow = row("Intensity", [intensity])
         intensityRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
         note = caption(Self.explanation(blur.scope), id: "video.blur.note")
         previewCaption = caption(Self.previewNote, id: "video.blur.preview")
@@ -58,14 +57,12 @@ final class MotionBlurPanel: SettingsPanel {
         self.blur = blur
         scope.selectedSegment = MotionBlur.Scope.allCases.firstIndex(of: blur.scope) ?? 0
         intensity.doubleValue = blur.shutterAngle
-        value.stringValue = Self.degrees(blur.shutterAngle)
         intensity.setAccessibilityValueDescription("\(Int(blur.shutterAngle.rounded())) degrees")
         note.stringValue = Self.explanation(blur.scope)
         let on = blur.scope != .off
         intensity.isEnabled = on
         // It describes blur that is on; with blur off it would promise blur the export does not have.
         previewCaption.isHidden = !on
-        value.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled
         setLabelsEnabled(on)
     }
 

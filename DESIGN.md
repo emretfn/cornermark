@@ -185,7 +185,7 @@ Web tarafındaki karşılıklar: token CSS değişkeni, bileşen `NSView` veya `
 | `TextInput` | `small`, `regular`; `monospaced` | Boyut alanları, formlar |
 | `Surface` | `hud`, `raised`, `floating`, `panel` | Çubuk, kart, panel zemini |
 | `Segments` | Simgeli veya yazılı; `selectOne` ya da `momentary`; gruplar arası ayraç (`NSSegmentedControl` alt sınıfı) | Editör araçları, stil seçimi |
-| `Slider` | Küçük boy, nötr dolgu (`NSSlider` alt sınıfı) | Kalınlık, dolgu, köşe |
+| `Slider` | `track`: ince iz ve yuvarlak tutamaç, küçük boy; `field`: 28 noktalık dolu alan, değer içinde yazar, ön ayarlar çentiktir; nötr dolgu (`NSSlider` alt sınıfı) | Görüntü editöründe kalınlık, dolgu, köşe (`track`); video editörünün her kaydırıcısı (`field`) |
 | `Checkbox` | Açık, kapalı, 16 nokta, açıkken grafit `bgInverse` (`NSButton` alt sınıfı) | Panel ve ayar seçenekleri |
 | `SidebarItem` | Simge ve başlık, `isSelected` (nötr `bgControlActive`) | Ayarlar kenar çubuğu |
 | `ImageWell` | Görsel, köşe yarıçapı | Hızlı Erişim, Geçmiş |
@@ -210,6 +210,8 @@ Yüzen pencereler (Hızlı Erişim kartı gibi) saydam pencere, `Surface(.panel)
 Editörün araç çubuğu `NSToolbar` öğesi değil, başlık çubuğunun altında duran kendi satırıdır, çünkü macOS 26 her araç çubuğu öğesine kaldırılamayan bir cam kapsül çizer. Ekran görüntüsü üstündeki seçim çerçevesi ve tutamaçlar `selectionStroke` ile `selectionHalo` kullanır, vurgu rengi kullanmaz.
 
 Stok açılır menü (`NSPopUpButton`) ve renk kuyusu (`NSColorWell`) kalır, çünkü sistem menüsü ve renk seçicisi yerel davranıştır. Kaydırıcı dolgusu nötrdür, çünkü vurgu yalnızca seçili durum ve birincil eylem içindir. Editörde görünümün tek birincil eylemi `Copy` düğmesidir.
+
+**Alan kaydırıcı.** `field` bir düğme kadar yüksektir: `bgControl` zemin, değere kadar `bgControlActive` dolgu, dolgunun ucunda 2 noktalık bir işaret ve sağ uçta `readout` fontuyla değer. Alanın her yerine basmak değeri oraya getirir ve sürükleme oradan sürer, çünkü nişan alınacak bir tutamaç yoktur. Ön ayarlar alanın altında kısa `borderStrong` çentiklerdir ve sürükleme aralığın yüzde 2'si kadar yakından geçince çentiğe oturur; adımlı kaydırıcı (Quality) yalnızca adımlarına iner. Değer yerinden oynamaz; dolgunun işareti değere ulaşınca metnin üstünde ve altında kısa çizgiler bırakır, böylece sayı her doluluktta temiz okunur. İşaret dururken `textSecondary`, üzerine gelince, sürüklerken ve odakta `textPrimary` olur ve basılıyken uzar. Ok tuşları aralığın yirmide birini ya da bir adımı, Shift beş katını kaydırır; Home ve End uçlara gider. VoiceOver alanı yazdığı değerle bir kaydırıcı olarak okur. Sürükleme sık yapılır, bu yüzden alan animasyon almaz.
 
 Seçili `IconButton`: `accentSubtle` zemin, `accentBorder` kenar, `accentText` ikon. Basma geri bildirimi anında çizilir, azaltılmış harekette ölçek uygulanmaz. Klavye odağında `focusRing` halkası çizilir. Bileşenler pencere aktif değilken griye dönmez ve ilk tıklamayı kabul eder, çünkü yakalama katmanı aktif olmayan bir paneldir.
 
