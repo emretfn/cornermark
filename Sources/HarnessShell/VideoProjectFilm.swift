@@ -224,7 +224,7 @@ enum VideoProjectFilm {
             "UTTypeConformsTo  com.apple.package, public.composite-content",
             "extension         .\(RecordingProjectFile.packageExtension)",
             "CFBundleDocumentTypes: Editor, LSTypeIsPackage = true",
-            "MP4 and MOV: Editor, rank Alternate (never the default player)",
+            "MP4 and MOV: Viewer, rank Alternate (never the default player)",
         ], top: 290)
     }
 
