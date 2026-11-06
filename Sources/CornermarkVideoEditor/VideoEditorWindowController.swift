@@ -466,6 +466,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     func handleKey(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+        // A field being typed in keeps Space, Delete and Esc, so Delete takes back a digit instead of a clip.
+        if mods.isEmpty, window?.firstResponder is NSText { return false }
         guard let action = Self.keys[Chord(keyCode: event.keyCode, modifiers: mods.rawValue)] else { return false }
         return action(self)
     }
@@ -665,6 +667,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             backgroundPicture = (background.image, background.picture(in: folder))
             preview.backgroundPicture = backgroundPicture.image
         }
+        let size = ExportPlan(project: state.project, settings: ExportSettings())
+        inspector.backgroundPanel.videoSize = CGSize(width: size.width, height: size.height)
         inspector.show(state.section, cursor: state.project.edits.cursor, background: background, picture: backgroundPicture.image)
         header.show(state.export)
         exportPanel.show(state.export, settings: state.exportSettings, project: state.project, sourceBytes: sourceBytes)

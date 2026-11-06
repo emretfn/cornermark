@@ -39,6 +39,8 @@ final class PreviewView: NSView {
         picture.masksToBounds = true
         picture.cornerCurve = .circular
         stage.contentsGravity = .resize
+        // Without a background a ratio leaves bars around the recording, black as export draws them.
+        stage.backgroundColor = CGColor(gray: 0, alpha: 1)
         stage.borderWidth = 1
         stage.masksToBounds = true
         stage.addSublayer(picture)

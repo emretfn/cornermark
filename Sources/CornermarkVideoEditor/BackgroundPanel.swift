@@ -20,6 +20,8 @@ final class BackgroundPanel: NSView {
     /// A slider let go, which ends its undo step.
     var onSliderEnd: () -> Void = {}
     var onAddImage: () -> Void = {}
+    /// The video's size in pixels now, which Custom starts from, so picking it changes nothing until a number is typed.
+    var videoSize = CGSize(width: 16, height: 9)
 
     private(set) var background = VideoBackground()
     private(set) var showsAllGradients = false
@@ -42,7 +44,13 @@ final class BackgroundPanel: NSView {
         let write: (inout VideoBackground, Double) -> Void
     }
     private var sliders: [SliderRow] = []
-    private let frameNote = NSTextField(wrappingLabelWithString: "Pick a background to frame the recording.")
+    private let frameNote = NSTextField(wrappingLabelWithString: "")
+    private let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let aspectWidth = TextInput(placeholder: "W", size: .small, monospaced: true, centered: true)
+    private let aspectHeight = TextInput(placeholder: "H", size: .small, monospaced: true, centered: true)
+    private var customRow = NSView()
+    /// The menu's choices by item tag: the presets, then Custom.
+    private static let customTag = VideoAspect.presets.count
     /// Says why Add image did nothing. Any change clears it.
     private let problem = NSTextField(wrappingLabelWithString: "")
     private let content = NSStackView()
@@ -82,7 +90,23 @@ final class BackgroundPanel: NSView {
             row.value.stringValue = "\(Int(row.read(background).rounded()))\(row.unit)"
             row.value.textColor = framed ? DS.Color.textSecondary : DS.Color.textDisabled
         }
+        frameNote.stringValue = background.aspect == .auto
+            ? "Pick a background to frame the recording."
+            : "Black bars fill the rest of the video. Pick a background to frame the recording."
         frameNote.isHidden = framed
+        showAspect(background.aspect)
+    }
+
+    private func showAspect(_ value: VideoAspect) {
+        let tag: Int
+        if case .custom(let w, let h) = value {
+            tag = Self.customTag
+            for (field, side) in [(aspectWidth, w), (aspectHeight, h)] where field.currentEditor() == nil { field.stringValue = "\(side)" }
+        } else {
+            tag = VideoAspect.presets.firstIndex(of: value) ?? 0
+        }
+        aspect.selectItem(withTag: tag)
+        customRow.isHidden = tag != Self.customTag
     }
 
     /// Shows all twenty gradients, or the first two rows.
@@ -173,7 +197,7 @@ final class BackgroundPanel: NSView {
         for group in [noneTile, gradientRows, wallpaperRows, problem] as [NSView] { content.setCustomSpacing(DS.Space.s16, after: group) }
 
         // The frame settings stay put under the fills, which scroll, so they are never past a scroll edge however short the window.
-        let frame = NSStackView(views: [header("Frame"),
+        let frame = NSStackView(views: [header("Frame"), aspectRow(), customAspectRow(),
             sliderRow("Padding", range: VideoBackground.paddingRange, unit: "", id: "video.background.padding", key: "padding",
                       read: { $0.padding }, write: { $0.padding = $1 }),
             sliderRow("Shadow", range: VideoBackground.shadowRange, unit: "%", id: "video.background.shadow", key: "shadow",
@@ -301,6 +325,100 @@ final class BackgroundPanel: NSView {
         stack.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
         stack.heightAnchor.constraint(equalToConstant: DS.Size.control).isActive = true
         return stack
+    }
+
+    private func aspectRow() -> NSView {
+        aspect.controlSize = .small
+        aspect.font = DS.Text.label.font
+        aspect.setAccessibilityIdentifier("video.background.aspect")
+        aspect.setAccessibilityLabel("Aspect ratio")
+        aspect.toolTip = "The finished video's shape"
+        let menu = NSMenu()
+        // Auto, then wide and square shapes, then tall ones, then Custom.
+        for (i, option) in VideoAspect.presets.enumerated() {
+            if i == 1 || option == .ratio(width: 4, height: 5) { menu.addItem(Self.separator()) }
+            let item = NSMenuItem(title: option.title, action: nil, keyEquivalent: "")
+            item.tag = i
+            menu.addItem(item)
+        }
+        menu.addItem(Self.separator())
+        let custom = NSMenuItem(title: VideoAspect.custom(width: 1, height: 1).title, action: nil, keyEquivalent: "")
+        custom.tag = Self.customTag
+        menu.addItem(custom)
+        aspect.menu = menu
+        aspect.target = self
+        aspect.action = #selector(aspectPicked)
+        return labelled("Ratio", aspect)
+    }
+
+    /// Tagged apart from every choice, so selecting by tag never lands on one.
+    private static func separator() -> NSMenuItem {
+        let item = NSMenuItem.separator()
+        item.tag = -1
+        return item
+    }
+
+    /// Two numbers whose ratio is the shape, shown only for Custom.
+    private func customAspectRow() -> NSView {
+        let times = NSTextField.label("\u{00D7}", style: DS.Text.caption, color: DS.Color.textSecondary)
+        times.alignment = .center
+        times.widthAnchor.constraint(equalToConstant: DS.Space.s16).isActive = true
+        for (field, id, label) in [(aspectWidth, "video.background.aspect.width", "Ratio width"), (aspectHeight, "video.background.aspect.height", "Ratio height")] {
+            field.cell?.sendsActionOnEndEditing = true
+            field.setAccessibilityIdentifier(id)
+            field.setAccessibilityLabel(label)
+            field.toolTip = "Only the shape counts: Export sets the size"
+            field.target = self
+            field.action = #selector(customAspectTyped)
+        }
+        let fields = NSStackView(views: [aspectWidth, times, aspectHeight])
+        fields.spacing = 0
+        fields.distribution = .fill
+        aspectWidth.widthAnchor.constraint(equalTo: aspectHeight.widthAnchor).isActive = true
+        customRow = labelled("", fields)
+        return customRow
+    }
+
+    /// A row with the label column on the left and `control` filling the rest, ending on the panel's right edge.
+    private func labelled(_ title: String, _ control: NSView) -> NSView {
+        let label = NSTextField.label(title, style: DS.Text.label, color: DS.Color.textSecondary)
+        label.widthAnchor.constraint(equalToConstant: InspectorView.labelColumn).isActive = true
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let stack = NSStackView(views: [label, control])
+        stack.spacing = DS.Space.s8
+        stack.alignment = .centerY
+        stack.distribution = .fill
+        stack.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
+        stack.heightAnchor.constraint(equalToConstant: DS.Size.control).isActive = true
+        return stack
+    }
+
+    @objc private func aspectPicked() {
+        let tag = aspect.selectedTag()
+        var next = background
+        if tag == Self.customTag {
+            if case .custom = background.aspect { return }
+            next.aspect = .custom(Int(videoSize.width.rounded()), Int(videoSize.height.rounded()))
+        } else {
+            next.aspect = VideoAspect.presets[tag]
+        }
+        guard next != background else { return }
+        onChange(next, nil)
+    }
+
+    @objc private func customAspectTyped() {
+        guard case .custom(let w, let h) = background.aspect else { return }
+        func side(_ field: NSTextField, _ old: Int) -> Int { Int(field.stringValue.filter(\.isNumber)) ?? old }
+        let typed = VideoAspect.custom(side(aspectWidth, w), side(aspectHeight, h))
+        if typed != background.aspect {
+            var next = background
+            next.aspect = typed
+            onChange(next, nil)
+        }
+        // A number held to the limits, or one that did not parse, shows what the video uses, even while the field keeps focus.
+        guard case .custom(let sw, let sh) = self.background.aspect else { return }
+        aspectWidth.stringValue = "\(sw)"
+        aspectHeight.stringValue = "\(sh)"
     }
 
     private func pick(_ fill: VideoBackground.Fill) {
