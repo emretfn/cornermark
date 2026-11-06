@@ -233,6 +233,8 @@ private func checkProjectDocumentTypes() {
     let video = documents.first { ($0["LSItemContentTypes"] as? [String])?.contains("public.mpeg-4") == true }
     check((video?["LSItemContentTypes"] as? [String])?.contains("com.apple.quicktime-movie") == true && video?["LSHandlerRank"] as? String == "Alternate",
           "MP4 and MOV list the app as an alternate, never taking over the default player")
+    // The system player declares video as a viewer only, so an editor of any rank becomes the default app that opens a double-clicked MP4.
+    check(video?["CFBundleTypeRole"] as? String == "Viewer", "MP4 and MOV declare the viewer role, so a double-clicked video still opens in the system player")
 }
 
 private extension FileManager {
