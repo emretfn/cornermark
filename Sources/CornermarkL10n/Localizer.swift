@@ -72,8 +72,7 @@ public enum L10n {
     }
 
     private static func apply(_ language: Language, current: Locale, pseudo: ((String) -> String)?) {
-        // The pseudo language keeps English number formatting so harness expectations stay put.
-        let locale = pseudo != nil ? current : Language(preference: current.identifier) == language ? current : defaultLocale(for: language)
+        let locale = Language(preference: current.identifier) == language ? current : defaultLocale(for: language)
         let changed: Bool = lock.withLock {
             guard pseudo != nil || state.pseudo != nil || state.language != language || state.locale.identifier != locale.identifier else { return false }
             state = State(language: language, locale: locale, catalog: catalog(for: language), pseudo: pseudo)

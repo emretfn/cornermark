@@ -336,7 +336,7 @@ private func checkLocalizedRecording() async throws {
     let shown = shownStrings(view) + [bar.title]
     check(shown.count >= 6 && unwrapped(shown).isEmpty, "recording bar re-renders in the new language", detail: "\(unwrapped(shown))")
     check(c.controls.barView === view && c.controls.bar === bar && m.phase == .recording && bar.frame.origin == origin
-          && view.time.stringValue == time, "the recording and its bar carry on when the language changes", detail: "\(bar.frame.origin) \(view.time.stringValue)")
+          && latinDigits(view.time.stringValue) == latinDigits(time), "the recording and its bar carry on when the language changes", detail: "\(bar.frame.origin) \(view.time.stringValue)")
     check(view.stop.accessibilityLabel()?.hasPrefix("\u{2039}") == true && view.stop.toolTip == "\u{2039}Stop recording\u{203A}", "the stop button speaks the new language")
     check(view.userInterfaceLayoutDirection == .rightToLeft, "recording bar mirrors for a right-to-left language")
     let order = [view.stop, view.pause, view.restart, view.delete, view.grip].map { $0.frame.minX }
@@ -446,4 +446,9 @@ private func checkLocalizedTexts() async throws {
     L10n.setLanguage(.fa)
     check(ImageOutput.durationText(7) == "\u{06F0}:\u{06F0}\u{06F7}", "times use the language's own digits", detail: ImageOutput.durationText(7))
     english()
+}
+
+/// The same text with every digit, in any script, written as 0-9, so a time read in two languages compares equal.
+private func latinDigits(_ s: String) -> String {
+    String(s.map { c in c.wholeNumberValue.map { Character(String($0)) } ?? c })
 }

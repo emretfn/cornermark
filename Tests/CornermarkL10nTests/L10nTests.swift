@@ -82,8 +82,8 @@ final class PseudoLanguageTests: XCTestCase {
         L10n.setPseudoLanguage(.ar) { "‹\($0)›" }
         XCTAssertEqual(tr("Save"), "‹Save›")
         XCTAssertEqual(tr("Version {version}.", ["version": "2"]), "‹Version 2.›")
-        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 1), "‹1 day›")
-        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 3), "‹3 days›")
+        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 1), "‹١ day›")
+        XCTAssertEqual(trPlural(one: "{count} day", other: "{count} days", count: 3), "‹٣ days›")
         XCTAssertTrue(L10n.isRightToLeft)
         L10n.setLanguage(.en)
         XCTAssertEqual(tr("Save"), "Save")
