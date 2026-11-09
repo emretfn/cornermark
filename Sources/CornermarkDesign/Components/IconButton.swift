@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkL10n
 
 public final class IconButton: Pressable {
     public enum Tone: CaseIterable {
@@ -30,7 +31,7 @@ public final class IconButton: Pressable {
         didSet { needsDisplay = true }
     }
 
-    /// Shows a small check over the bottom-right corner while selected, so a toggle that is on shows it in shape as well as in fill.
+    /// Shows a small check over the bottom-right corner (bottom-left in a right-to-left language) while selected, so a toggle that is on shows it in shape as well as in fill.
     /// The check overflows the corner like a badge, so the glyph stays centred in both states. Leave room for it beside the button.
     public var marksSelection = false {
         didSet { updateMark() }
@@ -49,11 +50,16 @@ public final class IconButton: Pressable {
 
     public var isSelected = false {
         didSet {
-            setAccessibilityValue(isSelected ? "Selected" : "Not selected")
+            customValue = nil
             needsDisplay = true
             updateMark()
         }
     }
+
+    /// Worded when VoiceOver asks, so it is always in the current language. A value a caller sets lasts until the selection changes.
+    public override func accessibilityValue() -> Any? { customValue ?? (isSelected ? tr("Selected") : tr("Not selected")) }
+    private var customValue: Any?
+    public override func setAccessibilityValue(_ value: Any?) { customValue = value }
 
     public override var isEnabled: Bool {
         didSet { updateMark() }
@@ -68,7 +74,6 @@ public final class IconButton: Pressable {
         super.init(frame: .zero)
         toolTip = label
         setAccessibilityLabel(label)
-        setAccessibilityValue("Not selected")
         if tone == .overlay { appearance = NSAppearance(named: .darkAqua) }
         // The check overflows the corner, so the button must not clip its own subviews.
         clipsToBounds = false
@@ -125,12 +130,16 @@ public final class IconButton: Pressable {
     var markFrame: CGRect {
         let d = Self.markDiameter
         let inside = d - Self.markOverflow
-        return CGRect(x: bounds.maxX - inside, y: isFlipped ? bounds.maxY - inside : bounds.minY - Self.markOverflow, width: d, height: d)
+        return mirrored(CGRect(x: bounds.maxX - inside, y: isFlipped ? bounds.maxY - inside : bounds.minY - Self.markOverflow, width: d, height: d))
+    }
+
+    public override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { if oldValue != userInterfaceLayoutDirection { mark?.frame = markFrame } }
     }
 
     /// The check's outer size, its ring included.
     static let markDiameter: CGFloat = 12
-    /// How far the check reaches past the tile's right and bottom edges. A row of checkable toggles needs a wider gap than this.
+    /// How far the check reaches past the tile's trailing and bottom edges. A row of checkable toggles needs a wider gap than this.
     public static let markOverflow: CGFloat = 4
 
     func look(_ state: InteractionState) -> ButtonAppearance { Self.look(tone: tone, selected: isSelected, selection: selection, state) }

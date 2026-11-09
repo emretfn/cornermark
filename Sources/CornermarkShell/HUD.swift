@@ -41,7 +41,7 @@ final class HUDView: NSView {
         NSGraphicsContext.restoreGraphicsState()
 
         if let symbol {
-            Glyph.draw(symbol, in: CGRect(x: Self.padding, y: 0, width: DS.Size.iconLarge, height: bounds.height), pointSize: DS.Size.iconLarge, DS.Color.textPrimary)
+            Glyph.draw(symbol, in: mirrored(CGRect(x: Self.padding, y: 0, width: DS.Size.iconLarge, height: bounds.height)), pointSize: DS.Size.iconLarge, DS.Color.textPrimary)
         }
         let x = Self.leading(hasSymbol: symbol != nil)
         var attributes = Self.style.attributes(color: DS.Color.textPrimary)
@@ -49,7 +49,7 @@ final class HUDView: NSView {
         paragraph.lineBreakMode = .byTruncatingTail
         attributes[.paragraphStyle] = paragraph
         let line = CGRect(x: x, y: bounds.midY - Self.style.lineHeight / 2, width: max(bounds.width - x - Self.padding, 0), height: Self.style.lineHeight)
-        NSAttributedString(string: message, attributes: attributes).draw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        NSAttributedString(string: message, attributes: attributes).draw(with: mirrored(line), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }
 
@@ -80,7 +80,9 @@ final class HUD {
         p.isReleasedWhenClosed = false
         p.animationBehavior = .none
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        p.contentView = HUDView(message: message, symbol: symbol)
+        let view = HUDView(message: message, symbol: symbol)
+        view.applyLanguageDirection()
+        p.contentView = view
         panel = p
         guard env.isOnscreen else {
             Log.shell.notice("hud \(message, privacy: .public)")

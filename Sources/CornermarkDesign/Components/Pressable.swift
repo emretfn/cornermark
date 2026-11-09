@@ -64,6 +64,10 @@ public class Pressable: NSButton {
 
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    public override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { if oldValue != userInterfaceLayoutDirection { needsDisplay = true } }
+    }
+
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         isHovering = false

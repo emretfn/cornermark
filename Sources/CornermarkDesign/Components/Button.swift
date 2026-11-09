@@ -26,6 +26,8 @@ public final class Button: Pressable {
 
     public override var title: String {
         didSet {
+            // The spoken name follows the title, unless a caller gave the control a name of its own.
+            if oldValue != title, accessibilityLabel() == oldValue { setAccessibilityLabel(title) }
             invalidateIntrinsicContentSize()
             needsDisplay = true
         }
@@ -52,17 +54,29 @@ public final class Button: Pressable {
         if let border = look.border { Paint.strokeInside(path, border) }
 
         // The content block sits at its leading padding when the button is intrinsic-width and centres when it is wider.
+        let content = contentRects
+        if let symbol, let rect = content.symbol { Paint.symbol(symbol, in: rect, pointSize: size.iconSize, look.text) }
+        Paint.text(title, textStyle, look.text, in: content.title, rtl: isRightToLeft)
+        if let shortcut, let rect = content.shortcut { Paint.text(shortcut, DS.Text.readout, look.text, in: rect, rtl: isRightToLeft) }
+    }
+
+    /// Where the symbol, title and shortcut go. They run in reading order from the leading edge, so in a right-to-left language the
+    /// symbol leads on the right and the shortcut trails on the left.
+    var contentRects: (symbol: CGRect?, title: CGRect, shortcut: CGRect?) {
         var x = leadingPadding + (bounds.width - intrinsicContentSize.width) / 2
-        if let symbol {
-            Paint.symbol(symbol, in: CGRect(x: x, y: 0, width: size.iconSize, height: bounds.height), pointSize: size.iconSize, look.text)
+        var symbolRect: CGRect?
+        if symbol != nil {
+            symbolRect = mirrored(CGRect(x: x, y: 0, width: size.iconSize, height: bounds.height))
             x += size.iconSize + iconGap
         }
         let titleWidth = Paint.width(of: title, textStyle)
-        Paint.text(title, textStyle, look.text, in: CGRect(x: x, y: 0, width: titleWidth, height: bounds.height))
+        let titleRect = mirrored(CGRect(x: x, y: 0, width: titleWidth, height: bounds.height))
+        var shortcutRect: CGRect?
         if let shortcut {
             x += titleWidth + shortcutGap
-            Paint.text(shortcut, DS.Text.readout, look.text, in: CGRect(x: x, y: 0, width: Paint.width(of: shortcut, DS.Text.readout), height: bounds.height))
+            shortcutRect = mirrored(CGRect(x: x, y: 0, width: Paint.width(of: shortcut, DS.Text.readout), height: bounds.height))
         }
+        return (symbolRect, titleRect, shortcutRect)
     }
 }
 

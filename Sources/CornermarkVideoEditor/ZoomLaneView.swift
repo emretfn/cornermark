@@ -1,10 +1,11 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// The zoom lane. A click on empty lane adds a zoom of the default length, a drag adds one over the dragged stretch. A zoom's
 /// body moves it, its edges resize it, and a right click opens its menu. It only reports gestures; the editor applies them.
-final class ZoomLaneView: NSView {
+final class ZoomLaneView: NSView, KeepsLeftToRight {
     enum Gesture: Equatable {
         case move(UUID, start: Double)
         case resize(UUID, ZoomLane.Edge, to: Double)
@@ -31,7 +32,7 @@ final class ZoomLaneView: NSView {
     var menuForZoom: (UUID) -> NSMenu? = { _ in nil }
     var onKey: (KeyCommand) -> Void = { _ in }
 
-    static let hint = "Click or drag to add a zoom"
+    static var hint: String { tr("Click or drag to add a zoom") }
     /// Points of a zoom's edge that resize it instead of moving it.
     static let edgeGrab: CGFloat = 6
     /// A press that moves less than this is a click.
@@ -60,9 +61,15 @@ final class ZoomLaneView: NSView {
         super.init(frame: frameRect)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Zooms")
-        setAccessibilityHelp(Self.hint)
+        relocalize()
         setAccessibilityIdentifier("video.zoomLane")
+    }
+
+    /// Reads the accessibility texts again in the current language.
+    func relocalize() {
+        setAccessibilityLabel(tr("Zooms"))
+        setAccessibilityHelp(Self.hint)
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError("ZoomLaneView is created in code") }
@@ -152,7 +159,7 @@ final class ZoomLaneView: NSView {
         // Level and mode sit between the handles; what does not fit is left out, the level last.
         let ink = picked ? c.accentText : c.textPrimary
         let quiet = picked ? c.accentText : c.textSecondary
-        let level = Zoom.percent(zoom.scale) as NSString, mode = zoom.mode.title as NSString
+        let level = Digits.percent(zoom.scale) as NSString, mode = zoom.mode.localizedTitle as NSString
         let levelAttrs = DS.Text.readout.attributes(color: ink), modeAttrs = DS.Text.caption.attributes(color: quiet)
         let levelSize = level.size(withAttributes: levelAttrs), modeSize = mode.size(withAttributes: modeAttrs)
         let icon = DS.Size.iconSmall
@@ -337,7 +344,7 @@ final class ZoomLaneView: NSView {
             let element = ZoomAccessibilityElement()
             element.setAccessibilityParent(self)
             element.setAccessibilityRole(.button)
-            element.setAccessibilityLabel("Zoom \(Zoom.percent(zoom.scale)), \(Timecode.text(zoom.start)) to \(Timecode.text(zoom.end))")
+            element.setAccessibilityLabel(tr("Zoom {level}, {start} to {end}", ["level": Digits.percent(zoom.scale), "start": Timecode.text(zoom.start), "end": Timecode.text(zoom.end)]))
             element.setAccessibilitySelected(zoom.id == selection)
             element.setAccessibilityFrameInParentSpace(rect(of: zoom))
             element.setAccessibilityIdentifier("video.zoom.\(zoom.id.uuidString)")

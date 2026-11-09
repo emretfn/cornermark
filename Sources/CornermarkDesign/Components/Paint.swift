@@ -22,11 +22,13 @@ enum Paint {
         ceil(NSAttributedString(string: string, attributes: style.attributes(color: DS.Color.textPrimary)).size().width)
     }
 
-    /// Draws one line of text centred vertically in `rect`.
-    static func text(_ string: String, _ style: TextStyle, _ color: NSColor, in rect: CGRect, alignment: NSTextAlignment = .left) {
+    /// Draws one line of text centred vertically in `rect`. `.left` means the start of the line, so in a right-to-left view (`rtl`) it
+    /// sits against the rect's right edge and the line runs right to left.
+    static func text(_ string: String, _ style: TextStyle, _ color: NSColor, in rect: CGRect, alignment: NSTextAlignment = .left, rtl: Bool = false) {
         var attributes = style.attributes(color: color)
         let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
-        paragraph.alignment = alignment
+        paragraph.alignment = rtl && alignment == .left ? .right : alignment
+        if rtl { paragraph.baseWritingDirection = .rightToLeft }
         paragraph.lineBreakMode = .byTruncatingTail
         attributes[.paragraphStyle] = paragraph
         let line = CGRect(x: rect.minX, y: rect.midY - style.lineHeight / 2, width: rect.width, height: style.lineHeight)

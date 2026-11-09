@@ -24,6 +24,7 @@ checkResizePanelLayout()
 checkColourWell()
 checkOutputs()
 checkDrop()
+checkLanguageSwitch()
 checkPerformance()
 snapshotScenes()
 

@@ -1,4 +1,5 @@
 import AppKit
+import CornermarkL10n
 
 /// A field that picks one item of a list. It stays an NSPopUpButton, so its items, tags, `selectItem`, target/action, lookups typed
 /// `as? NSPopUpButton` and VoiceOver's popup button with its value keep working, but it never shows the system menu: it draws its own
@@ -60,17 +61,31 @@ public final class Select: NSPopUpButton {
         let c = DS.Color.self
         let state = interaction, look = Self.look(state)
         if let fill = look.fill { Paint.fill(.continuous(bounds, radius: DS.Radius.md), fill) }
+        let rects = triggerRects
+        Paint.symbol(Self.chevron, in: rects.chevron, pointSize: DS.Size.iconSmall, state == .disabled ? c.textDisabled : c.textSecondary)
+        if let image = selectedItem?.image, let rect = rects.image {
+            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: state == .disabled ? 0.45 : 1, respectFlipped: true, hints: nil)
+        }
+        Paint.text(titleOfSelectedItem ?? "", DS.Text.label, look.text, in: rects.title, rtl: isRightToLeft)
+    }
+
+    /// The trigger's parts. The chevron ends the field and the picked item's image and title lead it, so a right-to-left language
+    /// mirrors all three.
+    var triggerRects: (chevron: CGRect, image: CGRect?, title: CGRect) {
         let icon = DS.Size.iconSmall
         let chevron = CGRect(x: bounds.maxX - DS.Space.s8 - icon, y: 0, width: icon, height: bounds.height)
-        Paint.symbol(Self.chevron, in: chevron, pointSize: DS.Size.iconSmall, state == .disabled ? c.textDisabled : c.textSecondary)
         var x = DS.Space.s8
+        var imageRect: CGRect?
         if let image = selectedItem?.image {
             let size = image.size
-            image.draw(in: CGRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: size.width, height: size.height),
-                       from: .zero, operation: .sourceOver, fraction: state == .disabled ? 0.45 : 1, respectFlipped: true, hints: nil)
+            imageRect = mirrored(CGRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: size.width, height: size.height))
             x += size.width + DS.Space.s6
         }
-        Paint.text(titleOfSelectedItem ?? "", DS.Text.label, look.text, in: CGRect(x: x, y: 0, width: max(chevron.minX - DS.Space.s6 - x, 0), height: bounds.height))
+        return (mirrored(chevron), imageRect, mirrored(CGRect(x: x, y: 0, width: max(chevron.minX - DS.Space.s6 - x, 0), height: bounds.height)))
+    }
+
+    public override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { if oldValue != userInterfaceLayoutDirection { needsDisplay = true } }
     }
 
     public override var isEnabled: Bool {
@@ -165,8 +180,9 @@ public final class Select: NSPopUpButton {
         let rows = itemArray.map { SelectMenuList.Row(title: $0.title, image: $0.image, isEnabled: $0.isEnabled, isSeparator: $0.isSeparatorItem) }
         let menu = SelectMenuWindow(rows: rows, selected: indexOfSelectedItem, minWidth: bounds.width, appearance: effectiveAppearance)
         menu.list.onPick = { [weak self] in self?.pick($0) }
+        menu.list.applyLanguageDirection(userInterfaceLayoutDirection)
         let trigger = window.convertToScreen(convert(bounds, to: nil))
-        let frame = Self.place(menu.frame.size, under: trigger, within: window.screen?.visibleFrame)
+        let frame = Self.place(menu.frame.size, under: trigger, within: window.screen?.visibleFrame, direction: userInterfaceLayoutDirection)
         menu.setFrame(frame.rect, display: false)
         menu.level = NSWindow.Level(rawValue: max(window.level.rawValue, NSWindow.Level.popUpMenu.rawValue))
         menu.sharingType = window.sharingType
@@ -205,9 +221,10 @@ public final class Select: NSPopUpButton {
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
-    /// Where the menu goes: under the trigger, left edges aligned, or above it where the screen has no room below; always inside
-    /// the visible screen, on whole points.
-    static func place(_ size: CGSize, under trigger: CGRect, within visible: CGRect?) -> (rect: CGRect, above: Bool) {
+    /// Where the menu goes: under the trigger, leading edges aligned (right edges in a right-to-left language), or above it where the
+    /// screen has no room below; always inside the visible screen, on whole points.
+    static func place(_ size: CGSize, under trigger: CGRect, within visible: CGRect?,
+                      direction: NSUserInterfaceLayoutDirection = .leftToRight) -> (rect: CGRect, above: Bool) {
         let gap = DS.Space.s4
         let area = visible ?? .infinite
         var y = trigger.minY - gap - size.height
@@ -220,7 +237,8 @@ public final class Select: NSPopUpButton {
             }
         }
         y = min(max(y, area.minY), area.maxY - size.height)
-        let x = min(max(trigger.minX, area.minX), area.maxX - size.width)
+        let aligned = direction == .rightToLeft ? trigger.maxX - size.width : trigger.minX
+        let x = min(max(aligned, area.minX), area.maxX - size.width)
         return (CGRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height), above)
     }
 
@@ -329,7 +347,7 @@ final class SelectMenuWindow: NSPanel {
     }
 }
 
-/// The menu's rows: 28-point items with the picked one marked by a check on the right, hairline separators between groups.
+/// The menu's rows: 28-point items with the picked one marked by a check at the trailing end, hairline separators between groups.
 final class SelectMenuList: NSView {
     struct Row {
         var title: String
@@ -373,6 +391,10 @@ final class SelectMenuList: NSView {
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var userInterfaceLayoutDirection: NSUserInterfaceLayoutDirection {
+        didSet { if oldValue != userInterfaceLayoutDirection { needsDisplay = true } }
+    }
 
     func frame(of index: Int) -> CGRect { frames[index] }
 
@@ -424,17 +446,28 @@ final class SelectMenuList: NSView {
             }
             if i == highlighted { Paint.fill(.continuous(r, radius: DS.Radius.sm), c.bgControl) }
             let ink = row.isEnabled ? c.textPrimary : c.textDisabled
-            var x = r.minX + DS.Space.s8
-            if let image = row.image {
-                let size = image.size
-                image.draw(in: CGRect(x: x, y: (r.midY - size.height / 2).rounded(), width: size.width, height: size.height),
-                           from: .zero, operation: .sourceOver, fraction: row.isEnabled ? 1 : 0.45, respectFlipped: true, hints: nil)
-                x += size.width + DS.Space.s8
+            let parts = rects(ofRow: i)
+            if let image = row.image, let rect = parts.image {
+                image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: row.isEnabled ? 1 : 0.45, respectFlipped: true, hints: nil)
             }
-            let check = CGRect(x: r.maxX - DS.Space.s8 - DS.Size.iconSmall, y: r.minY, width: DS.Size.iconSmall, height: r.height)
-            Paint.text(row.title, i == selected ? DS.Text.bodyStrong : DS.Text.body, ink, in: CGRect(x: x, y: r.minY, width: check.minX - DS.Space.s8 - x, height: r.height))
-            if i == selected { Paint.symbol("checkmark", in: check, pointSize: DS.Size.iconSmall, c.textPrimary) }
+            Paint.text(row.title, i == selected ? DS.Text.bodyStrong : DS.Text.body, ink, in: parts.title, rtl: isRightToLeft)
+            if i == selected { Paint.symbol("checkmark", in: parts.check, pointSize: DS.Size.iconSmall, c.textPrimary) }
         }
+    }
+
+    /// The parts of row `i`. The image and title lead and the check trails, so a right-to-left language mirrors all three.
+    func rects(ofRow i: Int) -> (image: CGRect?, title: CGRect, check: CGRect) {
+        let r = frames[i]
+        var x = r.minX + DS.Space.s8
+        var imageRect: CGRect?
+        if let image = rows[i].image {
+            let size = image.size
+            imageRect = mirrored(CGRect(x: x, y: (r.midY - size.height / 2).rounded(), width: size.width, height: size.height))
+            x += size.width + DS.Space.s8
+        }
+        let check = CGRect(x: r.maxX - DS.Space.s8 - DS.Size.iconSmall, y: r.minY, width: DS.Size.iconSmall, height: r.height)
+        let title = CGRect(x: x, y: r.minY, width: check.minX - DS.Space.s8 - x, height: r.height)
+        return (imageRect, mirrored(title), mirrored(check))
     }
 
     override func accessibilityChildren() -> [Any]? {
@@ -445,7 +478,7 @@ final class SelectMenuList: NSView {
             element.setAccessibilityLabel(rows[i].title)
             element.setAccessibilitySelected(i == highlighted)
             element.setAccessibilityEnabled(rows[i].isEnabled)
-            element.setAccessibilityValue(i == selected ? "Selected" : nil)
+            element.setAccessibilityValue(i == selected ? tr("Selected") : nil)
             element.setAccessibilityFrameInParentSpace(frames[i])
             element.press = { [weak self] in self?.onPick(i) }
             return element

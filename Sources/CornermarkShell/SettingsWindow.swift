@@ -2,6 +2,7 @@ import AppKit
 import CornermarkCapture
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 import CornermarkVideoEditor
 
 @MainActor
@@ -15,6 +16,8 @@ struct SettingsContext {
 @MainActor
 class SettingsPane: NSViewController {
     let ctx: SettingsContext
+    /// Names the pane in accessibility identifiers. Stable English, unlike `paneTitle`, which follows the language.
+    var paneID: String { "" }
     var paneTitle: String { "" }
     var symbol: String { "gearshape" }
 
@@ -31,8 +34,17 @@ class SettingsPane: NSViewController {
     /// Writes the current settings into the controls.
     func update() {}
 
-    override func loadView() {
+    override func loadView() { install() }
+
+    /// Builds the page again in the current language and direction. The controls keep their state and the settings fill them in.
+    func rebuild() {
+        title = paneTitle
+        if isViewLoaded { install() }
+    }
+
+    private func install() {
         view = buildForm()
+        view.applyLanguageDirection()
         refresh()
     }
 
@@ -54,23 +66,27 @@ class SettingsPane: NSViewController {
 }
 
 final class GeneralPane: SettingsPane {
-    override var paneTitle: String { "General" }
+    override var paneID: String { "general" }
+    override var paneTitle: String { tr("General") }
     override var symbol: String { "gearshape" }
-    private let login = Form.checkbox("Launch Cornermark at login", id: "general.launchAtLogin")
+    private let language = Form.popup(id: "general.language")
+    private let login = Form.checkbox(id: "general.launchAtLogin")
     private let loginNote = Form.caption("", color: DS.Color.dangerText)
-    private let afterBoxes: [(AfterCapture, String, Checkbox)] = [
-        (.showOverlay, "Show Quick Access overlay", Form.checkbox("Show Quick Access overlay", id: "general.after.showOverlay")),
-        (.copy, "Copy to clipboard", Form.checkbox("Copy to clipboard", id: "general.after.copy")),
-        (.save, "Save to folder", Form.checkbox("Save to folder", id: "general.after.save")),
-        (.openEditor, "Open in editor", Form.checkbox("Open in editor", id: "general.after.openEditor")),
+    private let afterBoxes: [(AfterCapture, LocalizedText, Checkbox)] = [
+        (.showOverlay, trKey("Show Quick Access overlay"), Form.checkbox(id: "general.after.showOverlay")),
+        (.copy, trKey("Copy to clipboard"), Form.checkbox(id: "general.after.copy")),
+        (.save, trKey("Save to folder"), Form.checkbox(id: "general.after.save")),
+        (.openEditor, trKey("Open in editor"), Form.checkbox(id: "general.after.openEditor")),
     ]
     private let folderLabel = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
-    private let format = Form.popup(SaveFormat.allCases.map(\.title), id: "general.format")
-    private let sound = Form.checkbox("Play a sound after capture", id: "general.sound")
-    private let updates = Form.checkbox("Check for updates automatically", id: "general.checkForUpdates")
+    private let format = Form.popup(id: "general.format")
+    private let sound = Form.checkbox(id: "general.sound")
+    private let updates = Form.checkbox(id: "general.checkForUpdates")
     private let versionNote = Form.caption("")
 
     override func buildForm() -> FormPage {
+        buildLanguagePopup()
+        format.setTitles(SaveFormat.allCases.map(\.title))
         login.onAction { [unowned self] c in change { $0.launchAtLogin = (c as! NSButton).state == .on } }
         for (flag, _, box) in afterBoxes {
             box.onAction { [unowned self] c in
@@ -78,14 +94,14 @@ final class GeneralPane: SettingsPane {
                 change { if on { $0.afterCapture.insert(flag) } else { $0.afterCapture.remove(flag) } }
             }
         }
-        let choose = Button(title: "Choose\u{2026}", variant: .secondary, size: .small)
+        let choose = Button(title: tr("Choose\u{2026}"), variant: .secondary, size: .small)
         choose.setAccessibilityIdentifier("general.chooseFolder")
         choose.onAction { [unowned self] _ in
             ctx.env.pickFolder { url in
                 if let url { self.change { $0.saveFolder = url.path } }
             }
         }
-        let reset = Button(title: "Use Desktop", variant: .ghost, size: .small)
+        let reset = Button(title: tr("Use Desktop"), variant: .ghost, size: .small)
         reset.setAccessibilityIdentifier("general.resetFolder")
         reset.onAction { [unowned self] _ in change { $0.saveFolder = nil } }
         folderLabel.lineBreakMode = .byTruncatingMiddle
@@ -99,18 +115,38 @@ final class GeneralPane: SettingsPane {
         loginNote.isHidden = true
 
         return Form.page(title: paneTitle, groups: [
-            .init("Startup", rows: [Form.row(title: "Launch Cornermark at login", caption: loginNote, control: login)]),
-            .init("After capture", rows: afterBoxes.map { Form.row(title: $0.1, control: $0.2) }),
-            .init("Save", rows: [
-                Form.row(title: "Save folder", caption: folderLabel, control: Form.hstack([reset, choose])),
-                Form.row(title: "Format", control: format),
-            ], footer: "Files are named Cornermark YYYY-MM-DD at HH.MM.SS.png"),
-            .init("Feedback", rows: [Form.row(title: "Play a sound after capture", control: sound)]),
-            .init("Updates", rows: [Form.row(title: "Check for updates automatically", caption: versionNote, control: updates)]),
+            .init(rows: [Form.row(title: tr("Language"), control: language)]),
+            .init(tr("Startup"), rows: [Form.row(title: tr("Launch Cornermark at login"), caption: loginNote, control: login)]),
+            .init(tr("After capture"), rows: afterBoxes.map { Form.row(title: $0.1.text, control: $0.2) }),
+            .init(tr("Save"), rows: [
+                Form.row(title: tr("Save folder"), caption: folderLabel, control: Form.hstack([reset, choose])),
+                Form.row(title: tr("Format"), control: format),
+            ], footer: tr("Files are named {pattern}", ["pattern": "Cornermark YYYY-MM-DD at HH.MM.SS.png"])),
+            .init(tr("Feedback"), rows: [Form.row(title: tr("Play a sound after capture"), control: sound)]),
+            .init(tr("Updates"), rows: [Form.row(title: tr("Check for updates automatically"), caption: versionNote, control: updates)]),
         ])
     }
 
+    /// "System" first, then every language by its own name, which is never translated so anyone can find theirs.
+    private func buildLanguagePopup() {
+        // Built once: picking a language rebuilds this page from inside the popup's own action, which must not be replaced while it runs.
+        if language.numberOfItems == 0 {
+            language.addItem(withTitle: "")
+            language.menu?.addItem(.separator())
+            for l in Language.allCases {
+                language.addItem(withTitle: l.nativeName)
+                language.lastItem?.representedObject = l.rawValue
+            }
+            language.onAction { [unowned self] c in
+                let picked = ((c as! NSPopUpButton).selectedItem?.representedObject as? String).flatMap(Language.init(rawValue:))
+                change { $0.language = picked }
+            }
+        }
+        language.item(at: 0)?.title = tr("System")
+    }
+
     override func update() {
+        language.selectItem(at: settings.language.map { language.indexOfItem(withRepresentedObject: $0.rawValue) } ?? 0)
         login.state = settings.launchAtLogin ? .on : .off
         let err = ctx.loginError()
         loginNote.stringValue = err ?? ""
@@ -120,13 +156,15 @@ final class GeneralPane: SettingsPane {
         format.selectItem(at: SaveFormat.allCases.firstIndex(of: settings.imageFormat) ?? 0)
         sound.state = settings.playSound ? .on : .off
         updates.state = settings.checkForUpdatesAutomatically ? .on : .off
-        let version = ctx.env.updateService.currentVersion.map { "Version \($0). " } ?? ""
-        versionNote.stringValue = version + "Checks GitHub at launch and once a day, and sends no personal data."
+        versionNote.stringValue = ctx.env.updateService.currentVersion.map {
+            tr("Version {version}. Checks GitHub at launch and once a day, and sends no personal data.", ["version": $0.description])
+        } ?? tr("Checks GitHub at launch and once a day, and sends no personal data.")
     }
 }
 
 final class ShortcutsPane: SettingsPane {
-    override var paneTitle: String { "Shortcuts" }
+    override var paneID: String { "shortcuts" }
+    override var paneTitle: String { tr("Shortcuts") }
     override var symbol: String { "command" }
     private var recorders: [ActionID: ShortcutRecorderView] = [:]
     private var statusLabels: [ActionID: NSTextField] = [:]
@@ -148,7 +186,7 @@ final class ShortcutsPane: SettingsPane {
                     }
                 }
             }
-            let reset = IconButton(symbol: "arrow.counterclockwise", label: "Reset", size: .small, tone: .plain)
+            let reset = IconButton(symbol: "arrow.counterclockwise", label: tr("Reset"), size: .small, tone: .plain)
             reset.setAccessibilityIdentifier("shortcutReset.\(spec.id.rawValue)")
             reset.onAction { [unowned self] _ in
                 change { $0.customShortcuts[spec.id.rawValue] = nil; $0.disabledShortcuts.remove(spec.id.rawValue) }
@@ -159,7 +197,7 @@ final class ShortcutsPane: SettingsPane {
             statusLabels[spec.id] = status
             rows.append(Form.row(title: spec.title, caption: status, control: Form.hstack([reset, rec])))
         }
-        return Form.page(title: paneTitle, groups: [.init("Anywhere on your Mac", rows: rows)] + Self.editorGroups())
+        return Form.page(title: paneTitle, groups: [.init(tr("Anywhere on your Mac"), rows: rows)] + Self.editorGroups())
     }
 
     /// The video editor's keys, read from the table the editor answers from. They work only while an editor is in front, so they
@@ -171,7 +209,7 @@ final class ShortcutsPane: SettingsPane {
                 caps.setAccessibilityIdentifier("editorShortcut.\(shortcut.command.rawValue)")
                 return Form.row(title: shortcut.command.title, caption: shortcut.note.map { Form.caption($0) }, control: caps)
             }
-            return Form.Group(group.title, rows: rows, footer: group == .file ? "These keys work while a video editor window is in front." : nil)
+            return Form.Group(group.title, rows: rows, footer: group == .file ? tr("These keys work while a video editor window is in front.") : nil)
         }
     }
 
@@ -181,22 +219,28 @@ final class ShortcutsPane: SettingsPane {
             recorders[spec.id]?.hotKey = settings.hotKey(for: spec.id)
             guard let label = statusLabels[spec.id] else { continue }
             switch status[spec.id] ?? .unassigned {
-            case .registered: label.stringValue = "Active"; label.textColor = DS.Color.textSecondary
-            case .unassigned: label.stringValue = "Off"; label.textColor = DS.Color.textSecondary
-            case .failed(let why): label.stringValue = "Not working: \(why)"; label.textColor = DS.Color.dangerText
+            case .registered: label.stringValue = tr("Active"); label.textColor = DS.Color.textSecondary
+            case .unassigned: label.stringValue = tr("Off"); label.textColor = DS.Color.textSecondary
+            case .failed(let why): label.stringValue = tr("Not working: {reason}", ["reason": why]); label.textColor = DS.Color.dangerText
             }
         }
     }
 }
 
 final class QuickAccessPane: SettingsPane {
-    override var paneTitle: String { "Quick Access" }
+    override var paneID: String { "quick-access" }
+    override var paneTitle: String { tr("Quick Access") }
     override var symbol: String { "rectangle.stack" }
-    private let corner = Form.popup(ScreenCorner.allCases.map(\.title), id: "quick.corner")
-    private let size = Form.popup(OverlaySize.allCases.map(\.title), id: "quick.size")
-    private let autoClose = Form.popup(Settings.autoCloseChoices.map { $0.map { "After \(Int($0)) seconds" } ?? "Never" }, id: "quick.autoClose")
+    private let corner = Form.popup(id: "quick.corner")
+    private let size = Form.popup(id: "quick.size")
+    private let autoClose = Form.popup(id: "quick.autoClose")
 
     override func buildForm() -> FormPage {
+        corner.setTitles(ScreenCorner.allCases.map(\.title))
+        size.setTitles(OverlaySize.allCases.map(\.title))
+        autoClose.setTitles(Settings.autoCloseChoices.map {
+            $0.map { trPlural(one: "After {count} second", other: "After {count} seconds", count: Int($0)) } ?? tr("Never")
+        })
         corner.onAction { [unowned self] c in
             let i = (c as! NSPopUpButton).indexOfSelectedItem
             change { $0.overlayCorner = ScreenCorner.allCases[i] }
@@ -210,9 +254,9 @@ final class QuickAccessPane: SettingsPane {
             change { $0.overlayAutoClose = Settings.autoCloseChoices[i] }
         }
         return Form.page(title: paneTitle, groups: [.init(rows: [
-            Form.row(title: "Screen corner", control: corner),
-            Form.row(title: "Card size", control: size),
-            Form.row(title: "Close automatically", caption: Form.caption("The countdown pauses while the pointer is over a card."), control: autoClose),
+            Form.row(title: tr("Screen corner"), control: corner),
+            Form.row(title: tr("Card size"), control: size),
+            Form.row(title: tr("Close automatically"), caption: Form.caption(tr("The countdown pauses while the pointer is over a card.")), control: autoClose),
         ])])
     }
 
@@ -224,77 +268,85 @@ final class QuickAccessPane: SettingsPane {
 }
 
 final class CapturePane: SettingsPane {
-    override var paneTitle: String { "Capture" }
+    override var paneID: String { "capture" }
+    override var paneTitle: String { tr("Capture", context: "settings pane") }
     override var symbol: String { "camera.viewfinder" }
-    private let shadow = Form.checkbox("Include window shadow", id: "capture.shadow")
-    private let timer = Form.stepper(range: 1...60, id: "capture.timer", suffix: "s")
-    private let retention = Form.stepper(range: 1...365, id: "capture.retention", suffix: "days")
+    private let shadow = Form.checkbox(id: "capture.shadow")
+    private let timer = Form.stepper(range: 1...60, id: "capture.timer")
+    private let retention = Form.stepper(range: 1...365, id: "capture.retention")
 
     override func buildForm() -> FormPage {
+        [timer.label, retention.label].forEach { $0.alignment = Form.trailingAlignment }
         shadow.onAction { [unowned self] c in change { $0.windowShadow = (c as! NSButton).state == .on } }
         timer.stepper.onAction { [unowned self] c in change { $0.timerSeconds = Int((c as! NSStepper).intValue) } }
         retention.stepper.onAction { [unowned self] c in change { $0.retentionDays = Int((c as! NSStepper).intValue) } }
         return Form.page(title: paneTitle, groups: [.init(rows: [
-            Form.row(title: "Include window shadow", caption: Form.caption("Hold Option while clicking a window to flip this once."), control: shadow),
-            Form.row(title: "Timer", control: timer.view),
-            Form.row(title: "Keep history", caption: Form.caption("Older captures are deleted when Cornermark starts and once a day."), control: retention.view),
+            Form.row(title: tr("Include window shadow"), caption: Form.caption(tr("Hold Option while clicking a window to flip this once.")), control: shadow),
+            Form.row(title: tr("Timer"), control: timer.view),
+            Form.row(title: tr("Keep history"), caption: Form.caption(tr("Older captures are deleted when Cornermark starts and once a day.")), control: retention.view),
         ])])
     }
 
     override func update() {
         shadow.state = settings.windowShadow ? .on : .off
         timer.stepper.integerValue = settings.timerSeconds
-        timer.label.stringValue = "\(settings.timerSeconds) seconds"
+        timer.label.stringValue = trPlural(one: "{count} second", other: "{count} seconds", count: settings.timerSeconds)
         retention.stepper.integerValue = settings.retentionDays
-        retention.label.stringValue = "\(settings.retentionDays) days"
+        retention.label.stringValue = trPlural(one: "{count} day", other: "{count} days", count: settings.retentionDays)
     }
 }
 
 extension PixelDensity {
-    var title: String { self == .retina ? "Retina" : "Standard" }
+    var title: String { self == .retina ? tr("Retina") : tr("Standard") }
 }
 
 extension SizeLimit {
     var title: String {
         switch self {
-        case .none: return "No limit"
-        case .uhd: return "4K (3840 \u{00D7} 2160)"
-        case .qhd: return "1440p (2560 \u{00D7} 1440)"
-        case .fullHD: return "1080p (1920 \u{00D7} 1080)"
-        case .hd: return "720p (1280 \u{00D7} 720)"
+        case .none: return tr("No limit")
+        case .uhd: return tr("4K (3840 \u{00D7} 2160)")
+        case .qhd: return tr("1440p (2560 \u{00D7} 1440)")
+        case .fullHD: return tr("1080p (1920 \u{00D7} 1080)")
+        case .hd: return tr("720p (1280 \u{00D7} 720)")
         }
     }
 }
 
 final class RecordingPane: SettingsPane {
-    override var paneTitle: String { "Recording" }
+    override var paneID: String { "recording" }
+    override var paneTitle: String { tr("Recording") }
     override var symbol: String { "record.circle" }
-    private let fps = Form.popup(RecordingPreferences.fpsChoices.map { "\($0) fps" }, id: "recording.fps")
-    private let quality = Form.popup(VideoQuality.allCases.map(\.title), id: "recording.quality")
-    private let density = Form.popup(PixelDensity.allCases.map(\.title), id: "recording.resolution")
-    private let limit = Form.popup(SizeLimit.allCases.map(\.title), id: "recording.limit")
-    private let cursor = Form.checkbox("Show cursor", id: "recording.cursor")
-    private let quickAccess = Form.checkbox("Show Quick Access overlay", id: "recording.quickAccess")
-    private let countdown = Form.popup(RecordingPreferences.countdownChoices.map { $0 == 0 ? "Off" : "\($0) seconds" }, id: "recording.countdown")
-    private let dim = Form.checkbox("Dim outside the area", id: "recording.dim")
-    private let desktopIcons = Form.checkbox("Keep desktop icons out of the video", id: "recording.desktopIcons")
-    private let notifications = Form.checkbox("Keep notifications out of the video", id: "recording.notifications")
+    private let fps = Form.popup(id: "recording.fps")
+    private let quality = Form.popup(id: "recording.quality")
+    private let density = Form.popup(id: "recording.resolution")
+    private let limit = Form.popup(id: "recording.limit")
+    private let cursor = Form.checkbox(id: "recording.cursor")
+    private let quickAccess = Form.checkbox(id: "recording.quickAccess")
+    private let countdown = Form.popup(id: "recording.countdown")
+    private let dim = Form.checkbox(id: "recording.dim")
+    private let desktopIcons = Form.checkbox(id: "recording.desktopIcons")
+    private let notifications = Form.checkbox(id: "recording.notifications")
     private let inputStatus = NSTextField.label("", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
     private let inputDot = StatusDot()
     private let inputNote = Form.caption("")
-    private let inputOpen = Button(title: "Open System Settings", variant: .secondary, size: .small)
-    private let clicks = Form.checkbox("Highlight clicks", id: "recording.clicks")
-    private let clickColor = Form.popup(ClickHighlight.Color.allCases.map(\.title), id: "recording.clickColor")
-    private let clickStyle = Form.popup(ClickHighlight.Style.allCases.map(\.title), id: "recording.clickStyle")
-    private let clickSize = Form.popup(ClickHighlight.Size.allCases.map(\.title), id: "recording.clickSize")
-    private let clickAnimation = Form.checkbox("Animate clicks", id: "recording.clickAnimation")
-    private let keys = Form.checkbox("Show keystrokes", id: "recording.keys")
-    private let keyMode = Form.popup(KeystrokeDisplay.Keys.allCases.map(\.title), id: "recording.keyMode")
-    private let keyPosition = Form.popup(KeystrokeDisplay.panePositions.map(\.title), id: "recording.keyPosition")
-    private let keySize = Form.popup(KeystrokeDisplay.Size.allCases.map(\.title), id: "recording.keySize")
-    private let keyStyle = Form.popup(KeystrokeDisplay.Theme.allCases.map(\.title), id: "recording.keyStyle")
+    private let inputOpen = Button(title: "", variant: .secondary, size: .small)
+    private let clicks = Form.checkbox(id: "recording.clicks")
+    private let clickColor = Form.popup(id: "recording.clickColor")
+    private let clickStyle = Form.popup(id: "recording.clickStyle")
+    private let clickSize = Form.popup(id: "recording.clickSize")
+    private let clickAnimation = Form.checkbox(id: "recording.clickAnimation")
+    private let keys = Form.checkbox(id: "recording.keys")
+    private let keyMode = Form.popup(id: "recording.keyMode")
+    private let keyPosition = Form.popup(id: "recording.keyPosition")
+    private let keySize = Form.popup(id: "recording.keySize")
+    private let keyStyle = Form.popup(id: "recording.keyStyle")
 
     override func buildForm() -> FormPage {
+        fps.setTitles(RecordingPreferences.fpsChoices.map { tr("{fps} fps", ["fps": $0]) })
+        quality.setTitles(VideoQuality.allCases.map(\.title))
+        density.setTitles(PixelDensity.allCases.map(\.title))
+        limit.setTitles(SizeLimit.allCases.map(\.title))
+        countdown.setTitles(RecordingPreferences.countdownChoices.map { $0 == 0 ? tr("Off") : trPlural(one: "{count} second", other: "{count} seconds", count: $0) })
         fps.onAction { [unowned self] c in
             let i = (c as! NSPopUpButton).indexOfSelectedItem
             change { $0.recording.fps = RecordingPreferences.fpsChoices[i] }
@@ -322,37 +374,37 @@ final class RecordingPane: SettingsPane {
         notifications.onAction { [unowned self] c in change { $0.recording.hideNotifications = (c as! NSButton).state == .on } }
         buildInputControls()
         return Form.page(title: paneTitle, groups: [
-            .init("Video", rows: [
-                Form.row(title: "Frame rate", control: fps),
-                Form.row(title: "Quality", caption: Form.caption("Lower quality makes smaller files."), control: quality),
-                Form.row(title: "Resolution", caption: Form.caption("Standard records one pixel per point, a quarter of the pixels on a Retina display."), control: density),
-                Form.row(title: "Largest size", caption: Form.caption("A larger recording is scaled down to fit."), control: limit),
-            ], footer: "Recordings are saved to the save folder set in General."),
-            .init("Cursor", rows: [
-                Form.row(title: "Show cursor", caption: Form.caption("Record MP4 draws the cursor into the video. Record Project keeps it separate, so you can still hide it later."),
+            .init(tr("Video"), rows: [
+                Form.row(title: tr("Frame rate"), control: fps),
+                Form.row(title: tr("Quality"), caption: Form.caption(tr("Lower quality makes smaller files.")), control: quality),
+                Form.row(title: tr("Resolution"), caption: Form.caption(tr("Standard records one pixel per point, a quarter of the pixels on a Retina display.")), control: density),
+                Form.row(title: tr("Largest size"), caption: Form.caption(tr("A larger recording is scaled down to fit.")), control: limit),
+            ], footer: tr("Recordings are saved to the save folder set in General.")),
+            .init(tr("Cursor"), rows: [
+                Form.row(title: tr("Show cursor"), caption: Form.caption(tr("Record MP4 draws the cursor into the video. Record Project keeps it separate, so you can still hide it later.")),
                          control: cursor),
             ]),
-            .init("While recording", rows: [
-                Form.row(title: "Countdown", caption: Form.caption("Time to get ready before the first frame."), control: countdown),
-                Form.row(title: "Dim outside the area", caption: Form.caption("Darkens the rest of the screen while an area records. The video never shows it."), control: dim),
-                Form.row(title: "Keep desktop icons out of the video", caption: Form.caption("Finder windows are still recorded."), control: desktopIcons),
-                Form.row(title: "Keep notifications out of the video", caption: Form.caption("Notifications still appear on your screen."), control: notifications),
-            ], footer: "The display stays awake while recording."),
-            .init("Clicks", rows: [
-                Form.row(title: "Highlight clicks", caption: Form.caption("Draws a ring where you click. Record Project keeps every click, so you can add rings later."),
+            .init(tr("While recording"), rows: [
+                Form.row(title: tr("Countdown"), caption: Form.caption(tr("Time to get ready before the first frame.")), control: countdown),
+                Form.row(title: tr("Dim outside the area"), caption: Form.caption(tr("Darkens the rest of the screen while an area records. The video never shows it.")), control: dim),
+                Form.row(title: tr("Keep desktop icons out of the video"), caption: Form.caption(tr("Finder windows are still recorded.")), control: desktopIcons),
+                Form.row(title: tr("Keep notifications out of the video"), caption: Form.caption(tr("Notifications still appear on your screen.")), control: notifications),
+            ], footer: tr("The display stays awake while recording.")),
+            .init(tr("Clicks"), rows: [
+                Form.row(title: tr("Highlight clicks"), caption: Form.caption(tr("Draws a ring where you click. Record Project keeps every click, so you can add rings later.")),
                          control: clicks),
-                Form.row(title: "Ring", control: Form.hstack([clickColor, clickStyle, clickSize], spacing: DS.Space.s6)),
-                Form.row(title: "Animate clicks", control: clickAnimation),
+                Form.row(title: tr("Ring"), control: Form.hstack([clickColor, clickStyle, clickSize], spacing: DS.Space.s6)),
+                Form.row(title: tr("Animate clicks"), control: clickAnimation),
             ]),
-            .init("Keystrokes", rows: [
-                Form.row(title: "Show keystrokes", caption: Form.caption("Keys typed in password fields are never shown or saved."), control: keys),
-                Form.row(title: "Keys", caption: Form.caption("Shortcuts only shows keys pressed with Command or Control."), control: keyMode),
-                Form.row(title: "Badge", control: Form.hstack([keyPosition, keySize, keyStyle], spacing: DS.Space.s6)),
+            .init(tr("Keystrokes"), rows: [
+                Form.row(title: tr("Show keystrokes"), caption: Form.caption(tr("Keys typed in password fields are never shown or saved.")), control: keys),
+                Form.row(title: tr("Keys"), caption: Form.caption(tr("Shortcuts only shows keys pressed with Command or Control.")), control: keyMode),
+                Form.row(title: tr("Badge"), control: Form.hstack([keyPosition, keySize, keyStyle], spacing: DS.Space.s6)),
             ]),
             .init(rows: [
-                Form.row(title: "Input Monitoring", caption: inputNote, control: Form.hstack([inputDot, inputStatus, inputOpen], spacing: DS.Space.s6)),
+                Form.row(title: tr("Input Monitoring"), caption: inputNote, control: Form.hstack([inputDot, inputStatus, inputOpen], spacing: DS.Space.s6)),
             ]),
-            .init("After recording", rows: [Form.row(title: "Show Quick Access overlay", control: quickAccess)]),
+            .init(tr("After recording"), rows: [Form.row(title: tr("Show Quick Access overlay"), control: quickAccess)]),
         ])
     }
 
@@ -374,9 +426,17 @@ final class RecordingPane: SettingsPane {
     private func buildInputControls() {
         inputStatus.setAccessibilityIdentifier("recording.inputPermission")
         inputOpen.setAccessibilityIdentifier("recording.inputPermission.open")
+        inputOpen.relabel(tr("Open System Settings"))
         inputOpen.onAction { [unowned self] _ in ctx.env.openURL(AppEnvironment.inputMonitoringPaneURL) }
-        for (popup, name) in [(clickColor, "Ring color"), (clickStyle, "Ring style"), (clickSize, "Ring size"), (keyMode, "Keys"),
-                              (keyPosition, "Badge position"), (keySize, "Badge size"), (keyStyle, "Badge style")] {
+        clickColor.setTitles(ClickHighlight.Color.allCases.map(\.title))
+        clickStyle.setTitles(ClickHighlight.Style.allCases.map(\.title))
+        clickSize.setTitles(ClickHighlight.Size.allCases.map(\.title))
+        keyMode.setTitles(KeystrokeDisplay.Keys.allCases.map(\.title))
+        keyPosition.setTitles(KeystrokeDisplay.panePositions.map(\.title))
+        keySize.setTitles(KeystrokeDisplay.Size.allCases.map(\.title))
+        keyStyle.setTitles(KeystrokeDisplay.Theme.allCases.map(\.title))
+        for (popup, name) in [(clickColor, tr("Ring color")), (clickStyle, tr("Ring style")), (clickSize, tr("Ring size")),
+                              (keyPosition, tr("Badge position")), (keySize, tr("Badge size")), (keyStyle, tr("Badge style"))] {
             popup.setAccessibilityLabel(name)
         }
         for (i, color) in ClickHighlight.Color.allCases.enumerated() { clickColor.item(at: i)?.image = Self.swatch(color) }
@@ -412,16 +472,16 @@ final class RecordingPane: SettingsPane {
         keyStyle.selectItem(at: KeystrokeDisplay.Theme.allCases.firstIndex(of: r.keystrokes.theme) ?? 0)
         [keyMode, keyPosition, keySize, keyStyle].forEach { $0.isEnabled = r.keystrokes.isVisible }
         let allowed = ctx.env.hasInputPermission()
-        inputStatus.stringValue = allowed ? "Allowed" : "Not allowed"
+        inputStatus.stringValue = allowed ? tr("Allowed") : tr("Not allowed")
         let blocking = !allowed && r.showsInput
         inputStatus.textColor = allowed ? DS.Color.successText : blocking ? DS.Color.dangerText : DS.Color.textSecondary
         inputDot.color = inputStatus.textColor ?? DS.Color.textSecondary
         inputNote.textColor = blocking ? DS.Color.dangerText : DS.Color.textSecondary
         inputNote.stringValue = allowed
-            ? "Cornermark sees clicks and keys only while it records."
+            ? tr("Cornermark sees clicks and keys only while it records.")
             : blocking
-            ? "Clicks and keystrokes are not recorded. Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then quit and open Cornermark again."
-            : "Clicks and keystrokes need it. Recording works without it."
+            ? tr("Clicks and keystrokes are not recorded. Turn on Cornermark in System Settings > Privacy & Security > Input Monitoring, then quit and open Cornermark again.")
+            : tr("Clicks and keystrokes need it. Recording works without it.")
         inputOpen.variant = blocking ? .primary : .secondary
         inputOpen.isHidden = allowed
     }
@@ -441,19 +501,33 @@ final class RecordingPane: SettingsPane {
 }
 
 extension ClickHighlight.Color {
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .lemon: return tr("Lemon")
+        case .white: return tr("White")
+        case .orange: return tr("Orange")
+        case .red: return tr("Red")
+        case .green: return tr("Green")
+        }
+    }
 }
 
 extension ClickHighlight.Style {
-    var title: String { rawValue.capitalized }
+    var title: String { self == .outline ? tr("Outline") : tr("Filled") }
 }
 
 extension ClickHighlight.Size {
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .small: return tr("Small")
+        case .medium: return tr("Medium", context: "size")
+        case .large: return tr("Large")
+        }
+    }
 }
 
 extension KeystrokeDisplay.Keys {
-    var title: String { self == .all ? "All keys" : "Shortcuts only" }
+    var title: String { self == .all ? tr("All keys") : tr("Shortcuts only") }
 }
 
 extension KeystrokeDisplay {
@@ -462,11 +536,17 @@ extension KeystrokeDisplay {
 }
 
 extension KeystrokeDisplay.Size {
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .small: return tr("Small")
+        case .medium: return tr("Medium", context: "size")
+        case .large: return tr("Large")
+        }
+    }
 }
 
 extension KeystrokeDisplay.Theme {
-    var title: String { rawValue.capitalized }
+    var title: String { self == .dark ? tr("Dark") : tr("Light") }
 }
 
 /// A dot in a status colour. Drawn at draw time through `Glyph`, so the colour follows light and dark.
@@ -477,34 +557,37 @@ final class StatusDot: NSView {
 }
 
 final class PermissionsPane: SettingsPane {
-    override var paneTitle: String { "Permissions" }
+    override var paneID: String { "permissions" }
+    override var paneTitle: String { tr("Permissions") }
     override var symbol: String { "lock.shield" }
     private let status = NSTextField.label("", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
     private let dot = StatusDot()
     private let shortcuts = NSTextField.label("", style: DS.Text.body, color: DS.Color.textSecondary)
-    private let request = Button(title: "Request Access", variant: .secondary, size: .small)
-    private let open = Button(title: "Open System Settings", variant: .secondary, size: .small)
+    private let request = Button(title: "", variant: .secondary, size: .small)
+    private let open = Button(title: "", variant: .secondary, size: .small)
 
     override func buildForm() -> FormPage {
+        request.relabel(tr("Request Access"))
+        open.relabel(tr("Open System Settings"))
         status.setAccessibilityIdentifier("permissions.status")
         shortcuts.setAccessibilityIdentifier("permissions.shortcuts")
-        shortcuts.alignment = .right
+        shortcuts.alignment = Form.trailingAlignment
         open.setAccessibilityIdentifier("permissions.open")
         open.onAction { [unowned self] _ in ctx.env.openURL(AppEnvironment.screenCapturePaneURL) }
         request.setAccessibilityIdentifier("permissions.request")
         request.onAction { [unowned self] _ in ctx.env.requestScreenPermission(); refresh() }
         let buttons = Form.hstack([request, open])
         return Form.page(title: paneTitle, groups: [.init(rows: [
-            Form.row(title: "Screen recording", caption: Form.caption("macOS applies a newly granted permission only after Cornermark is quit and opened again."),
+            Form.row(title: tr("Screen recording"), caption: Form.caption(tr("macOS applies a newly granted permission only after Cornermark is quit and opened again.")),
                      control: Form.hstack([dot, status], spacing: DS.Space.s6)),
-            Form.row(title: "Global shortcuts", control: shortcuts),
+            Form.row(title: tr("Global shortcuts"), control: shortcuts),
             Form.row(title: "", control: buttons),
         ])])
     }
 
     override func update() {
         let granted = ctx.env.hasScreenPermission()
-        status.stringValue = granted ? "Allowed" : "Not allowed yet"
+        status.stringValue = granted ? tr("Allowed") : tr("Not allowed yet")
         status.textColor = granted ? DS.Color.successText : DS.Color.warningText
         dot.color = status.textColor ?? DS.Color.textSecondary
         // Once access is granted the buttons are shortcuts to a settled thing, so the primary action goes away.
@@ -513,19 +596,21 @@ final class PermissionsPane: SettingsPane {
         let failed = all.filter { if case .failed = $0.value { return true } else { return false } }
         let active = all.values.filter { $0 == .registered }.count
         shortcuts.stringValue = failed.isEmpty
-            ? "\(active) shortcuts active"
-            : "\(active) active, \(failed.count) not working. See the Shortcuts pane."
+            ? trPlural(one: "{count} shortcut active", other: "{count} shortcuts active", count: active)
+            : trPlural(one: "{active} active, {count} not working. See the Shortcuts pane.", other: "{active} active, {count} not working. See the Shortcuts pane.",
+                       count: failed.count, ["active": active])
         shortcuts.textColor = failed.isEmpty ? DS.Color.textSecondary : DS.Color.dangerText
     }
 }
 
-/// The left column: fills the window's full height under the traffic lights, on the surface colour, with one hairline on its right.
+/// The leading column: fills the window's full height under the traffic lights, on the surface colour, with one hairline on the
+/// side that faces the page.
 private final class SidebarView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         DS.Color.bgSurface.setFill()
         bounds.fill()
         DS.Color.separator.setFill()
-        NSRect(x: bounds.width - 1, y: 0, width: 1, height: bounds.height).fill()
+        NSRect(x: isRightToLeft ? 0 : bounds.width - 1, y: 0, width: 1, height: bounds.height).fill()
     }
 }
 
@@ -548,7 +633,7 @@ final class SettingsWindowController: NSWindowController {
 
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size), styleMask: [.titled, .closable, .fullSizeContentView],
                               backing: .buffered, defer: false)
-        window.title = "Cornermark Settings"
+        window.title = tr("Cornermark Settings")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
@@ -558,15 +643,37 @@ final class SettingsWindowController: NSWindowController {
         window.setFrame(NSRect(origin: .zero, size: Self.size), display: false)
         super.init(window: window)
         build(in: window)
+        window.contentView?.applyLanguageDirection()
         select(pane: panes[0])
         window.center()
         // A pane that listens to the microphone stops when the window closes.
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.selectedPane.paneDidHide() }
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(languageDidChange), name: L10n.didChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit { NotificationCenter.default.removeObserver(self, name: L10n.didChange, object: nil) }
+
+    /// Every pane builds its page again in the new language and direction. The window keeps its frame, the selected pane and how far
+    /// its page is scrolled.
+    @objc private func languageDidChange() {
+        guard let window else { return }
+        let offset = scroll.contentView.bounds.origin
+        window.title = tr("Cornermark Settings")
+        for (item, pane) in zip(items, panes) {
+            pane.rebuild()
+            item.title = pane.paneTitle
+            item.setAccessibilityLabel(pane.paneTitle)
+        }
+        scroll.documentView = selectedPane.view
+        window.contentView?.applyLanguageDirection()
+        window.contentView?.layoutSubtreeIfNeeded()
+        scroll.contentView.scroll(to: offset)
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
 
     private func build(in window: NSWindow) {
         let sidebar = SidebarView()
@@ -578,7 +685,7 @@ final class SettingsWindowController: NSWindowController {
         sidebar.addSubview(stack)
         for (i, item) in items.enumerated() {
             item.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            item.setAccessibilityIdentifier("settings.sidebar.\(panes[i].paneTitle.lowercased().replacingOccurrences(of: " ", with: "-"))")
+            item.setAccessibilityIdentifier("settings.sidebar.\(panes[i].paneID)")
             item.onAction { [unowned self] _ in select(pane: panes[i]) }
         }
         NSLayoutConstraint.activate([

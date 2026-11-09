@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkCore
+import CornermarkL10n
 
 /// Where the status item button is, so the panel can open under it.
 struct MenuAnchor {
@@ -64,12 +65,16 @@ final class MenuPanelController {
     private var localMonitor: Any?
     private var resignObserver: NSObjectProtocol?
     private var resignedAt: TimeInterval?
+    private var language: LanguageObserver?
 
     /// What a chosen item does. Tests swap it for a recorder.
     lazy var run: (PanelItem) -> Void = { [unowned self] item in coordinator.perform(menu: item) }
     var onOpenChange: (Bool) -> Void = { _ in }
 
-    init(coordinator: AppCoordinator) { self.coordinator = coordinator }
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        language = LanguageObserver { [weak self] in self?.refresh(force: true) }
+    }
 
     func currentModel() -> MenuPanelModel {
         let c = coordinator
@@ -145,10 +150,11 @@ final class MenuPanelController {
     }
 
     /// Rebuilds the open panel when what it shows changed, such as an update becoming available. Keeps the keyboard focus.
-    func refresh() {
+    /// A language change rebuilds it even when the model is equal, because the layout direction may have changed.
+    func refresh(force: Bool = false) {
         guard isOpen, let anchor, let panel, let old = panel.contentView as? MenuPanelView else { return }
         let model = currentModel()
-        guard model != self.model else { return }
+        guard force || model != self.model else { return }
         self.model = model
         let view = MenuPanelView(model: model, host: host, focus: old.focus)
         // The window resizes its content view to its own size once it is assigned, so the wanted size is read first.

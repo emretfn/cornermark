@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 /// What the What's New window shows. `.loaded` is never empty.
 enum WhatsNewContent: Equatable {
@@ -23,8 +24,8 @@ private final class Column: NSStackView {
 @MainActor
 final class WhatsNewWindowController: NSWindowController {
     static let releasesPage = URL(string: "https://github.com/emretfn/cornermark/releases")!
-    static let emptyVersionNote = "Small fixes and improvements."
-    static let failureNote = "Cornermark could not load the release notes."
+    static var emptyVersionNote: String { tr("Small fixes and improvements.") }
+    static var failureNote: String { tr("Cornermark could not load the release notes.") }
 
     private static let width: CGFloat = 480
     private static let inner = width - 2 * DS.Space.s24
@@ -32,13 +33,14 @@ final class WhatsNewWindowController: NSWindowController {
     private let env: AppEnvironment
     private let scroll = NSScrollView()
     private var load: Task<Void, Never>?
+    private var language: LanguageObserver?
     private(set) var content: WhatsNewContent = .loading
 
     init(env: AppEnvironment) {
         self.env = env
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 560),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true)
-        window.title = "What's New"
+        window.title = tr("What's New")
         window.backgroundColor = DS.Color.bgWindow
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: Self.width, height: 280)
@@ -64,9 +66,22 @@ final class WhatsNewWindowController: NSWindowController {
         window.contentView = root
         window.center()
         render()
+        root.applyLanguageDirection()
+        language = LanguageObserver { [weak self] in self?.relocalize() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Draws the notes again in the new language at the place the reader had scrolled to. The notes themselves are the release's own
+    /// text and stay as published.
+    private func relocalize() {
+        window?.title = tr("What's New")
+        let offset = scroll.contentView.bounds.origin
+        render()
+        window?.contentView?.applyLanguageDirection()
+        scroll.contentView.scroll(to: offset)
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
 
     /// Shows the loading state and fetches the history again.
     func reload() {
@@ -96,7 +111,7 @@ final class WhatsNewWindowController: NSWindowController {
 
         switch content {
         case .loading:
-            column.addArrangedSubview(Self.text("Loading release notes\u{2026}", DS.Text.body, DS.Color.textSecondary, width: Self.inner))
+            column.addArrangedSubview(Self.text(tr("Loading release notes\u{2026}"), DS.Text.body, DS.Color.textSecondary, width: Self.inner))
         case .failed:
             column.addArrangedSubview(failureView())
         case .loaded(let entries):
@@ -112,6 +127,7 @@ final class WhatsNewWindowController: NSWindowController {
         }
 
         column.translatesAutoresizingMaskIntoConstraints = false
+        column.applyLanguageDirection()
         scroll.documentView = column
         let clip = scroll.contentView
         NSLayoutConstraint.activate([
@@ -124,7 +140,7 @@ final class WhatsNewWindowController: NSWindowController {
     }
 
     private func failureView() -> NSView {
-        let button = Button(title: "Open Releases Page", variant: .secondary)
+        let button = Button(title: tr("Open Releases Page"), variant: .secondary)
         button.target = self
         button.action = #selector(openReleasesPage)
         button.setAccessibilityIdentifier("whatsnew.openReleases")
@@ -136,9 +152,9 @@ final class WhatsNewWindowController: NSWindowController {
     }
 
     private func versionView(_ entry: ReleaseEntry, installed: Bool) -> NSView {
-        let title = NSTextField.label("Version \(entry.version)", style: DS.Text.heading, color: DS.Color.textPrimary)
+        let title = NSTextField.label(tr("Version {version}", ["version": "\(entry.version)"]), style: DS.Text.heading, color: DS.Color.textPrimary)
         var head: [NSView] = [title]
-        if installed { head.append(Badge(text: "Installed", symbol: "checkmark.circle")) }
+        if installed { head.append(Badge(text: tr("Installed"), symbol: "checkmark.circle")) }
         let header = NSStackView(views: head)
         header.orientation = .horizontal
         header.alignment = .centerY
@@ -146,7 +162,7 @@ final class WhatsNewWindowController: NSWindowController {
 
         var rows: [NSView] = [header]
         if let date = entry.publishedAt {
-            rows.append(NSTextField.label(date.formatted(date: .long, time: .omitted), style: DS.Text.caption, color: DS.Color.textSecondary))
+            rows.append(NSTextField.label(date.formatted(Date.FormatStyle(date: .long, time: .omitted).locale(L10n.locale)), style: DS.Text.caption, color: DS.Color.textSecondary))
         }
         let stack = NSStackView(views: rows)
         stack.orientation = .vertical
@@ -160,7 +176,7 @@ final class WhatsNewWindowController: NSWindowController {
         }
         for (index, section) in sections.enumerated() {
             if !section.title.isEmpty {
-                let label = NSTextField.label(section.title, style: DS.Text.captionStrong, color: DS.Color.textSecondary)
+                let label = NSTextField.label(section.displayTitle, style: DS.Text.captionStrong, color: DS.Color.textSecondary)
                 stack.addArrangedSubview(label)
                 stack.setCustomSpacing(DS.Space.s6, after: label)
             }

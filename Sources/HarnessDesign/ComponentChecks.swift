@@ -118,7 +118,7 @@ private func behaviour() {
     check("Label takes its font and colour role from the style", label.font == DS.Text.captionStrong.font && label.textColor == DS.Color.textSecondary && !label.isEditable)
 
     let input = TextInput(placeholder: "W", size: .regular, monospaced: true)
-    check("monospaced TextInput uses the readout font", input.font == DS.Text.readout.font && input.alignment == .left)
+    check("monospaced TextInput uses the readout font", input.font == DS.Text.readout.font && input.alignment == .natural)
     check("TextInput placeholder is textSecondary and its text textPrimary", input.textColor == DS.Color.textPrimary
         && (input.placeholderAttributedString?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor) == DS.Color.textSecondary)
     input.isEnabled = false

@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 import ObjectiveC
 
 private final class ClosureTarget: NSObject {
@@ -35,8 +36,8 @@ final class ShortcutRecorderView: NSView {
     var isRecording: Bool { phase != .idle }
 
     static let width: CGFloat = 140
-    static let waitingPrompt = "Type shortcut\u{2026}"
-    static let modifierHint = "Add \u{2303} \u{2325} \u{21E7} or \u{2318}"
+    static var waitingPrompt: String { tr("Type shortcut\u{2026}") }
+    static var modifierHint: String { tr("Add \u{2303} \u{2325} \u{21E7} or \u{2318}") }
 
     var recordingPrompt: String? {
         switch phase {
@@ -118,7 +119,7 @@ final class ShortcutRecorderView: NSView {
         let text: String, color: NSColor
         if let recordingPrompt { text = recordingPrompt; color = DS.Color.textSecondary }
         else if let hotKey { text = hotKey.displayString; color = DS.Color.textPrimary }
-        else { text = "Not set"; color = DS.Color.textDisabled }
+        else { text = tr("Not set"); color = DS.Color.textDisabled }
         let style = DS.Text.bodyStrong
         var attributes = style.attributes(color: color)
         let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
@@ -130,7 +131,7 @@ final class ShortcutRecorderView: NSView {
     }
 }
 
-/// One settings row: the title on the left with an optional caption under it, the control on the right and centred.
+/// One settings row: the title on the leading side with an optional caption under it, the control on the trailing side and centred.
 /// Laid out by hand at a fixed width, so its height is known without a layout pass and a caption that changes can be re-measured.
 final class FormRow: NSView {
     static let minHeight: CGFloat = 44
@@ -149,8 +150,8 @@ final class FormRow: NSView {
         self.control = control
         super.init(frame: .zero)
         for view in [titleField, caption, control] { if let view { addSubview(view) } }
-        // A popup announces only its value, so it borrows the row's title as its name.
-        if let popup = control as? NSPopUpButton, (popup.accessibilityLabel() ?? "").isEmpty, !title.isEmpty { popup.setAccessibilityLabel(title) }
+        // A popup announces only its value and a checkbox only its state, so each takes the row's title as its name.
+        if let control, control is NSPopUpButton || control is Checkbox, !title.isEmpty { control.setAccessibilityLabel(title) }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -202,22 +203,22 @@ final class FormRow: NSView {
         let inset = Form.labelInset
         var y = ((m.height - (titleField == nil ? 0 : Self.titleStyle.lineHeight) - (m.captionHeight > 0 ? (titleField == nil ? 0 : DS.Space.s2) + m.captionHeight : 0)) / 2).rounded()
         if let titleField {
-            titleField.frame = CGRect(x: x - inset, y: y, width: m.textWidth + 2 * inset, height: Self.titleStyle.lineHeight)
+            titleField.frame = mirrored(CGRect(x: x - inset, y: y, width: m.textWidth + 2 * inset, height: Self.titleStyle.lineHeight), within: width)
             y += Self.titleStyle.lineHeight + DS.Space.s2
         }
         if let caption {
-            if m.captionHeight > 0 { caption.frame = CGRect(x: x - inset, y: y, width: m.textWidth + 2 * inset, height: m.captionHeight) }
+            if m.captionHeight > 0 { caption.frame = mirrored(CGRect(x: x - inset, y: y, width: m.textWidth + 2 * inset, height: m.captionHeight), within: width) }
         }
         if let control, m.controlSize.width > 0 {
             // A right-aligned label's last glyph ends `inset` short of its frame, so its frame reaches past the padding line.
             let reach = control is NSTextField ? inset : 0
-            control.frame = CGRect(x: width - x - m.controlSize.width + reach, y: ((m.height - m.controlSize.height) / 2).rounded(),
-                                   width: m.controlSize.width, height: m.controlSize.height)
+            control.frame = mirrored(CGRect(x: width - x - m.controlSize.width + reach, y: ((m.height - m.controlSize.height) / 2).rounded(),
+                                            width: m.controlSize.width, height: m.controlSize.height), within: width)
         }
     }
 }
 
-/// The grouped card: rows on a surface with a hairline between them, inset on the left.
+/// The grouped card: rows on a surface with a hairline between them, inset on the leading side.
 final class FormCard: NSView {
     private(set) var rows: [FormRow]
     private var separators: [NSView] = []
@@ -276,11 +277,11 @@ final class FormCard: NSView {
     }
 }
 
-/// A 1pt line that starts s16 in from the card's left edge and runs to its right edge.
+/// A 1pt line that starts s16 in from the card's leading edge and runs to its trailing edge.
 private final class InsetSeparator: NSView {
     override func draw(_ dirtyRect: NSRect) {
         DS.Color.separator.setFill()
-        NSRect(x: DS.Space.s16, y: 0, width: max(bounds.width - DS.Space.s16, 0), height: bounds.height).fill()
+        mirrored(NSRect(x: DS.Space.s16, y: 0, width: max(bounds.width - DS.Space.s16, 0), height: bounds.height)).fill()
     }
 }
 
@@ -383,33 +384,53 @@ enum Form {
         return s
     }
 
-    /// The design system's checkbox without a title: the row owns the visible label, so the box keeps it for accessibility.
-    static func checkbox(_ title: String, id: String) -> Checkbox {
+    /// The design system's checkbox without a title: the row owns the visible label and gives it to the box as its name.
+    static func checkbox(id: String) -> Checkbox {
         let b = Checkbox(title: "")
-        b.setAccessibilityLabel(title)
         b.setAccessibilityIdentifier(id)
         return b
     }
 
-    static func popup(_ titles: [String], id: String) -> NSPopUpButton {
+    /// A popup with no items yet. Its pane sets the titles each time it builds its page, so they follow the language.
+    static func popup(id: String) -> NSPopUpButton {
         let p = NSPopUpButton(frame: .zero, pullsDown: false)
         p.controlSize = .small
         p.font = DS.Text.label.font
-        p.addItems(withTitles: titles)
         p.setAccessibilityIdentifier(id)
         return p
     }
 
-    static func stepper(range: ClosedRange<Int>, id: String, suffix: String) -> (view: NSView, stepper: NSStepper, label: NSTextField) {
+    /// `.right` in a left-to-right language and `.left` in a right-to-left one, for a value that sits against a control after it.
+    static var trailingAlignment: NSTextAlignment { L10n.isRightToLeft ? .left : .right }
+
+    static func stepper(range: ClosedRange<Int>, id: String) -> (view: NSView, stepper: NSStepper, label: NSTextField) {
         let st = NSStepper()
         st.controlSize = .small
         st.minValue = Double(range.lowerBound); st.maxValue = Double(range.upperBound); st.increment = 1
         st.valueWraps = false
         st.setAccessibilityIdentifier(id)
         let label = NSTextField.label("", style: DS.Text.bodyStrong, color: DS.Color.textPrimary)
-        label.alignment = .right
         label.setAccessibilityIdentifier(id + ".value")
         label.widthAnchor.constraint(equalToConstant: 72).isActive = true
         return (hstack([label, st], spacing: DS.Space.s8), st, label)
+    }
+}
+
+extension NSPopUpButton {
+    /// Replaces the items with `titles`, keeping the selected index.
+    func setTitles(_ titles: [String]) {
+        guard itemTitles != titles else { return }
+        let selected = indexOfSelectedItem
+        removeAllItems()
+        addItems(withTitles: titles)
+        if selected >= 0, selected < numberOfItems { selectItem(at: selected) }
+    }
+}
+
+extension Button {
+    /// Sets the title and the spoken name together, which `title` alone does not.
+    func relabel(_ text: String) {
+        title = text
+        setAccessibilityLabel(text)
     }
 }

@@ -1,3 +1,4 @@
+import CornermarkL10n
 import Foundation
 
 /// One section of the settings rail, in rail order.
@@ -6,13 +7,13 @@ public enum EditorSection: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .cursor: return "Cursor"
-        case .clicks: return "Clicks"
-        case .keystrokes: return "Keystrokes"
-        case .audio: return "Audio"
-        case .camera: return "Camera"
-        case .background: return "Background"
-        case .motionBlur: return "Motion Blur"
+        case .cursor: return tr("Cursor")
+        case .clicks: return tr("Clicks")
+        case .keystrokes: return tr("Keystrokes")
+        case .audio: return tr("Audio")
+        case .camera: return tr("Camera")
+        case .background: return tr("Background")
+        case .motionBlur: return tr("Motion Blur")
         }
     }
 

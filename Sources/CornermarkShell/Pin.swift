@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 
 final class BlockMenuItem: NSMenuItem {
     private let handler: () -> Void
@@ -40,7 +41,7 @@ final class PinWindow: NSPanel {
     }
 }
 
-final class PinContentView: NSView {
+final class PinContentView: NSView, KeepsLeftToRight {
     weak var controller: PinController?
     private let closeButton = CardAction.close.makeButton()
     private var hovering = false
@@ -60,9 +61,16 @@ final class PinContentView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The picture is never mirrored, but the close button is chrome and sits in the corner the language starts from.
     override func layout() {
         super.layout()
-        closeButton.frame = NSRect(x: 6, y: bounds.height - 28, width: 22, height: 22)
+        let width: CGFloat = 22
+        closeButton.frame = NSRect(x: L10n.isRightToLeft ? bounds.width - 6 - width : 6, y: bounds.height - 28, width: width, height: width)
+    }
+
+    func relocalize() {
+        closeButton.rename(CardAction.close.title)
+        needsLayout = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -135,10 +143,17 @@ final class PinController: NSObject, NSWindowDelegate {
         window.controller = self
         window.delegate = self
         window.contentView = PinContentView(controller: self)
-        window.title = "Pinned screenshot"
+        window.title = tr("Pinned screenshot")
+        language = LanguageObserver { [weak self] in
+            guard let self else { return }
+            window.title = tr("Pinned screenshot")
+            (window.contentView as? PinContentView)?.relocalize()
+        }
     }
 
-    var sizeText: String { "\(image.width) \u{00D7} \(image.height)" }
+    private var language: LanguageObserver?
+
+    var sizeText: String { ImageOutput.dimensionText(CGSize(width: image.width, height: image.height)) }
 
     var opacity: CGFloat {
         get { window.alphaValue }
@@ -200,27 +215,27 @@ final class PinController: NSObject, NSWindowDelegate {
 
     func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(BlockMenuItem("Copy") { [weak self] in if let self { self.onCopy(self.image) } })
+        menu.addItem(BlockMenuItem(tr("Copy")) { [weak self] in if let self { self.onCopy(self.image) } })
         let opacityMenu = NSMenu()
         for pct in [100, 75, 50, 25] {
-            let item = BlockMenuItem("\(pct)%") { [weak self] in self?.opacity = CGFloat(pct) / 100 }
+            let item = BlockMenuItem((Double(pct) / 100).formatted(.percent.locale(L10n.locale))) { [weak self] in self?.opacity = CGFloat(pct) / 100 }
             item.state = abs(opacity - CGFloat(pct) / 100) < 0.01 ? .on : .off
             opacityMenu.addItem(item)
         }
-        let opacityItem = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
+        let opacityItem = NSMenuItem(title: tr("Opacity"), action: nil, keyEquivalent: "")
         opacityItem.submenu = opacityMenu
         menu.addItem(opacityItem)
         let sizeMenu = NSMenu()
-        sizeMenu.addItem(BlockMenuItem("Actual Size") { [weak self] in self?.resetSize() })
-        sizeMenu.addItem(BlockMenuItem("Zoom In") { [weak self] in self?.zoom(by: 1.25) })
-        sizeMenu.addItem(BlockMenuItem("Zoom Out") { [weak self] in self?.zoom(by: 0.8) })
-        let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
+        sizeMenu.addItem(BlockMenuItem(tr("Actual Size")) { [weak self] in self?.resetSize() })
+        sizeMenu.addItem(BlockMenuItem(tr("Zoom In")) { [weak self] in self?.zoom(by: 1.25) })
+        sizeMenu.addItem(BlockMenuItem(tr("Zoom Out")) { [weak self] in self?.zoom(by: 0.8) })
+        let sizeItem = NSMenuItem(title: tr("Size"), action: nil, keyEquivalent: "")
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
         menu.addItem(.separator())
-        let lock = BlockMenuItem("Lock Mode (click-through)") { [weak self] in self?.setLocked(true) }
+        let lock = BlockMenuItem(tr("Lock Mode (click-through)")) { [weak self] in self?.setLocked(true) }
         menu.addItem(lock)
-        menu.addItem(BlockMenuItem("Close") { [weak self] in self?.close() })
+        menu.addItem(BlockMenuItem(tr("Close")) { [weak self] in self?.close() })
         return menu
     }
 }
@@ -259,7 +274,7 @@ final class PinManager {
 
     /// What the menu bar panel lists, in the order the pins were made.
     var summaries: [PinSummary] {
-        pins.enumerated().map { PinSummary(id: $1.id, title: "Pin \($0 + 1) \u{2013} \($1.sizeText)", isLocked: $1.isLocked) }
+        pins.enumerated().map { PinSummary(id: $1.id, title: tr("Pin {number} \u{2013} {size}", ["number": $0 + 1, "size": $1.sizeText]), isLocked: $1.isLocked) }
     }
 
     func toggleLock(_ id: UUID) {

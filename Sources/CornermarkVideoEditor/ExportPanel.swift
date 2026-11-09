@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 public enum ExportPhase: Equatable, Sendable {
     case closed
@@ -19,15 +20,15 @@ final class ExportPanel: Surface {
     var onExport: () -> Void = {}
     var onCancel: () -> Void = {}
 
-    private let title = NSTextField.label("Export", style: DS.Text.heading, color: DS.Color.textPrimary)
+    private let title = NSTextField.label(tr("Export"), style: DS.Text.heading, color: DS.Color.textPrimary)
     private let resolution = Select()
     private let quality = Slider()
     private let estimate = NSTextField.label("", style: DS.Text.body, color: DS.Color.textPrimary)
     private let details = NSTextField.label("", style: DS.Text.caption, color: DS.Color.textSecondary)
     private let bar = ProgressBar()
-    private let percent = NSTextField.label("0%", style: DS.Text.readout, color: DS.Color.textPrimary)
-    private let cancel = Button(title: "Cancel", variant: .secondary)
-    private let start = Button(title: "Export", variant: .primary, shortcut: "\u{21A9}")
+    private let percent = NSTextField.label(Digits.percent(0), style: DS.Text.readout, color: DS.Color.textPrimary)
+    private let cancel = Button(title: tr("Cancel"), variant: .secondary)
+    private let start = Button(title: tr("Export"), variant: .primary, shortcut: "\u{21A9}")
     private var choosingRows: [NSView] = []
     private var progressRows: [NSView] = []
     private var choices: [ExportResolution] = []
@@ -45,14 +46,15 @@ final class ExportPanel: Surface {
         let exporting = phase.isExporting
         choosingRows.forEach { $0.isHidden = exporting }
         progressRows.forEach { $0.isHidden = !exporting }
-        title.stringValue = exporting ? "Exporting video" : "Export"
+        title.stringValue = exporting ? tr("Exporting video") : tr("Export")
         start.isHidden = exporting
 
         let options = ExportResolution.choices(for: project)
         // A background changes the sizes without changing the choices.
         let titles = options.map { option in
             let plan = ExportPlan(project: project, settings: ExportSettings(resolution: option, quality: settings.quality))
-            return "\(plan.width) \u{00D7} \(plan.height)" + (option == .original ? " (Original)" : "")
+            let size = ["width": Digits.text(plan.width), "height": Digits.text(plan.height)]
+            return option == .original ? tr("{width} \u{00D7} {height} (Original)", size) : tr("{width} \u{00D7} {height}", size)
         }
         if options != choices || titles != resolution.itemTitles {
             choices = options
@@ -61,30 +63,29 @@ final class ExportPanel: Surface {
         }
         resolution.selectItem(at: options.firstIndex(of: settings.resolution) ?? 0)
         quality.doubleValue = Double(settings.quality.rawValue)
-        quality.setAccessibilityValueDescription(settings.quality.title)
+        quality.setAccessibilityValueDescription(settings.quality.localizedTitle)
 
         let plan = ExportPlan(project: project, settings: settings, sourceBytes: sourceBytes)
         let size = Self.bytes(plan.estimatedBytes)
-        estimate.stringValue = "About \(size)"
-        details.stringValue = "\(plan.width) \u{00D7} \(plan.height), \(plan.fps) fps, \(Timecode.text(plan.duration)), " + (exporting ? "about \(size)" : "H.264")
+        estimate.stringValue = tr("About {size}", ["size": size])
+        let facts = ["width": Digits.text(plan.width), "height": Digits.text(plan.height), "fps": Digits.text(plan.fps), "duration": Timecode.text(plan.duration), "size": size]
+        details.stringValue = exporting ? tr("{width} \u{00D7} {height}, {fps} fps, {duration}, about {size}", facts) : tr("{width} \u{00D7} {height}, {fps} fps, {duration}, H.264", facts)
         if case .exporting(let fraction) = phase {
             bar.fraction = fraction
-            let p = Int((fraction * 100).rounded(.down))
-            percent.stringValue = "\(p)%"
+            percent.stringValue = Digits.percent(Double(Int((fraction * 100).rounded(.down))) / 100)
             bar.setAccessibilityValue(NSNumber(value: fraction))
         }
     }
 
     static func bytes(_ count: Int64) -> String {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        f.allowedUnits = [.useKB, .useMB, .useGB]
-        return f.string(fromByteCount: count)
+        let text = count.formatted(.byteCount(style: .file, allowedUnits: [.kb, .mb, .gb]).locale(L10n.locale))
+        // The unit English has always shown here.
+        return L10n.language == .en ? text.replacingOccurrences(of: "kB", with: "KB") : text
     }
 
     private func build() {
         resolution.setAccessibilityIdentifier("video.export.resolution")
-        resolution.setAccessibilityLabel("Resolution")
+        resolution.setAccessibilityLabel(tr("Resolution"))
         resolution.target = self
         resolution.action = #selector(resolutionChanged)
 
@@ -93,10 +94,10 @@ final class ExportPanel: Surface {
         quality.numberOfTickMarks = ExportQuality.allCases.count
         quality.allowsTickMarkValuesOnly = true
         quality.style = .field
-        quality.format = { ExportQuality.allCases[min(max(Int($0.rounded()), 0), ExportQuality.allCases.count - 1)].title }
+        quality.format = { ExportQuality.allCases[min(max(Int($0.rounded()), 0), ExportQuality.allCases.count - 1)].localizedTitle }
         quality.isContinuous = true
         quality.setAccessibilityIdentifier("video.export.quality")
-        quality.setAccessibilityLabel("Quality")
+        quality.setAccessibilityLabel(tr("Quality"))
         quality.target = self
         quality.action = #selector(qualityChanged)
 
@@ -107,7 +108,8 @@ final class ExportPanel: Surface {
         details.preferredMaxLayoutWidth = Self.width - 2 * DS.Space.s16
         title.setAccessibilityIdentifier("video.export.title")
         percent.setAccessibilityIdentifier("video.export.percent")
-        percent.alignment = .right
+        // Flush with the bar's far end: the right in a left-to-right bar, the left in a mirrored one.
+        percent.alignment = L10n.isRightToLeft ? .left : .right
         percent.setContentHuggingPriority(.required, for: .horizontal)
         percent.widthAnchor.constraint(equalToConstant: 40).isActive = true
         bar.setAccessibilityIdentifier("video.export.progress")
@@ -119,9 +121,9 @@ final class ExportPanel: Surface {
         cancel.keyEquivalent = "\u{1b}"
         cancel.onPress { [unowned self] in onCancel() }
 
-        let resolutionRow = row("Resolution", [resolution])
-        let qualityRow = row("Quality", [quality])
-        let estimateRow = row("Size", [estimate])
+        let resolutionRow = row(tr("Resolution"), [resolution])
+        let qualityRow = row(tr("Quality"), [quality])
+        let estimateRow = row(tr("Size"), [estimate])
         let progressRow = NSStackView(views: [bar, percent])
         progressRow.spacing = DS.Space.s12
         progressRow.alignment = .centerY
@@ -155,7 +157,7 @@ final class ExportPanel: Surface {
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Export")
+        setAccessibilityLabel(tr("Export"))
         setAccessibilityIdentifier("video.export.panel")
     }
 
@@ -199,7 +201,7 @@ final class ProgressBar: NSView {
         super.init(frame: frameRect)
         setAccessibilityElement(true)
         setAccessibilityRole(.progressIndicator)
-        setAccessibilityLabel("Export progress")
+        setAccessibilityLabel(tr("Export progress"))
         setAccessibilityMinValue(NSNumber(value: 0))
         setAccessibilityMaxValue(NSNumber(value: 1))
     }
@@ -214,7 +216,8 @@ final class ProgressBar: NSView {
         NSBezierPath.continuous(track, radius: Self.height / 2).fill()
         let width = track.width * CGFloat(min(max(fraction, 0), 1))
         guard width > 0 else { return }
-        let fill = CGRect(x: track.minX, y: track.minY, width: max(width, Self.height), height: track.height)
+        var fill = CGRect(x: track.minX, y: track.minY, width: max(width, Self.height), height: track.height)
+        if isRightToLeft { fill.origin.x = track.maxX - fill.width }
         DS.Color.bgInverse.setFill()
         NSBezierPath.continuous(fill, radius: Self.height / 2).fill()
     }

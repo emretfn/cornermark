@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 import Foundation
 import Security
 @testable import CornermarkShell
@@ -615,7 +616,7 @@ private func checkWhatsNew() async throws {
         let texts = collectText(view)
         check(texts.filter { $0.hasPrefix("Version ") } == ["Version 0.2.1", "Version 0.2.0", "Version 0.1.0"], "versions are listed newest first", detail: "\(texts)")
         check(!texts.contains("Version 0.3.0"), "a newer release is absent")
-        let dateText = Date(timeIntervalSince1970: 1_793_700_000).formatted(date: .long, time: .omitted)
+        let dateText = Date(timeIntervalSince1970: 1_793_700_000).formatted(Date.FormatStyle(date: .long, time: .omitted).locale(L10n.locale))
         check(texts.filter { $0 == dateText }.count == 3, "each version has its date in the user's format", detail: "\(texts)")
         check(texts.contains("Fixed") && texts.contains("New") && texts.contains("Show refused keys and held modifiers in ShortcutRecorderView")
               && texts.contains("Added a thing") && texts.contains("Another thing") && texts.contains("Fixed one"), "section titles and items are shown", detail: "\(texts)")

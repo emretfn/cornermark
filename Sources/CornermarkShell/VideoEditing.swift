@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCapture
 import CornermarkCore
+import CornermarkL10n
 import CornermarkVideoEditor
 
 extension CaptureRecord {
@@ -35,12 +36,12 @@ extension AppCoordinator {
         editor.onClose = { [weak editor, unowned self] closed in
             let folder = editor?.folder ?? key
             Log.shell.notice("video editor closed project=\(folder.lastPathComponent, privacy: .public) result=\(String(describing: closed), privacy: .public)")
-            if case .failed = closed { hud.show("Could not save the edits. Check that the project's folder can be written to.", symbol: "exclamationmark.triangle.fill") }
+            if case .failed = closed { hud.show(tr("Could not save the edits. Check that the project's folder can be written to."), symbol: "exclamationmark.triangle.fill") }
             videoEditors[folder] = nil
         }
         editor.onSave = { [weak editor, unowned self] result in
             Log.shell.notice("video project saved project=\((editor?.folder ?? key).lastPathComponent, privacy: .public) result=\(String(describing: result), privacy: .public)")
-            if case .failed = result { hud.show("Could not save the edits. Choose File > Save As to keep them somewhere else.", symbol: "exclamationmark.triangle.fill") }
+            if case .failed = result { hud.show(tr("Could not save the edits. Choose File > Save As to keep them somewhere else."), symbol: "exclamationmark.triangle.fill") }
         }
         editor.onSaveAs = { [weak editor, unowned self] from, to in
             guard let editor else { return }
@@ -104,10 +105,10 @@ extension AppCoordinator {
 
     static func importFailure(_ error: Error) -> String {
         switch error as? VideoImportError {
-        case .notAVideo?: return "Could not open the file. Choose an MP4 or MOV video."
-        case .noPicture?: return "Could not open the video: it has no picture. Choose a video that plays in a player."
-        case .turned?: return "Could not open the video: it is stored turned on its side. Turn it upright in another app, then open it again."
-        case nil: return "Could not open the video. Check that it plays and that the save folder can be written to, then try again."
+        case .notAVideo?: return tr("Could not open the file. Choose an MP4 or MOV video.")
+        case .noPicture?: return tr("Could not open the video: it has no picture. Choose a video that plays in a player.")
+        case .turned?: return tr("Could not open the video: it is stored turned on its side. Turn it upright in another app, then open it again.")
+        case nil: return tr("Could not open the video. Check that it plays and that the save folder can be written to, then try again.")
         }
     }
 
@@ -123,10 +124,10 @@ extension AppCoordinator {
             Log.shell.notice("video export cancelled project=\(name, privacy: .public) at=\(String(format: "%.2f", fraction), privacy: .public) filesLeft=\(left, privacy: .public)")
         case .notSaved(let message):
             Log.shell.error("video export refused project=\(name, privacy: .public): edits not saved: \(message, privacy: .public)")
-            hud.show("Could not save the edits, so nothing was exported. Check that the recording's folder can be written to.", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not save the edits, so nothing was exported. Check that the recording's folder can be written to."), symbol: "exclamationmark.triangle.fill")
         case .failed(let message):
             Log.shell.error("video export failed project=\(name, privacy: .public): \(message, privacy: .public)")
-            hud.show("Could not export the video. Check that the disk has free space, then export again.", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not export the video. Check that the disk has free space, then export again."), symbol: "exclamationmark.triangle.fill")
         }
     }
 
@@ -139,7 +140,7 @@ extension AppCoordinator {
             handleCaptured(CaptureOutput(image: frame.image, kind: kind, pointScale: frame.pointScale))
         case .failed(let message):
             Log.shell.error("video frame export failed project=\(folder.lastPathComponent, privacy: .public): \(message, privacy: .public)")
-            hud.show("Could not export the frame. Check that the recording's video is still in its project, then try again.", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not export the frame. Check that the recording's video is still in its project, then try again."), symbol: "exclamationmark.triangle.fill")
         }
     }
 
@@ -152,11 +153,11 @@ extension AppCoordinator {
             record = try env.store.addOwnedVideo(moving: report.url, duration: report.duration, poster: poster, kind: kind, pixelSize: size, now: env.clock())
         } catch {
             Log.shell.error("video export not listed: \(error.localizedDescription, privacy: .public)")
-            return hud.show("Could not keep the exported video. Check that the disk has free space, then export again.", symbol: "exclamationmark.triangle.fill")
+            return hud.show(tr("Could not keep the exported video. Check that the disk has free space, then export again."), symbol: "exclamationmark.triangle.fill")
         }
         history?.reload()
         Log.shell.notice("video exported project=\(folder.lastPathComponent, privacy: .public) record=\(record.id.uuidString, privacy: .public) file=\(record.video?.file.lastPathComponent ?? "", privacy: .public) size=\(report.plan.width, privacy: .public)x\(report.plan.height, privacy: .public) frames=\(report.framesWritten, privacy: .public) seconds=\(String(format: "%.3f", report.duration), privacy: .public) projectSeconds=\(String(format: "%.3f", report.plan.duration), privacy: .public) bytes=\(report.bytes, privacy: .public) estimatedBytes=\(report.plan.estimatedBytes, privacy: .public) hardware=\(report.usesHardware, privacy: .public) encoder=\(report.encoderID, privacy: .public) renderSeconds=\(String(format: "%.3f", report.renderSeconds), privacy: .public) card=\(self.settings.value.recording.showQuickAccess, privacy: .public)")
-        if settings.value.recording.showQuickAccess { overlay.add(record: record, image: poster) } else { hud.show("Exported \(record.video?.file.lastPathComponent ?? "the video")") }
+        if settings.value.recording.showQuickAccess { overlay.add(record: record, image: poster) } else { hud.show(tr("Exported {name}", ["name": record.video?.file.lastPathComponent ?? tr("the video")])) }
     }
 
     @discardableResult
@@ -175,19 +176,19 @@ extension AppCoordinator {
             try FileManager.default.copyItem(at: video.file, to: target)
         } catch {
             Log.shell.error("video save failed: \(error.localizedDescription, privacy: .public)")
-            hud.show("Could not save", symbol: "exclamationmark.triangle.fill")
+            hud.show(tr("Could not save"), symbol: "exclamationmark.triangle.fill")
             return nil
         }
         Log.shell.notice("video saved record=\(record.id.uuidString, privacy: .public) file=\(target.lastPathComponent, privacy: .public)")
-        hud.show("Saved \(target.lastPathComponent)")
+        hud.show(tr("Saved {name}", ["name": target.lastPathComponent]))
         return target
     }
 
     /// What went wrong and where to look, since the folder lives where the user saved it.
     static func openFailure(_ error: Error) -> String {
         switch error as? VideoEditorError {
-        case .noVideo: return "Could not open the recording: its video is missing. Look for it in the save folder."
-        default: return "Could not open the recording: its project file is missing or damaged."
+        case .noVideo: return tr("Could not open the recording: its video is missing. Look for it in the save folder.")
+        default: return tr("Could not open the recording: its project file is missing or damaged.")
         }
     }
 }

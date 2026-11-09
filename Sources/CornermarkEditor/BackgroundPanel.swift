@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkDesign
 import CornermarkCore
+import CornermarkL10n
 import UniformTypeIdentifiers
 
 /// Gradient swatches drawn by `Renderer` itself, so a thumbnail is exactly what the background looks like.
@@ -126,7 +127,8 @@ final class BackgroundPanel: NSView {
     private let content = NSStackView()
     private var tiles: [() -> Void] = []
     private var refreshers: [() -> Void] = []
-    private let presetList = NSStackView()
+    private var presetList = NSStackView()
+    private var presetField: TextInput?
     private var presetSignature: [UUID] = []
     private var updating = false
 
@@ -181,7 +183,12 @@ final class BackgroundPanel: NSView {
             flipped.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
 
-        let sections: [NSView] = [section("Background", fillGrid()), section("Frame", frameControls()), section("Presets", presetsSection())]
+        buildSections()
+        reload()
+    }
+
+    private func buildSections() {
+        let sections: [NSView] = [section(tr("Background"), fillGrid()), section(tr("Frame"), frameControls()), section(tr("Presets"), presetsSection())]
         for (i, view) in sections.enumerated() {
             if i > 0 {
                 let line = Separator(axis: .horizontal)
@@ -190,6 +197,19 @@ final class BackgroundPanel: NSView {
             }
             content.addArrangedSubview(view)
         }
+    }
+
+    /// Builds the sections again in the current language. The panel's scroll position, the document and the name being typed carry over.
+    func relocalize() {
+        let draft = presetField?.stringValue ?? ""
+        tiles = []
+        refreshers = []
+        presetList = NSStackView()
+        presetSignature = []
+        content.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        buildSections()
+        presetField?.stringValue = draft
+        applyLanguageDirection()
         reload()
     }
 
@@ -212,7 +232,7 @@ final class BackgroundPanel: NSView {
             return b
         }
 
-        let none = tile(tip: "No background", id: "bg.none", current: { [unowned self] in style == nil }, paint: { rect in
+        let none = tile(tip: tr("No background"), id: "bg.none", current: { [unowned self] in style == nil }, paint: { rect in
             DS.Color.bgControl.setFill()
             rect.fill()
             DS.Color.textSecondary.setStroke()
@@ -225,8 +245,8 @@ final class BackgroundPanel: NSView {
 
         let well = SolidWell(shape: .tile)
         well.setAccessibilityIdentifier("bg.solid")
-        well.setAccessibilityLabel("Solid colour")
-        well.toolTip = "Solid colour"
+        well.setAccessibilityLabel(tr("Solid colour"))
+        well.toolTip = tr("Solid colour")
         TileChrome.fix(well)
         well.color = .systemGray
         well.isCurrent = { [unowned self] in if case .solid? = style?.fill { return true } else { return false } }
@@ -239,7 +259,7 @@ final class BackgroundPanel: NSView {
             well.redrawTile()
         }
 
-        let image = tile(tip: "Image…", id: "bg.image", current: { [unowned self] in
+        let image = tile(tip: tr("Image…"), id: "bg.image", current: { [unowned self] in
             if case .image? = style?.fill { return true } else { return false }
         }, paint: { rect in
             DS.Color.bgControl.setFill()
@@ -250,7 +270,7 @@ final class BackgroundPanel: NSView {
         var all: [NSView] = [none, well, image]
         let builtins = BuiltinBackgrounds.all
         for i in builtins.indices {
-            all.append(tile(tip: builtins[i].name, id: "bg.fill.\(i)", current: { [unowned self] in
+            all.append(tile(tip: BackgroundNames.title(builtins[i].name), id: "bg.fill.\(i)", current: { [unowned self] in
                 if case .builtin(let idx)? = style?.fill { return idx == i } else { return false }
             }, paint: { rect in BackgroundThumbnails.image(index: i).draw(in: rect) }) { [unowned self] in edit({ $0.fill = .builtin(index: i) }) })
         }
@@ -298,20 +318,20 @@ final class BackgroundPanel: NSView {
             guard !updating else { return }
             let v = (c as! NSSlider).doubleValue
             edit({ set(&$0, v.rounded()) }, key: key)
-            value.stringValue = "\(Int(v.rounded()))"
+            value.stringValue = Digits.string(Int(v.rounded()))
         }
         s.onTrackingEnd = { [unowned self] in model.endCoalescing() }
         refreshers.append { [unowned self] in
             let v = get(style ?? BackgroundSettings())
             s.doubleValue = v
-            value.stringValue = "\(Int(v.rounded()))"
+            value.stringValue = Digits.string(Int(v.rounded()))
         }
         return row(label, UI.hstack([s, value], spacing: DS.Space.s8))
     }
 
-    private static let aspects: [(String, Double?)] = [
-        ("Auto", nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5), ("16:9", 16.0 / 9), ("16:10", 1.6), ("3:4", 0.75), ("9:16", 9.0 / 16),
-    ]
+    private static var aspects: [(String, Double?)] {
+        [(tr("Auto"), nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5), ("16:9", 16.0 / 9), ("16:10", 1.6), ("3:4", 0.75), ("9:16", 9.0 / 16)]
+    }
 
     private func popup(id: String, titles: [String]) -> NSPopUpButton {
         let p = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -343,8 +363,8 @@ final class BackgroundPanel: NSView {
     }
 
     private func frameControls() -> NSView {
-        let padding = sliderRow("Padding", range: 0...300, id: "bg.padding", key: "padding", get: { $0.padding }, set: { $0.padding = $1 })
-        let corners = sliderRow("Corners", range: 0...100, id: "bg.radius", key: "radius", get: { $0.cornerRadius }, set: { $0.cornerRadius = $1 })
+        let padding = sliderRow(tr("Padding"), range: 0...300, id: "bg.padding", key: "padding", get: { $0.padding }, set: { $0.padding = $1 })
+        let corners = sliderRow(tr("Corners"), range: 0...100, id: "bg.radius", key: "radius", get: { $0.cornerRadius }, set: { $0.cornerRadius = $1 })
 
         let aspect = popup(id: "bg.aspect", titles: Self.aspects.map(\.0))
         aspect.onAction { [unowned self] c in
@@ -357,7 +377,7 @@ final class BackgroundPanel: NSView {
             aspect.selectItem(at: Self.aspects.firstIndex { $0.1 == ratio } ?? 0)
         }
 
-        let align = popup(id: "bg.alignment", titles: BackgroundAlignment.allCases.map { $0.rawValue.capitalized })
+        let align = popup(id: "bg.alignment", titles: BackgroundAlignment.allCases.map(\.title))
         align.onAction { [unowned self] c in
             guard !updating else { return }
             let a = BackgroundAlignment.allCases[(c as! NSPopUpButton).indexOfSelectedItem]
@@ -367,17 +387,19 @@ final class BackgroundPanel: NSView {
             align.selectItem(at: BackgroundAlignment.allCases.firstIndex(of: (style ?? BackgroundSettings()).alignment) ?? 0)
         }
 
-        let shadow = checkRow("Shadow", id: "bg.shadow", get: { $0.shadow }, set: { $0.shadow = $1 })
-        let balance = checkRow("Auto Balance", id: "bg.autoBalance", get: { $0.autoBalance }, set: { $0.autoBalance = $1 })
-        return UI.vstack([padding, corners, row("Ratio", aspect), row("Align", align), shadow, balance], spacing: DS.Space.s4)
+        let shadow = checkRow(tr("Shadow"), id: "bg.shadow", get: { $0.shadow }, set: { $0.shadow = $1 })
+        let balance = checkRow(tr("Auto Balance"), id: "bg.autoBalance", get: { $0.autoBalance }, set: { $0.autoBalance = $1 })
+        return UI.vstack([padding, corners, row(tr("Ratio"), aspect), row(tr("Align"), align), shadow, balance], spacing: DS.Space.s4)
     }
 
     // MARK: Presets
 
     private func presetsSection() -> NSView {
-        let field = TextInput(placeholder: "Preset name", size: .small)
+        let field = TextInput(placeholder: tr("Preset name"), size: .small)
+        field.alignment = .natural
+        presetField = field
         field.setAccessibilityIdentifier("bg.presetName")
-        let save = Button(title: "Save", variant: .secondary, size: .small)
+        let save = Button(title: tr("Save"), variant: .secondary, size: .small)
         save.setAccessibilityIdentifier("bg.presetSave")
         field.widthAnchor.constraint(equalToConstant: Self.inner - DS.Space.s8 - save.intrinsicContentSize.width).isActive = true
         let doSave: (NSControl) -> Void = { [unowned self] _ in
@@ -399,7 +421,7 @@ final class BackgroundPanel: NSView {
             let apply = Button(title: preset.name, variant: .ghost, size: .small)
             apply.setAccessibilityIdentifier("bg.preset.apply.\(preset.name)")
             apply.onAction { [unowned self] _ in model.applyBackgroundPreset(preset) }
-            let delete = UI.button(symbol: "xmark", tip: "Delete preset", id: "bg.preset.delete.\(preset.name)")
+            let delete = UI.button(symbol: "xmark", tip: tr("Delete preset"), id: "bg.preset.delete.\(preset.name)")
             delete.onAction { [unowned self] _ in model.deleteBackgroundPreset(preset.id) }
 
             let spacer = NSView()
@@ -409,8 +431,9 @@ final class BackgroundPanel: NSView {
             presetList.addArrangedSubview(line)
         }
         if presetList.arrangedSubviews.isEmpty {
-            presetList.addArrangedSubview(UI.caption("No presets yet"))
+            presetList.addArrangedSubview(UI.caption(tr("No presets yet")))
         }
+        presetList.applyLanguageDirection()
     }
 
     func reload() {

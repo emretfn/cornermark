@@ -1,6 +1,7 @@
 import AppKit
 import CornermarkCore
 import CornermarkDesign
+import CornermarkL10n
 
 /// Sizes of the panel's parts, in points. Every width is the panel's inner width divided exactly, so tiles and thumbnails
 /// land on whole points.
@@ -36,7 +37,7 @@ struct MenuPanelHost {
 // MARK: Drawing helpers
 
 /// One line of text centred vertically in `rect`, truncated with an ellipsis.
-private func drawText(_ string: String, _ style: TextStyle, _ color: NSColor, in rect: CGRect, alignment: NSTextAlignment = .left) {
+private func drawText(_ string: String, _ style: TextStyle, _ color: NSColor, in rect: CGRect, alignment: NSTextAlignment = .natural) {
     var attributes = style.attributes(color: color)
     let paragraph = (attributes[.paragraphStyle] as! NSParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
     paragraph.alignment = alignment
@@ -183,15 +184,15 @@ final class MenuRowView: MenuPressableView {
         }
         let disabled = state == .disabled
         let danger = row.isDestructive && !disabled
-        Glyph.draw(row.symbol, in: CGRect(x: MenuMetrics.rowInset, y: 0, width: DS.Size.icon, height: bounds.height),
+        Glyph.draw(Glyph.directional(row.symbol), in: mirrored(CGRect(x: MenuMetrics.rowInset, y: 0, width: DS.Size.icon, height: bounds.height)),
                    pointSize: DS.Size.icon, disabled ? c.textDisabled : (danger ? c.dangerText : c.textSecondary))
         let textX = MenuMetrics.rowInset + DS.Size.icon + MenuMetrics.rowGap
         drawText(row.title, DS.Text.body, disabled ? c.textDisabled : (danger ? c.dangerText : c.textPrimary),
-                 in: CGRect(x: textX, y: 0, width: bounds.width - textX - MenuMetrics.rowInset, height: bounds.height))
+                 in: mirrored(CGRect(x: textX, y: 0, width: bounds.width - textX - MenuMetrics.rowInset, height: bounds.height)))
     }
 }
 
-final class MenuThumbView: MenuPressableView {
+final class MenuThumbView: MenuPressableView, KeepsLeftToRight {
     var image: CGImage? { didSet { needsDisplay = true } }
 
     init(_ recent: MenuPanelModel.Recent) {
@@ -228,7 +229,7 @@ final class MenuCaptionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         drawText(text, DS.Text.captionStrong, DS.Color.textSecondary,
-                 in: CGRect(x: MenuMetrics.rowInset, y: 0, width: bounds.width - MenuMetrics.rowInset, height: bounds.height))
+                 in: mirrored(CGRect(x: MenuMetrics.rowInset, y: 0, width: bounds.width - MenuMetrics.rowInset, height: bounds.height)))
     }
 }
 
@@ -239,7 +240,7 @@ final class MenuBannerView: NSView {
 
     init(_ banner: MenuPanelModel.UpdateBanner, press: @escaping () -> Void) {
         self.banner = banner
-        button = banner.button == nil ? nil : Button(title: "Update", variant: .primary, size: .small)
+        button = banner.button == nil ? nil : Button(title: tr("Update"), variant: .primary, size: .small)
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -259,41 +260,45 @@ final class MenuBannerView: NSView {
     private var pressAction: () -> Void = {}
     @objc private func pressed() { pressAction() }
 
-    private var textRight: CGFloat { (button?.frame.minX ?? bounds.width) - DS.Space.s8 }
+    /// Where the text ends, laid out left to right: just before the button, which sits at the far end.
+    private var textRight: CGFloat {
+        guard let button else { return bounds.width }
+        return bounds.width - DS.Space.s12 - button.intrinsicContentSize.width - DS.Space.s8
+    }
 
     override func layout() {
         super.layout()
         guard let button else { return }
         let size = button.intrinsicContentSize
-        button.frame = CGRect(x: bounds.width - DS.Space.s12 - size.width, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
+        button.frame = mirrored(CGRect(x: bounds.width - DS.Space.s12 - size.width, y: (bounds.height - size.height) / 2, width: size.width, height: size.height))
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let c = DS.Color.self
         fill(.continuous(bounds, radius: MenuMetrics.radius), c.accentWash)
-        Glyph.draw(banner.symbol, in: CGRect(x: DS.Space.s12, y: 0, width: DS.Size.iconXLarge, height: bounds.height),
+        Glyph.draw(banner.symbol, in: mirrored(CGRect(x: DS.Space.s12, y: 0, width: DS.Size.iconXLarge, height: bounds.height)),
                    pointSize: DS.Size.iconXLarge, c.textPrimary)
         let x = DS.Space.s12 + DS.Size.iconXLarge + DS.Space.s8
         let block = DS.Text.bodyStrong.lineHeight + DS.Text.caption.lineHeight
         let top = (bounds.height + block) / 2
         let width = max(textRight - x, 0)
         drawText(banner.title, DS.Text.bodyStrong, c.textPrimary,
-                 in: CGRect(x: x, y: top - DS.Text.bodyStrong.lineHeight, width: width, height: DS.Text.bodyStrong.lineHeight))
+                 in: mirrored(CGRect(x: x, y: top - DS.Text.bodyStrong.lineHeight, width: width, height: DS.Text.bodyStrong.lineHeight)))
         drawText(banner.detail, DS.Text.caption, c.textPrimary,
-                 in: CGRect(x: x, y: top - block, width: width, height: DS.Text.caption.lineHeight))
+                 in: mirrored(CGRect(x: x, y: top - block, width: width, height: DS.Text.caption.lineHeight)))
     }
 }
 
-/// "Recent" on the left and the All control on the right.
+/// "Recent" at the start and the All control at the end.
 final class MenuRecentHeaderView: NSView {
     let all: Button
 
     init(title: String, all item: PanelItem, press: @escaping () -> Void) {
         self.title = title
-        all = Button(title: "All", variant: .ghost, size: .small)
+        all = Button(title: tr("All"), variant: .ghost, size: .small)
         pressAction = press
         super.init(frame: .zero)
-        all.setAccessibilityLabel("All captures")
+        all.setAccessibilityLabel(tr("All captures"))
         all.setAccessibilityIdentifier(item.identifier)
         all.target = self
         all.action = #selector(pressed)
@@ -312,12 +317,12 @@ final class MenuRecentHeaderView: NSView {
     override func layout() {
         super.layout()
         let size = all.intrinsicContentSize
-        all.frame = CGRect(x: bounds.width - size.width, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
+        all.frame = mirrored(CGRect(x: bounds.width - size.width, y: (bounds.height - size.height) / 2, width: size.width, height: size.height))
     }
 
     override func draw(_ dirtyRect: NSRect) {
         drawText(title, DS.Text.captionStrong, DS.Color.textSecondary,
-                 in: CGRect(x: MenuMetrics.rowInset, y: 0, width: bounds.width - MenuMetrics.rowInset, height: bounds.height))
+                 in: mirrored(CGRect(x: MenuMetrics.rowInset, y: 0, width: bounds.width - MenuMetrics.rowInset, height: bounds.height)))
     }
 }
 
@@ -329,12 +334,12 @@ final class MenuPinRowView: NSView {
 
     init(_ pin: MenuPanelModel.Pin, activate: @escaping (PanelItem) -> Void) {
         self.pin = pin
-        lock = IconButton(symbol: pin.isLocked ? "lock.fill" : "lock.open", label: pin.isLocked ? "Unlock" : "Lock")
-        close = IconButton(symbol: "xmark", label: "Close")
+        lock = IconButton(symbol: pin.isLocked ? "lock.fill" : "lock.open", label: pin.isLocked ? tr("Unlock") : tr("Lock"))
+        close = IconButton(symbol: "xmark", label: tr("Close"))
         self.activate = activate
         super.init(frame: .zero)
-        lock.setAccessibilityLabel("\(pin.isLocked ? "Unlock" : "Lock") \(pin.title)")
-        close.setAccessibilityLabel("Close \(pin.title)")
+        lock.setAccessibilityLabel(pin.isLocked ? tr("Unlock {pin}", ["pin": pin.title]) : tr("Lock {pin}", ["pin": pin.title]))
+        close.setAccessibilityLabel(tr("Close {pin}", ["pin": pin.title]))
         lock.setAccessibilityIdentifier(pin.lock.identifier)
         close.setAccessibilityIdentifier(pin.close.identifier)
         for (button, action) in [(lock, #selector(lockPressed)), (close, #selector(closePressed))] {
@@ -357,15 +362,18 @@ final class MenuPinRowView: NSView {
         super.layout()
         let size = close.intrinsicContentSize
         let y = (bounds.height - size.height) / 2
-        close.frame = CGRect(x: bounds.width - DS.Space.s4 - size.width, y: y, width: size.width, height: size.height)
-        lock.frame = CGRect(x: close.frame.minX - DS.Space.s2 - size.width, y: y, width: size.width, height: size.height)
+        let closeBox = CGRect(x: bounds.width - DS.Space.s4 - size.width, y: y, width: size.width, height: size.height)
+        let lockBox = CGRect(x: closeBox.minX - DS.Space.s2 - size.width, y: y, width: size.width, height: size.height)
+        close.frame = mirrored(closeBox)
+        lock.frame = mirrored(lockBox)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let c = DS.Color.self
-        Glyph.draw("pin", in: CGRect(x: MenuMetrics.rowInset, y: 0, width: DS.Size.icon, height: bounds.height), pointSize: DS.Size.icon, c.textSecondary)
+        Glyph.draw("pin", in: mirrored(CGRect(x: MenuMetrics.rowInset, y: 0, width: DS.Size.icon, height: bounds.height)), pointSize: DS.Size.icon, c.textSecondary)
         let textX = MenuMetrics.rowInset + DS.Size.icon + MenuMetrics.rowGap
-        drawText(pin.title, DS.Text.body, c.textPrimary, in: CGRect(x: textX, y: 0, width: max(lock.frame.minX - textX - DS.Space.s4, 0), height: bounds.height))
+        let lockStart = isRightToLeft ? bounds.width - lock.frame.maxX : lock.frame.minX
+        drawText(pin.title, DS.Text.body, c.textPrimary, in: mirrored(CGRect(x: textX, y: 0, width: max(lockStart - textX - DS.Space.s4, 0), height: bounds.height)))
     }
 }
 
@@ -406,6 +414,7 @@ final class MenuPanelView: NSView {
         }
         self.focus = initial
         super.init(frame: .zero)
+        applyLanguageDirection()
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Cornermark")
@@ -413,6 +422,7 @@ final class MenuPanelView: NSView {
         frame.size = build()
         addSubview(ring)
         ring.isHidden = true
+        applyLanguageDirection()
         placeRing()
     }
 
@@ -431,7 +441,7 @@ final class MenuPanelView: NSView {
                 } else {
                     y += MenuMetrics.separatorInset
                     let line = Separator(axis: .horizontal)
-                    line.frame = CGRect(x: pad, y: y, width: MenuMetrics.innerWidth, height: 1)
+                    line.frame = mirrored(CGRect(x: pad, y: y, width: MenuMetrics.innerWidth, height: 1), within: MenuMetrics.width)
                     addSubview(line)
                     y += 1 + MenuMetrics.separatorInset
                 }
@@ -446,7 +456,7 @@ final class MenuPanelView: NSView {
         let pad = MenuMetrics.padding
         var y = top
         func place(_ view: NSView, height: CGFloat, x: CGFloat = pad, width: CGFloat = MenuMetrics.innerWidth) {
-            view.frame = CGRect(x: x, y: y, width: width, height: height)
+            view.frame = mirrored(CGRect(x: x, y: y, width: width, height: height), within: MenuMetrics.width)
             addSubview(view)
         }
         func addRows(_ rows: [MenuPanelModel.Row]) {
@@ -472,9 +482,9 @@ final class MenuPanelView: NSView {
                 view.onPress = { [host] in host.activate(tile.item) }
                 targets[tile.item] = view
                 let column = CGFloat(i % MenuPanelModel.columns), row = CGFloat(i / MenuPanelModel.columns)
-                view.frame = CGRect(x: pad + column * (MenuMetrics.tileWidth + MenuMetrics.tileGap),
-                                    y: top + row * (MenuMetrics.tileHeight + MenuMetrics.tileGap),
-                                    width: MenuMetrics.tileWidth, height: MenuMetrics.tileHeight)
+                view.frame = mirrored(CGRect(x: pad + column * (MenuMetrics.tileWidth + MenuMetrics.tileGap),
+                                             y: top + row * (MenuMetrics.tileHeight + MenuMetrics.tileGap),
+                                             width: MenuMetrics.tileWidth, height: MenuMetrics.tileHeight), within: MenuMetrics.width)
                 addSubview(view)
             }
             let rows = CGFloat((tiles.count + MenuPanelModel.columns - 1) / MenuPanelModel.columns)
@@ -489,8 +499,8 @@ final class MenuPanelView: NSView {
                 let view = MenuThumbView(recent)
                 view.onPress = { [host] in host.activate(recent.item) }
                 targets[recent.item] = view
-                view.frame = CGRect(x: pad + CGFloat(i) * (MenuMetrics.thumbWidth + MenuMetrics.thumbGap), y: y,
-                                    width: MenuMetrics.thumbWidth, height: MenuMetrics.thumbHeight)
+                view.frame = mirrored(CGRect(x: pad + CGFloat(i) * (MenuMetrics.thumbWidth + MenuMetrics.thumbGap), y: y,
+                                             width: MenuMetrics.thumbWidth, height: MenuMetrics.thumbHeight), within: MenuMetrics.width)
                 addSubview(view)
                 host.thumbnail(recent.record) { [weak view] image in view?.image = image }
             }
@@ -522,8 +532,8 @@ final class MenuPanelView: NSView {
         switch event.keyCode {
         case 126: direction = .up
         case 125: direction = .down
-        case 123: direction = .left
-        case 124: direction = .right
+        case 123: direction = isRightToLeft ? .right : .left
+        case 124: direction = isRightToLeft ? .left : .right
         case 36, 76, 49:
             if let current = focus.current { host.activate(current) }
             return true

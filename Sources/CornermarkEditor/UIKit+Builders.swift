@@ -1,5 +1,6 @@
 import AppKit
 import CornermarkDesign
+import CornermarkL10n
 import ObjectiveC
 
 /// Closure-backed target so controls are wired where they are created.
@@ -65,10 +66,13 @@ public class BarView: NSView {
         switch edge {
         case .bottom: NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
         case .top: NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        case .left: NSRect(x: 0, y: 0, width: 1, height: bounds.height).fill()
+        case .left: NSRect(x: isRightToLeft ? bounds.width - 1 : 0, y: 0, width: 1, height: bounds.height).fill()
         }
     }
 }
+
+/// Where a number that follows its control ends: against the trailing edge, whichever side that is.
+var trailingAlignment: NSTextAlignment { L10n.isRightToLeft ? .left : .right }
 
 enum UI {
     static func caption(_ text: String) -> NSTextField {
@@ -79,7 +83,7 @@ enum UI {
 
     static func valueLabel(width: CGFloat = 34) -> NSTextField {
         let f = NSTextField.label("", style: DS.Text.readout, color: DS.Color.textSecondary)
-        f.alignment = .right
+        f.alignment = trailingAlignment
         f.widthAnchor.constraint(equalToConstant: width).isActive = true
         return f
     }

@@ -2,8 +2,9 @@ import AppKit
 
 /// A picker for one of nine places in a picture: a small well shaped like the frame, holding a 3×3 grid of cells. Each cell is a
 /// radio-button `NSButton`, so a click, Space on the focused cell, `performClick` and VoiceOver all pick it the same way.
-/// The picked cell shows a block where the thing will sit, in the selection colours `Segments` uses.
-public final class PositionGrid: NSView {
+/// The picked cell shows a block where the thing will sit, in the selection colours `Segments` uses. The grid is a picture of the frame,
+/// so its first cell is the top left of the picture in every language.
+public final class PositionGrid: NSView, KeepsLeftToRight {
     public static let cellSize = CGSize(width: 28, height: 20)
     public static let gap = DS.Space.s4
     public static let inset = DS.Space.s4
