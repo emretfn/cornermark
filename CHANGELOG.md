@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/emretfn/cornermark/compare/v0.4.0...v0.5.0) (2026-11-09)
+
+
+### New
+
+* **l10n:** show the interface in 40 languages and switch without a restart ([#53](https://github.com/emretfn/cornermark/issues/53)) ([dcee256](https://github.com/emretfn/cornermark/commit/dcee25670152769a1f7263bc93eb1110af68f64a))
+
 ## [0.4.0](https://github.com/emretfn/cornermark/compare/v0.3.0...v0.4.0) (2026-11-06)
 
 
