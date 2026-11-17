@@ -94,7 +94,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
             TestSound.decibels(TestSound.amplitude(of: 1_000, in: after.channels[0], rate: 48_000, from: from, to: to)
                                / TestSound.amplitude(of: 1_000, in: before.channels[0], rate: 48_000, from: from, to: to))
         }
-        XCTAssertLessThan(change(from: 0.2, to: 0.9), -40, "-60 dBFS stays below a -50 dB gate and goes silent")
+        XCTAssertLessThan(change(from: 0.2, to: 0.9), -40, "-60 dBFS stays below a -50 dB Noise gate and goes silent")
         XCTAssertEqual(change(from: 1.1, to: 1.9), 0, accuracy: 1, "-40 dBFS is above it and stays as it was")
     }
 
@@ -116,7 +116,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
 
     func testNoiseGateSilencesNoiseWhoseLevelStaysBelowItsThreshold() throws {
         let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
-        // A fan-like hiss at -60 dBFS RMS: its level is 10 dB under a -50 dB gate, though its single peaks reach above it.
+        // A fan-like hiss at -60 dBFS RMS: its level is 10 dB under a -50 dB Noise gate, though its single peaks reach above it.
         let hiss = noise(rms: 0.001)
         try TestSound.write(input, seconds: 2, channels: [[]]) { _, _ in hiss() }
         try VoiceCleanupRenderer.render(input, settings: onlyNoiseGate(at: -50), to: output)
@@ -124,7 +124,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
         let before = try TestSound.read(input), after = try TestSound.read(output)
         XCTAssertGreaterThan(before.channels[0][Int(0.2 * 48_000)..<Int(1.9 * 48_000)].map(abs).max() ?? 0, 0.00316, "the hiss peaks above the threshold")
         let change = TestSound.decibels(rms(after.channels[0], from: 0.2, to: 1.9) / rms(before.channels[0], from: 0.2, to: 1.9))
-        XCTAssertLessThan(change, -40, "noise whose level stays below the gate goes silent")
+        XCTAssertLessThan(change, -40, "noise whose level stays below the Noise gate threshold goes silent")
     }
 
     func testNoiseGateClosesAgainAfterLouderSound() throws {
@@ -140,7 +140,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
         XCTAssertEqual(voice, 0, accuracy: 1, "the voice comes through")
         // Hold and release are over well before 1.3 s.
         let tail = TestSound.decibels(rms(after.channels[0], from: 1.3, to: 2.4) / rms(before.channels[0], from: 1.3, to: 2.4))
-        XCTAssertLessThan(tail, -40, "once the voice stops, the gate closes and the hiss goes silent")
+        XCTAssertLessThan(tail, -40, "once the voice stops, the Noise gate closes and the hiss goes silent")
     }
 
     func testNoiseGateKeepsTheStartOfAWordAfterSilence() throws {
@@ -155,9 +155,22 @@ final class VoiceCleanupRendererTests: XCTestCase {
         XCTAssertEqual(onset, 0, accuracy: 1, "the first 20 ms of the word come through")
     }
 
+    func testNoiseGateKeepsTheStartOfAWordJustAboveItsThreshold() throws {
+        let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
+        // Silence, then a quiet word-like 500 Hz at -44 dBFS RMS, 6 dB over a -50 dB Noise gate, starting at once at 1 s.
+        try TestSound.write(input, seconds: 2, channels: [[]]) { _, t in Float(t < 1 ? 0 : 0.0089 * sin(2 * .pi * 500 * t)) }
+        try VoiceCleanupRenderer.render(input, settings: onlyNoiseGate(at: -50), to: output)
+
+        let before = try TestSound.read(input), after = try TestSound.read(output)
+        let onset = TestSound.decibels(TestSound.amplitude(of: 500, in: after.channels[0], rate: 48_000, from: 1, to: 1.02)
+                                       / TestSound.amplitude(of: 500, in: before.channels[0], rate: 48_000, from: 1, to: 1.02))
+        XCTAssertEqual(onset, 0, accuracy: 1, "the first 20 ms of a quiet word come through")
+        XCTAssertEqual(after.channels[0].count, before.channels[0].count, "the cleaned track keeps its length")
+    }
+
     func testNoiseGateJudgesTheSoundAfterLowCut() throws {
         let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
-        // A -30 dBFS hum that Low cut removes, under a -60 dBFS 1 kHz breath that the gate should then silence.
+        // A -30 dBFS hum that Low cut removes, under a -60 dBFS 1 kHz breath that the Noise gate should then silence.
         try TestSound.write(input, seconds: 2, channels: [[(50, 0.03), (1_000, 0.001)]])
         var settings = onlyNoiseGate(at: -50)
         settings.lowCutOn = true
@@ -167,7 +180,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
         let before = try TestSound.read(input), after = try TestSound.read(output)
         let breath = TestSound.decibels(TestSound.amplitude(of: 1_000, in: after.channels[0], rate: 48_000, from: 0.5, to: 1.5)
                                         / TestSound.amplitude(of: 1_000, in: before.channels[0], rate: 48_000, from: 0.5, to: 1.5))
-        XCTAssertLessThan(breath, -40, "with the hum cut first, nothing is left above the gate's threshold")
+        XCTAssertLessThan(breath, -40, "with the hum cut first, nothing is left above the Noise gate threshold")
     }
 
     func testTheCleanedFileKeepsTheLengthRateAndChannelsAndLeavesTheRecordedFileAlone() throws {
