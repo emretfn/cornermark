@@ -23,7 +23,10 @@ final class VoiceCleanupRenders: @unchecked Sendable {
 
     private let render: Render
     private let lock = NSLock()
+    /// Each microphone's newest job, which a request for the same settings joins.
     private var jobs: [URL: Job] = [:]
+    /// Jobs an export waits for that a newer request replaced in `jobs`, by id, so cancelling the export still finds them.
+    private var kept: [Int: Job] = [:]
     private var nextID = 0
     /// How many times each cleaned file is leased.
     private var leases: [URL: Int] = [:]
@@ -74,7 +77,9 @@ final class VoiceCleanupRenders: @unchecked Sendable {
             return (job.task, job.id)
         }
         let previous = jobs[microphone]
-        if let previous, previous.keeps == 0 { previous.task.cancel() }
+        if let previous {
+            if previous.keeps == 0 { previous.task.cancel() } else { kept[previous.id] = previous }
+        }
         nextID += 1
         let id = nextID, render = render
         let task = Task.detached(priority: .userInitiated) { [weak self] () throws -> Cleaned in
@@ -93,11 +98,10 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     /// A caller of job `id` stopped waiting. The render stops once no export waits for it.
     private func drop(_ microphone: URL, id: Int, keep: Bool) {
         lock.withLock {
-            guard var job = jobs[microphone], job.id == id else { return }
-            if keep {
-                job.keeps -= 1
-                jobs[microphone] = job
-            }
+            let isNewest = jobs[microphone]?.id == id
+            guard var job = isNewest ? jobs[microphone] : kept[id] else { return }
+            if keep { job.keeps -= 1 }
+            if isNewest { jobs[microphone] = job } else { kept[id] = job }
             if job.keeps == 0 { job.task.cancel() }
         }
     }
@@ -147,5 +151,6 @@ final class VoiceCleanupRenders: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if jobs[microphone]?.id == id { jobs[microphone] = nil }
+        kept[id] = nil
     }
 }
