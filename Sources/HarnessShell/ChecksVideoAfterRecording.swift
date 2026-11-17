@@ -286,6 +286,10 @@ func checkVideoAfterRecording() async throws {
     }
     check(editor.state.project.edits.audio.voiceCleanup.isOn && editor.state.project.edits.audio.voiceCleanup.lowCutFrequency == 150,
           "the Low cut follows its slider", detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    act("video.audio.voiceCleanup.leveling") { ($0 as? NSButton)?.performClick(nil) }
+    check(!editor.state.project.edits.audio.voiceCleanup.levelingOn && editor.state.project.edits.audio.voiceCleanup.isOn,
+          "the Leveling box turns Leveling off and leaves the rest of Voice cleanup on")
+    act("video.audio.voiceCleanup.leveling") { ($0 as? NSButton)?.performClick(nil) }
     snapshotEditor(editor, name: "video-after-audio")
     snapshotEditor(editor, name: "video-after-audio-dark", dark: true)
 
