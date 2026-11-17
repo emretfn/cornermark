@@ -47,7 +47,7 @@ public enum VoiceCleanupRenderer {
         // and measure on the way; alone, Leveling measures the recorded file and reads it again.
         let meter = LoudnessMeter(format: format)
         guard !steps.isEmpty else {
-            try measure(source, with: meter)
+            try meter.add(source)
             source.framePosition = 0
             try Leveling(format: format).level(source, loudness: meter.integrated, into: target)
             return steps
@@ -69,17 +69,6 @@ public enum VoiceCleanupRenderer {
 
     static func temporaryFile() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("cornermark-voice-cleanup-\(UUID().uuidString).caf")
-    }
-
-    /// Reads all of `source` into `meter`, a chunk at a time.
-    private static func measure(_ source: AVAudioFile, with meter: LoudnessMeter) throws {
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: chunk) else { throw VoiceCleanupError.unreadable }
-        while source.framePosition < source.length {
-            try Task.checkCancellation()
-            try source.read(into: buffer, frameCount: min(chunk, AVAudioFrameCount(source.length - source.framePosition)))
-            guard buffer.frameLength > 0 else { break }
-            meter.add(buffer)
-        }
     }
 
     /// Reads all of `source`, a chunk at a time, through `steps` into `target`, and into `meter` as it is written.
@@ -174,38 +163,13 @@ extension CleanupStep {
 /// Low cut: a 24 dB per octave Butterworth filter (a high-pass) at `frequency`, two biquads in a row, so hum an octave below is about 24 dB down
 /// and speech above it stays as it was.
 final class LowCut: CleanupStep {
-    private struct Biquad {
-        var b0 = 0.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0
-        var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
-
-        /// One section of Low cut at `frequency` with quality `q` (a high-pass biquad), from Robert Bristow-Johnson's Audio EQ Cookbook.
-        init(highPass frequency: Double, q: Double, rate: Double) {
-            let w = 2 * Double.pi * min(frequency, rate * 0.45) / rate
-            let alpha = sin(w) / (2 * q), cosw = cos(w), a0 = 1 + alpha
-            b0 = (1 + cosw) / 2 / a0
-            b1 = -(1 + cosw) / a0
-            b2 = b0
-            a1 = -2 * cosw / a0
-            a2 = (1 - alpha) / a0
-        }
-
-        mutating func run(_ samples: UnsafeMutablePointer<Float>, count: Int) {
-            for i in 0..<count {
-                let x = Double(samples[i])
-                let y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
-                x2 = x1; x1 = x; y2 = y1; y1 = y
-                samples[i] = Float(y)
-            }
-        }
-    }
-
     /// The qualities of the two sections of a fourth-order Butterworth filter.
     private static let qualities = [0.541_196_100_146_197, 1.306_562_964_876_376_6]
     /// One pair of sections per channel, since each channel has its own history.
     private var sections: [[Biquad]]
 
     init(frequency: Double, format: AVAudioFormat) {
-        let one = Self.qualities.map { Biquad(highPass: frequency, q: $0, rate: format.sampleRate) }
+        let one = Self.qualities.map { Biquad.highPass(frequency, q: $0, rate: format.sampleRate) }
         sections = Array(repeating: one, count: Int(format.channelCount))
     }
 
@@ -263,8 +227,7 @@ final class NoiseRemoval: CleanupStep {
 
     /// Nil when the unit cannot be made or started for `format`.
     init?(strength: Double, format: AVAudioFormat, unit description: AudioComponentDescription, failsAfter: Int? = nil) {
-        var find = description
-        guard AudioComponentFindNext(nil, &find) != nil, let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.slice),
+        guard Self.isHere(description), let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.slice),
               let feed = Feed(format: format) else { return nil }
         let unit = AVAudioUnitEffect(audioComponentDescription: description)
         // The high-quality voice model where the OS has it, the standard one before.

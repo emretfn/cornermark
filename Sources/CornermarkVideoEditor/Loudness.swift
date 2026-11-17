@@ -21,30 +21,13 @@ enum Loudness {
     static func integrated(of url: URL) throws -> Double {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
         let meter = LoudnessMeter(format: file.processingFormat)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 16_384) else { return -.infinity }
-        while file.framePosition < file.length {
-            try file.read(into: buffer, frameCount: min(16_384, AVAudioFrameCount(file.length - file.framePosition)))
-            guard buffer.frameLength > 0 else { break }
-            meter.add(buffer)
-        }
+        try meter.add(file)
         return meter.integrated
     }
 }
 
 /// Measures loudness as sound streams through it, a chunk at a time, so a whole track never has to be in memory.
 final class LoudnessMeter {
-    /// A biquad in direct form I, run in doubles.
-    private struct Biquad {
-        var b0, b1, b2, a1, a2: Double
-        var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
-
-        mutating func run(_ x: Double) -> Double {
-            let y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
-            x2 = x1; x1 = x; y2 = y1; y1 = y
-            return y
-        }
-    }
-
     /// The two K-weighting stages for any rate, worked out from their analog prototypes; at 48 kHz they are BS.1770's coefficients.
     private static func kWeighting(rate: Double) -> [Biquad] {
         // Stage 1: a high shelf, +4 dB above about 1.7 kHz, for the head.
@@ -79,6 +62,18 @@ final class LoudnessMeter {
     }
 
     convenience init(format: AVAudioFormat) { self.init(channels: Int(format.channelCount), rate: format.sampleRate) }
+
+    /// Reads the rest of `file` in, a chunk at a time. Run in a task, it stops at the next chunk once the task is cancelled.
+    func add(_ file: AVAudioFile) throws {
+        let chunk = VoiceCleanupRenderer.chunk
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: chunk) else { throw VoiceCleanupError.unreadable }
+        while file.framePosition < file.length {
+            try Task.checkCancellation()
+            try file.read(into: buffer, frameCount: min(chunk, AVAudioFrameCount(file.length - file.framePosition)))
+            guard buffer.frameLength > 0 else { break }
+            add(buffer)
+        }
+    }
 
     func add(_ buffer: AVAudioPCMBuffer) {
         guard let data = buffer.floatChannelData else { return }
