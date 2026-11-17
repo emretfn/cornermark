@@ -134,12 +134,14 @@ public final class PlayerFrames: SourceFrames {
         current.remove(output)
         let item = AVPlayerItem(asset: composition)
         item.add(output)
+        // A new item starts at zero. Moved to where the old one was before it takes over, playback goes on from there without a
+        // blip of the start, and `follow` keeps it in step as before.
+        if relaid { item.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil) }
         player.replaceCurrentItem(with: item)
         soundTracks = tracks
         soundAssets = assets
         applyGains()
-        // The new item starts at zero. Moved to where the old one was, playback goes on, and `follow` keeps it in step as before.
-        if relaid { seek(time) } else { parkedAt = nil }
+        if !relaid { parkedAt = nil }
     }
 
     public func setGains(_ next: [AudioTrack: Double]) {
