@@ -16,6 +16,11 @@ final class AudioPanel: SettingsPanel {
     }
     private var rows: [AudioTrack: TrackRows] = [:]
     private let cleanup = Checkbox(title: tr("Voice cleanup"))
+    /// Beside the master switch, so showing it moves no control under the pointer.
+    private let preparing = NSTextField.label(tr("Preparing…"), style: DS.Text.caption, color: DS.Color.textSecondary)
+    private var cleanupRow: NSStackView!
+    /// Whether the cleaned Microphone track for the current settings is being made; the preview plays the previous sound meanwhile.
+    var isPreparing = false { didSet { preparing.isHidden = !isPreparing } }
     private let lowCut = Checkbox(title: tr("Low cut"))
     private var lowCutFrequency: TrackingSlider!
     private var lowCutRow: NSStackView!
@@ -50,6 +55,12 @@ final class AudioPanel: SettingsPanel {
     private func voiceCleanupViews() -> [NSView] {
         cleanup.setAccessibilityIdentifier("video.audio.voiceCleanup")
         cleanup.toolTip = tr("Cleans up the microphone in preview and export. The recorded sound is never changed.")
+        preparing.setAccessibilityIdentifier("video.audio.voiceCleanup.preparing")
+        preparing.toolTip = tr("Preparing the cleaned microphone sound. The preview plays the previous sound until it is ready.")
+        preparing.isHidden = true
+        cleanupRow = NSStackView(views: [cleanup, preparing])
+        cleanupRow.spacing = DS.Space.s8
+        cleanupRow.alignment = .firstBaseline
         lowCut.setAccessibilityIdentifier("video.audio.voiceCleanup.lowCut")
         lowCut.toolTip = tr("Removes hum and rumble below the chosen frequency.")
         for box in [cleanup, lowCut] {
@@ -61,7 +72,7 @@ final class AudioPanel: SettingsPanel {
         lowCutFrequency.format = { Self.hertz($0) }
         lowCutRow = row(tr("Frequency"), [lowCutFrequency])
         lowCutRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        return [cleanup, lowCut, lowCutRow]
+        return [cleanupRow, lowCut, lowCutRow]
     }
 
     static func hertz(_ value: Double) -> String { tr("{frequency} Hz", ["frequency": Digits.text(Int(value.rounded()))]) }
@@ -84,7 +95,7 @@ final class AudioPanel: SettingsPanel {
 
     /// Step rows stay readable but greyed while the master switch is off, like a section whose switch is off.
     private func showVoiceCleanup(_ settings: VoiceCleanup, hidden: Bool) {
-        for view in [cleanup, lowCut, lowCutRow] as [NSView] { view.isHidden = hidden }
+        for view in [cleanupRow, cleanup, lowCut, lowCutRow] as [NSView] { view.isHidden = hidden }
         cleanup.state = settings.isOn ? .on : .off
         lowCut.state = settings.lowCutOn ? .on : .off
         lowCut.isEnabled = settings.isOn

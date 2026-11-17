@@ -286,6 +286,13 @@ func checkVideoAfterRecording() async throws {
     }
     check(editor.state.project.edits.audio.voiceCleanup.isOn && editor.state.project.edits.audio.voiceCleanup.lowCutFrequency == 150,
           "the Low cut follows its slider", detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    let preparing = editor.view(identifier: "video.audio.voiceCleanup.preparing")
+    check(editor.isPreparingCleanup && preparing?.isHidden == false, "a Voice cleanup change says it is preparing the cleaned microphone")
+    await editor.voiceCleanupPrepared()
+    let cleaned = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasPrefix("voice-cleanup-") }
+    check(!editor.isPreparingCleanup && preparing?.isHidden == true && cleaned.count == 1 && editor.previewMicrophone?.lastPathComponent == cleaned.first,
+          "and stops once the cleaned copy for the latest settings is ready: the preview plays it, the only one kept",
+          detail: "\(cleaned) preview \(editor.previewMicrophone?.lastPathComponent ?? "none")")
     snapshotEditor(editor, name: "video-after-audio")
     snapshotEditor(editor, name: "video-after-audio-dark", dark: true)
 

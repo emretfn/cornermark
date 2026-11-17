@@ -169,6 +169,13 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private var isScrubbing = false
     private var enteredFullScreenForPreview = false
     private var preparation: Task<Void, Never>?
+    /// The Microphone track file the preview plays: the recorded one, or its cleaned copy.
+    public private(set) var previewMicrophone: URL?
+    /// The Voice cleanup settings the preview last asked a cleaned copy for, nil while it plays the recorded sound.
+    private var cleanupAsked: VoiceCleanup?
+    private var cleanupJob: Task<Void, Never>?
+    /// Whether the cleaned Microphone track for the current settings is still being made; the preview plays the previous sound meanwhile.
+    public private(set) var isPreparingCleanup = false
 
     /// Reads `project.json` from `folder`. Throws when the folder holds no project or its video is missing.
     public static func open(folder: URL) throws -> VideoEditorWindowController {
@@ -180,6 +187,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         for track in project.source.audioTracks {
             if let name = project.source.file(for: track) { sound[track] = folder.appendingPathComponent(name) }
         }
+        sound[.microphone] = microphoneFile(of: project, in: folder)
         let editor = VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video, sound: sound))
         if let name = project.source.camera, FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
             let camera = PlayerFrames(url: folder.appendingPathComponent(name))
@@ -196,6 +204,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         history = UndoHistory(project.edits)
         self.frames = frames
         self.clock = clock
+        previewMicrophone = Self.microphoneFile(of: project, in: folder)
         state = VideoEditorState(project: project)
         let window = VideoEditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 780),
                                        styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -1182,6 +1191,56 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// How many click rings the preview shows, one layer each.
     public var previewRingLayerCount: Int { preview.visibleRingCount }
 
+    /// The Microphone track file a preview opening `project` plays: its cleaned copy when Voice cleanup is on and the copy for these
+    /// settings is ready, else the recorded file.
+    static func microphoneFile(of project: RecordingProject, in folder: URL) -> URL? {
+        guard project.source.audioTracks.contains(.microphone), let name = project.source.file(for: .microphone) else { return nil }
+        let recorded = folder.appendingPathComponent(name)
+        let cleanup = project.edits.audio.voiceCleanup
+        guard cleanup.isOn else { return recorded }
+        let cleaned = VoiceCleanupCache.file(for: recorded, settings: cleanup)
+        return FileManager.default.fileExists(atPath: cleaned.path) ? cleaned : recorded
+    }
+
+    /// Keeps the preview's Microphone track on the current Voice cleanup settings. A change asks for the cleaned copy in the background,
+    /// superseding the one asked for before; the preview plays the previous sound until the copy is ready, then takes it without
+    /// stopping. Off plays the recorded file again.
+    private func previewVoiceCleanup() {
+        let project = state.project
+        guard project.source.audioTracks.contains(.microphone), let name = project.source.file(for: .microphone) else { return }
+        let cleanup = project.edits.audio.voiceCleanup
+        let wanted = cleanup.isOn ? cleanup : nil
+        guard wanted != cleanupAsked else { return }
+        cleanupAsked = wanted
+        cleanupJob?.cancel()
+        let recorded = folder.appendingPathComponent(name)
+        guard let wanted, FileManager.default.fileExists(atPath: recorded.path) else {
+            isPreparingCleanup = false
+            playMicrophone(recorded)
+            return
+        }
+        isPreparingCleanup = !FileManager.default.fileExists(atPath: VoiceCleanupCache.file(for: recorded, settings: wanted).path)
+        // Asked even when the copy is there, so a render for older settings still under way is superseded and cannot replace it.
+        let render = VoiceCleanupRenders.shared.request(recorded, settings: wanted)
+        cleanupJob = Task { [weak self] in
+            let result = await render.result
+            guard let self, !Task.isCancelled, cleanupAsked == wanted else { return }
+            isPreparingCleanup = false
+            // A render that failed or was superseded leaves the previous sound playing.
+            if case .success(let cleaned) = result { playMicrophone(cleaned) }
+            inspector.audioPanel.isPreparing = false
+        }
+    }
+
+    private func playMicrophone(_ file: URL) {
+        guard previewMicrophone != file else { return }
+        previewMicrophone = file
+        frames.setSound(file, for: .microphone)
+    }
+
+    /// Waits for the cleaned Microphone track the preview asked for last, for a check to read the preview after it.
+    public func voiceCleanupPrepared() async { await cleanupJob?.value }
+
     private func refresh() {
         let background = state.project.edits.background
         if backgroundPicture.file != background.image {
@@ -1193,7 +1252,9 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                                    project.source.audioTracks.isEmpty ? nil : .audio].compactMap { $0 })
         inspector.cameraPanel.show(project.edits.camera)
         inspector.keystrokesPanel.show(project.edits.keystrokes)
+        previewVoiceCleanup()
         inspector.audioPanel.show(project.edits.audio, tracks: project.source.audioTracks)
+        inspector.audioPanel.isPreparing = isPreparingCleanup
         inspector.motionBlurPanel.show(project.edits.motionBlur)
         frames.setGains(Dictionary(uniqueKeysWithValues: AudioTrack.allCases.map { ($0, project.edits.audio[$0].gain) }))
         let size = ExportPlan(project: project, settings: ExportSettings())
