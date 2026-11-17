@@ -75,7 +75,8 @@ final class AudioPanel: SettingsPanel {
     }
 
     static func hertz(_ value: Double) -> String { tr("{frequency} Hz", ["frequency": Digits.text(Int(value.rounded()))]) }
-    static func decibels(_ value: Double) -> String { tr("{level} dB", ["level": Digits.text(Int(value.rounded()))]) }
+    /// The level after a left-to-right mark, so in Arabic, Hebrew and Persian the minus sign stays in front of the number.
+    static func decibels(_ value: Double) -> String { tr("{level} dB", ["level": "\u{200E}" + Digits.text(Int(value.rounded()))]) }
 
     /// `tracks` are the ones the recording has; the rest are hidden.
     func show(_ audio: AudioEdits, tracks: [AudioTrack]) {
