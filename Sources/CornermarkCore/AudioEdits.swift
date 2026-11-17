@@ -28,13 +28,15 @@ public struct AudioTrackLevel: Codable, Equatable, Sendable {
     private enum Keys: String, CodingKey { case isOn, level }
 }
 
-/// The level of each sound track. Preview and export mix by it.
+/// The level of each sound track and the microphone's Voice cleanup. Preview and export mix by it.
 public struct AudioEdits: Codable, Equatable, Sendable {
     public var microphone: AudioTrackLevel
     public var systemAudio: AudioTrackLevel
+    /// Applies to the Microphone track only. A project saved before it existed has it off, so its sound stays as it was.
+    public var voiceCleanup: VoiceCleanup
 
-    public init(microphone: AudioTrackLevel = AudioTrackLevel(), systemAudio: AudioTrackLevel = AudioTrackLevel()) {
-        self.microphone = microphone; self.systemAudio = systemAudio
+    public init(microphone: AudioTrackLevel = AudioTrackLevel(), systemAudio: AudioTrackLevel = AudioTrackLevel(), voiceCleanup: VoiceCleanup = VoiceCleanup()) {
+        self.microphone = microphone; self.systemAudio = systemAudio; self.voiceCleanup = voiceCleanup
     }
 
     public subscript(track: AudioTrack) -> AudioTrackLevel {
@@ -46,8 +48,9 @@ public struct AudioEdits: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: Keys.self)
         microphone = (try? c.decodeIfPresent(AudioTrackLevel.self, forKey: .microphone)) ?? AudioTrackLevel()
         systemAudio = (try? c.decodeIfPresent(AudioTrackLevel.self, forKey: .systemAudio)) ?? AudioTrackLevel()
+        voiceCleanup = (try? c.decodeIfPresent(VoiceCleanup.self, forKey: .voiceCleanup)) ?? VoiceCleanup()
     }
-    private enum Keys: String, CodingKey { case microphone, systemAudio }
+    private enum Keys: String, CodingKey { case microphone, systemAudio, voiceCleanup }
 }
 
 extension RecordingProject.Source {

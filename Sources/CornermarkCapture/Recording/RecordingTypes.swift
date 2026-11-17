@@ -117,9 +117,10 @@ public struct RecordingReport: Equatable {
 }
 
 extension RecordingReport {
-    /// The project that describes this recording, with every edit at its default. The video is the file the report names.
+    /// The project that describes this recording, with every edit at its default and Voice cleanup on when it has a Microphone track.
+    /// The video is the file the report names.
     public var project: RecordingProject {
-        var project = RecordingProject(
+        var project = RecordingProject.newRecording(
             source: .init(video: url.lastPathComponent, pixelWidth: format.width, pixelHeight: format.height,
                           pointWidth: area.width, pointHeight: area.height, fps: format.fps,
                           duration: duration + 1.0 / Double(format.fps),
