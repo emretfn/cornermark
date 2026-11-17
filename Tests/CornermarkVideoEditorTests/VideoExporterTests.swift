@@ -263,6 +263,25 @@ final class VideoExporterTests: XCTestCase {
                        "going back to 60 Hz cleans for 60 Hz again")
     }
 
+    func testTheCleanedMicrophoneAnExportMixesStaysWhileNewerSettingsAreRendered() async throws {
+        var (_, project) = try await makeSource(frames: 30)
+        let mic = try makeHummingMicrophone(seconds: 1)
+        project.source.microphone = "mic.m4a"
+        project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
+        project.edits.audio.voiceCleanup.levelingOn = false
+        let (files, leases) = try await VideoExporter.soundFiles(project, in: folder)
+        let mixed = try XCTUnwrap(files.first { $0.url.lastPathComponent.hasPrefix(VoiceCleanupCache.prefix) }?.url, "the export mixes the cleaned copy")
+
+        var newer = project.edits.audio.voiceCleanup
+        newer.lowCutFrequency = 200
+        let previewed = try await VoiceCleanupRenders.shared.cleaned(mic, settings: newer)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mixed.path), "the preview's newer render leaves the file the export still mixes")
+
+        leases.forEach(VoiceCleanupRenders.shared.release)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mixed.path), "once the export is done with it, the older copy goes")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: previewed.path))
+    }
+
     func testAMissingCleanedMicrophoneFailsTheMixInsteadOfLeavingTheMicrophoneOut() async throws {
         let mic = try makeHummingMicrophone(seconds: 1)
         let gone = folder.appendingPathComponent(VoiceCleanupCache.prefix + "0000").appendingPathExtension("m4a")
