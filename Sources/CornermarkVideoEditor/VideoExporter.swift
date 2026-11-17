@@ -404,8 +404,8 @@ public enum VideoExporter {
         let folder = video.deletingLastPathComponent()
         // A video opened from a file carries its sound in its own file; a recording's video has none, so it adds nothing to the mix.
         // The recording's own tracks come in at the editor's levels, and a track that is off is left out.
-        let mix = try await AudioMixReader(files: [(video, 1)] + project.audioMix.map { (folder.appendingPathComponent($0.file), $0.gain) }, clips: project.timeline.clips,
-                                           duration: plan.duration)
+        let tracks = try await soundFiles(project, in: folder)
+        let mix = try await AudioMixReader(files: [(video, 1)] + tracks, clips: project.timeline.clips, duration: plan.duration)
         defer { mix?.cancel() }
         do {
             let sink = Sink(writer: writer, audio: mix)
@@ -421,6 +421,23 @@ public enum VideoExporter {
             if writer.status == .writing { writer.cancelWriting() }
             throw error
         }
+    }
+
+    /// The recording's sound tracks the mix takes, each at its Track level. With Voice cleanup on, the Microphone track is its cleaned
+    /// copy, made first if it is not ready; the recorded file stays as it is.
+    static func soundFiles(_ project: RecordingProject, in folder: URL) async throws -> [(url: URL, gain: Double)] {
+        var files: [(url: URL, gain: Double)] = []
+        for entry in project.audioMix {
+            let recorded = folder.appendingPathComponent(entry.file)
+            let cleanup = project.edits.audio.voiceCleanup
+            guard entry.track == .microphone, cleanup.isOn, FileManager.default.fileExists(atPath: recorded.path) else {
+                files.append((recorded, entry.gain))
+                continue
+            }
+            let cleaned = try await Task.detached(priority: .userInitiated) { try VoiceCleanupCache.prepare(recorded, settings: cleanup) }.value
+            files.append((cleaned, entry.gain))
+        }
+        return files
     }
 
     /// The finished video's frame at `outputTime` as one picture at the export's original size: the same drawing, and the source and

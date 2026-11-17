@@ -184,6 +184,83 @@ final class VideoExporterTests: XCTestCase {
         for (got, want) in zip(cutSound.onsets, [0.25, 0.75]) { XCTAssertEqual(got, want, accuracy: 0.001, "a burst after a cut moves with its clip") }
     }
 
+    /// A Microphone track of 50 Hz hum and a 1 kHz voice-like tone, with a short loud burst at each of `bursts` seconds.
+    private func makeHummingMicrophone(seconds: Double, tones: [(Double, Double)] = [(50, 0.1), (1_000, 0.1)], bursts: [Double] = []) throws -> URL {
+        let url = folder.appendingPathComponent("mic.m4a")
+        try TestSound.write(url, seconds: seconds, channels: [tones]) { _, t in
+            bursts.contains { t >= $0 && t < $0 + 0.005 } ? Float(0.8 * cos(2 * .pi * 2_000 * t)) : 0
+        }
+        return url
+    }
+
+    private func level(_ frequency: Double, in url: URL, from: Double, to: Double) throws -> Double {
+        let sound = try TestSound.read(url)
+        return TestSound.amplitude(of: frequency, in: sound.channels[0], rate: sound.rate, from: from, to: to)
+    }
+
+    func testWithVoiceCleanupOnTheExportCarriesTheCleanedMicrophoneTrackCutByTheSameClips() async throws {
+        var (source, project) = try await makeSource(frames: 60)
+        let mic = try makeHummingMicrophone(seconds: 2, bursts: [0.25, 1.25, 1.75])
+        let recorded = try Data(contentsOf: mic)
+        project.source.microphone = "mic.m4a"
+        project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 1.5, end: 2)]
+
+        let raw = folder.appendingPathComponent("raw.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: raw)
+        project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
+        let clean = folder.appendingPathComponent("clean.mp4")
+        let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: clean)
+
+        XCTAssertTrue(report.hasAudio)
+        let hum = TestSound.decibels(try level(50, in: clean, from: 0.1, to: 0.9) / level(50, in: raw, from: 0.1, to: 0.9))
+        let voice = TestSound.decibels(try level(1_000, in: clean, from: 0.1, to: 0.9) / level(1_000, in: raw, from: 0.1, to: 0.9))
+        XCTAssertLessThan(hum, -10, "hum below the 80 Hz Low cut is clearly reduced")
+        XCTAssertEqual(voice, 0, accuracy: 1, "the voice stays as it was")
+        let cut = try bursts(clean)
+        XCTAssertEqual(cut.seconds, 1, accuracy: 0.03, "the cleaned sound keeps only what the clips keep")
+        XCTAssertEqual(cut.onsets.count, 2, "the burst inside the removed stretch is gone")
+        for (got, want) in zip(cut.onsets, [0.25, 0.75]) { XCTAssertEqual(got, want, accuracy: 0.001, "a burst after a cut moves with its clip") }
+        XCTAssertEqual(try Data(contentsOf: mic), recorded, "the recorded microphone file is never changed")
+    }
+
+    func testWithVoiceCleanupOffTheExportCarriesTheMicrophoneAsRecorded() async throws {
+        var (source, project) = try await makeSource(frames: 60)
+        let mic = try makeHummingMicrophone(seconds: 2)
+        project.source.microphone = "mic.m4a"
+        var cleanup = VoiceCleanup(isOn: false)
+        cleanup.lowCutFrequency = 200
+        project.edits.audio.voiceCleanup = cleanup
+        let out = folder.appendingPathComponent("export.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: out)
+        for f in [50.0, 1_000] {
+            let change = TestSound.decibels(try level(f, in: out, from: 0.5, to: 1.5) / level(f, in: mic, from: 0.5, to: 1.5))
+            XCTAssertEqual(change, 0, accuracy: 0.5, "\(Int(f)) Hz plays as recorded")
+        }
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        XCTAssertEqual(Set(files), ["screen.mp4", "mic.m4a", "export.mp4"], "nothing is cleaned while Voice cleanup is off")
+    }
+
+    func testAChangedSettingIsNeverServedFromTheOldCleanedTrack() async throws {
+        var (source, project) = try await makeSource(frames: 60)
+        _ = try makeHummingMicrophone(seconds: 2, tones: [(150, 0.2)])
+        project.source.microphone = "mic.m4a"
+        var cleanup = VoiceCleanup(isOn: true)
+        cleanup.lowCutFrequency = 60
+        project.edits.audio.voiceCleanup = cleanup
+        let low = folder.appendingPathComponent("low.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: low)
+        project.edits.audio.voiceCleanup.lowCutFrequency = 200
+        let high = folder.appendingPathComponent("high.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: high)
+        let change = TestSound.decibels(try level(150, in: high, from: 0.5, to: 1.5) / level(150, in: low, from: 0.5, to: 1.5))
+        XCTAssertLessThan(change, -6, "150 Hz passes a 60 Hz Low cut and is cut by a 200 Hz one")
+        project.edits.audio.voiceCleanup.lowCutFrequency = 60
+        let again = folder.appendingPathComponent("again.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: again)
+        XCTAssertEqual(TestSound.decibels(try level(150, in: again, from: 0.5, to: 1.5) / level(150, in: low, from: 0.5, to: 1.5)), 0, accuracy: 0.5,
+                       "going back to 60 Hz cleans for 60 Hz again")
+    }
+
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")

@@ -1,5 +1,6 @@
 import AVFoundation
 import CornermarkCore
+import CryptoKit
 
 /// Makes the cleaned Microphone track: the recorded file through the Voice cleanup steps, written as a new file of the same length,
 /// sample rate and channels. It runs offline, as fast as the machine allows, and never changes the recorded file.
@@ -100,5 +101,49 @@ final class LowCut: CleanupStep {
         for c in sections.indices where c < Int(buffer.format.channelCount) {
             for s in sections[c].indices { sections[c][s].run(data[c], count: count) }
         }
+    }
+}
+
+/// The cleaned Microphone track kept inside the project folder beside the recorded one. It is a cache: its name is made from the
+/// settings, the recorded file and `version`, so a file made for anything else is never used, and it can always be made again.
+enum VoiceCleanupCache {
+    /// Bump when a step starts sounding different, so files cleaned by an older build are made again.
+    static let version = 1
+    static let prefix = "voice-cleanup-"
+
+    /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.
+    static func file(for microphone: URL, settings: VoiceCleanup) -> URL {
+        var steps = settings
+        steps.isOn = true
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let attributes = try? FileManager.default.attributesOfItem(atPath: microphone.path)
+        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let key = "\(version)|\(microphone.lastPathComponent)|\(size)|\(modified)|" + String(decoding: (try? encoder.encode(steps)) ?? Data(), as: UTF8.self)
+        let digest = SHA256.hash(data: Data(key.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return microphone.deletingLastPathComponent().appendingPathComponent(prefix + digest).appendingPathExtension(microphone.pathExtension)
+    }
+
+    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there. Copies cleaned for other settings are
+    /// removed once the new one is in place, so the project keeps one.
+    static func prepare(_ microphone: URL, settings: VoiceCleanup) throws -> URL {
+        let fm = FileManager.default
+        let target = file(for: microphone, settings: settings)
+        guard !fm.fileExists(atPath: target.path) else { return target }
+        let folder = microphone.deletingLastPathComponent()
+        // Made under a hidden name and moved in whole, so a half-written file never carries a settings name.
+        let partial = folder.appendingPathComponent(".\(prefix)\(UUID().uuidString)").appendingPathExtension(microphone.pathExtension)
+        do {
+            try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial)
+            if fm.fileExists(atPath: target.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: target) }
+        } catch {
+            try? fm.removeItem(at: partial)
+            throw error
+        }
+        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) && name != target.lastPathComponent {
+            try? fm.removeItem(at: folder.appendingPathComponent(name))
+        }
+        return target
     }
 }
