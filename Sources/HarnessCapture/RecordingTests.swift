@@ -189,6 +189,7 @@ func runProjectTimelineTests() async {
         }.max() ?? .infinity
         check(worst < 1.0, "frameState puts the pointer within one point of the script at every output frame", detail: "worst \(worst) pt")
         check(project.source.duration > report.duration && abs(project.source.duration - 3.0) < 1e-9, "the project lasts as long as the file", detail: "\(project.source.duration)")
+        check(project.source.microphone == nil && !project.edits.audio.voiceCleanup.isOn, "a recording without a microphone has Voice cleanup off")
     } catch {
         check(false, "the timeline check threw", detail: "\(error)")
     }

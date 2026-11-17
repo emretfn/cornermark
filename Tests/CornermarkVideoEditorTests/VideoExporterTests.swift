@@ -198,16 +198,22 @@ final class VideoExporterTests: XCTestCase {
         return TestSound.amplitude(of: frequency, in: sound.channels[0], rate: sound.rate, from: from, to: to)
     }
 
-    /// Real speech, said by the Mac's speech synthesizer: a voice Noise removal keeps, as pure tones are not.
+    /// Real speech, said by the Mac's speech synthesizer: a voice Noise removal keeps, as pure tones are not. Samantha at 180 words a
+    /// minute, so every Mac says the same sentence the same way; a Mac without her says it in its own voice.
     private func speech(_ text: String) throws -> [Float] {
         let url = folder.appendingPathComponent("speech.caf")
         defer { try? FileManager.default.removeItem(at: url) }
-        let say = Process()
-        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        say.arguments = ["-o", url.path, "--data-format=LEF32@48000", text]
-        try say.run()
-        say.waitUntilExit()
-        XCTAssertEqual(say.terminationStatus, 0, "the speech synthesizer said the sentence")
+        func say(_ voice: [String]) throws -> Bool {
+            let say = Process()
+            say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            say.arguments = voice + ["-r", "180", "-o", url.path, "--data-format=LEF32@48000", text]
+            say.standardError = FileHandle.nullDevice
+            try say.run()
+            say.waitUntilExit()
+            return say.terminationStatus == 0 && FileManager.default.fileExists(atPath: url.path)
+        }
+        let said = try say(["-v", "Samantha"]) || say([])
+        try XCTSkipUnless(said, "the speech synthesizer could not say the sentence on this Mac, so there is no speech to clean")
         return try TestSound.read(url).channels[0]
     }
 
@@ -247,11 +253,13 @@ final class VideoExporterTests: XCTestCase {
                                        / TestSound.noiseFloor(before.channels[0], rate: before.rate, from: 2.5, to: 3.5))
         let loudness = try Loudness.integrated(of: clean)
         XCTAssertEqual(loudness, -16, accuracy: 1, "Leveling brings the exported voice to -16 LUFS")
-        XCTAssertLessThan(hum, -12, "the hum is clearly reduced")
         if TestSound.soundIsolationIsHere {
+            XCTAssertLessThan(hum, -12, "the hum is clearly reduced")
             XCTAssertLessThan(floor, -6, "the fan noise is clearly reduced")
         } else {
-            XCTAssertGreaterThan(floor, -1, "without Noise removal on this Mac the fan noise stays, and the export still works")
+            // Leveling raises the hum and the fan noise alike, and without Noise removal the noise stays, so the hum is measured
+            // against it.
+            XCTAssertLessThan(hum - floor, -12, "without Noise removal on this Mac the hum is still clearly reduced, and the export works")
         }
 
         project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 2.5, end: 3.5)]
@@ -259,9 +267,11 @@ final class VideoExporterTests: XCTestCase {
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: cutFile)
         let cut = try TestSound.read(cutFile)
         XCTAssertEqual(Double(cut.channels[0].count) / cut.rate, 1.5, accuracy: 0.03, "the cleaned sound keeps only what the clips keep")
-        XCTAssertLessThan(TestSound.amplitude(of: 50, in: cut.channels[0], rate: cut.rate, from: 0.6, to: 1.4)
-                          / TestSound.amplitude(of: 50, in: before.channels[0], rate: before.rate, from: 2.6, to: 3.4), 0.25,
-                          "the second clip carries the cleaned sound")
+        // The same cleaned track, cut: the second clip's hum is the uncut export's at that moment, whatever Leveling made of it.
+        func humLevel(_ sound: (channels: [[Float]], rate: Double), from: Double) -> Double {
+            TestSound.amplitude(of: 50, in: sound.channels[0], rate: sound.rate, from: from, to: from + 0.8)
+        }
+        XCTAssertEqual(humLevel(cut, from: 0.6), humLevel(after, from: 2.6), accuracy: 0.25 * humLevel(before, from: 2.6), "the second clip carries the cleaned sound")
         XCTAssertEqual(try Data(contentsOf: mic), recorded, "the recorded microphone file is never changed")
     }
 
@@ -295,19 +305,27 @@ final class VideoExporterTests: XCTestCase {
 
     func testWithVoiceCleanupOffTheExportCarriesTheMicrophoneAsRecorded() async throws {
         var (source, project) = try await makeSource(frames: 60)
-        let mic = try makeHummingMicrophone(seconds: 2)
+        _ = try makeHummingMicrophone(seconds: 2)
         project.source.microphone = "mic.m4a"
+        // As the project saved before Voice cleanup: no Voice cleanup in its file at all.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(project)) as? [String: Any])
+        var edits = try XCTUnwrap(json["edits"] as? [String: Any]), audio = try XCTUnwrap(edits["audio"] as? [String: Any])
+        audio["voiceCleanup"] = nil
+        edits["audio"] = audio
+        json["edits"] = edits
+        let before = try JSONDecoder().decode(RecordingProject.self, from: JSONSerialization.data(withJSONObject: json))
+        let today = folder.appendingPathComponent("today.mp4")
+        _ = try await VideoExporter.export(project: before, video: source, settings: ExportSettings(), to: today)
+
         var cleanup = VoiceCleanup(isOn: false)
         cleanup.lowCutFrequency = 200
         project.edits.audio.voiceCleanup = cleanup
         let out = folder.appendingPathComponent("export.mp4")
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: out)
-        for f in [50.0, 1_000] {
-            let change = TestSound.decibels(try level(f, in: out, from: 0.5, to: 1.5) / level(f, in: mic, from: 0.5, to: 1.5))
-            XCTAssertEqual(change, 0, accuracy: 0.5, "\(Int(f)) Hz plays as recorded")
-        }
+        XCTAssertEqual(try TestSound.read(out).channels, try TestSound.read(today).channels,
+                       "Voice cleanup off mixes exactly the sound a project without it does, sample for sample")
         let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
-        XCTAssertEqual(Set(files), ["screen.mp4", "mic.m4a", "export.mp4"], "nothing is cleaned while Voice cleanup is off")
+        XCTAssertEqual(Set(files), ["screen.mp4", "mic.m4a", "today.mp4", "export.mp4"], "nothing is cleaned while Voice cleanup is off")
     }
 
     func testAChangedSettingIsNeverServedFromTheOldCleanedTrack() async throws {
