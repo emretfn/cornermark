@@ -286,6 +286,23 @@ func checkVideoAfterRecording() async throws {
     }
     check(editor.state.project.edits.audio.voiceCleanup.isOn && editor.state.project.edits.audio.voiceCleanup.lowCutFrequency == 150,
           "the Low cut follows its slider", detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    let noiseBox = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval") as? NSButton
+    let strengthSlider = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval.strength") as? TrackingSlider
+    let unavailableNote = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval.unavailable")
+    if VoiceCleanupRenderer.noiseRemovalAvailable {
+        check(noiseBox?.state == .on && noiseBox?.isEnabled == true && strengthSlider?.doubleValue == 1 && unavailableNote?.isHidden == true,
+              "Noise removal sits under Low cut, on at full strength")
+        if let strengthSlider {
+            for v in stride(from: 1.0, through: 0.6, by: -0.1) { strengthSlider.doubleValue = v; fire(strengthSlider) }
+            strengthSlider.onTrackingEnd()
+            steps += 1
+        }
+        check(abs(editor.state.project.edits.audio.voiceCleanup.noiseRemovalStrength - 0.6) < 1e-9, "Noise removal's strength follows its slider",
+              detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    } else {
+        check(noiseBox?.isEnabled == false && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false,
+              "on a Mac without the sound isolation unit, Noise removal is greyed out and says it is not available")
+    }
     snapshotEditor(editor, name: "video-after-audio")
     snapshotEditor(editor, name: "video-after-audio-dark", dark: true)
 
