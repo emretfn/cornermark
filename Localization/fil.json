@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "Ipinapakita ang iyong camera sa isang bubble.",
   "Shrink Camera to Bubble": "Paliitin ang camera sa bubble",
   "Shrinks the camera back to a bubble": "Ibinabalik sa bubble ang camera",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Pinatatahimik ang mikropono habang nananatiling mas mahina sa threshold ang tunog nito, gaya ng paghinga at pagpindot ng key sa pagitan ng mga pangungusap.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Pinatatahimik ang mikropono habang nananatiling mas mahina sa threshold ang tunog nito, para sa mahihinang tunog gaya ng paghinga sa pagitan ng mga pangungusap.",
   "Silver": "Pilak",
   "Size": "Laki",
   "Sky": "Langit",

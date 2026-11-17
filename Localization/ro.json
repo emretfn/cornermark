@@ -685,7 +685,7 @@
   "Shows your camera in a bubble.": "Afișează camera într-o bulă.",
   "Shrink Camera to Bubble": "Micșorează camera la bulă",
   "Shrinks the camera back to a bubble": "Readuce camera la o bulă",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Amuțește microfonul cât timp sunetul rămâne sub prag, cum ar fi respirațiile și apăsările de taste dintre propoziții.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Amuțește microfonul cât timp sunetul rămâne sub prag, pentru sunete slabe, cum ar fi respirațiile dintre propoziții.",
   "Silver": "Argintiu",
   "Size": "Mărime",
   "Sky": "Cer",

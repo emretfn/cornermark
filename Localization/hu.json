@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "Buborékban mutatja a kamera képét.",
   "Shrink Camera to Bubble": "Kamera kicsinyítése buborékká",
   "Shrinks the camera back to a bubble": "Visszakicsinyíti a kamerát buborékká",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Elnémítja a mikrofont, amíg a hangja a küszöbérték alatt marad, például a mondatok közti levegővételt és billentyűleütéseket.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Elnémítja a mikrofont, amíg a hangja a küszöbérték alatt marad, a halk hangokhoz, például a mondatok közti levegővételhez.",
   "Silver": "Ezüst",
   "Size": "Méret",
   "Sky": "Égbolt",

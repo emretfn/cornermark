@@ -679,7 +679,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "Menunjukkan kamera anda dalam gelembung.",
   "Shrink Camera to Bubble" : "Kecilkan Kamera kepada Gelembung",
   "Shrinks the camera back to a bubble" : "Mengecilkan kamera kembali kepada gelembung",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Mendiamkan mikrofon selagi bunyinya kekal di bawah ambang, seperti nafas dan ketukan kekunci di antara ayat.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Mendiamkan mikrofon selagi bunyinya kekal di bawah ambang, untuk bunyi perlahan seperti nafas di antara ayat.",
   "Silver" : "Perak",
   "Size" : "Saiz",
   "Sky" : "Langit",

@@ -667,7 +667,7 @@
   "Shows your camera in a bubble.": "Menampilkan kamera Anda dalam gelembung.",
   "Shrink Camera to Bubble": "Kecilkan Kamera ke Gelembung",
   "Shrinks the camera back to a bubble": "Mengecilkan kamera kembali ke gelembung",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Membungkam mikrofon selama suaranya tetap di bawah ambang, seperti napas dan ketukan tombol di antara kalimat.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Membungkam mikrofon selama suaranya tetap di bawah ambang, untuk suara pelan seperti napas di antara kalimat.",
   "Silver": "Perak",
   "Size": "Ukuran",
   "Sky": "Langit",

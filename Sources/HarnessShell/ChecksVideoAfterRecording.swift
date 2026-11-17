@@ -331,9 +331,10 @@ func checkVideoAfterRecording() async throws {
     }
     // As after an export that could not run Noise removal.
     editor.noiseRemovalAvailable = false
-    check(noiseBox?.isEnabled == false && noiseBox?.state == .off && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false
+    check(noiseBox?.isEnabled == false && noiseBox?.state == .on && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false
+          && noiseBox?.toolTip == "Not available on this Mac" && noiseBox?.accessibilityHelp() == "Not available on this Mac"
           && editor.state.project.edits.audio.voiceCleanup.noiseRemovalOn,
-          "when Noise removal cannot run, its box and strength are greyed out, a note says it is not available, and the project keeps it on")
+          "when Noise removal cannot run, its box and strength are greyed out with the box still on, a note, tip and VoiceOver help say it is not available, and the project keeps it on")
     snapshotEditor(editor, name: "video-after-audio-noise-removal-unavailable")
     editor.noiseRemovalAvailable = true
     if VoiceCleanupRenderer.noiseRemovalAvailable {

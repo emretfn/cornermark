@@ -679,7 +679,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "카메라를 버블로 표시합니다.",
   "Shrink Camera to Bubble" : "카메라를 버블로 축소",
   "Shrinks the camera back to a bubble" : "카메라를 다시 버블로 축소합니다",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "문장 사이의 숨소리와 키 입력처럼 소리가 임계값보다 작은 동안 마이크를 무음으로 만듭니다.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "문장 사이의 숨소리 같은 작은 소리를 위해, 소리가 임계값보다 작은 동안 마이크를 무음으로 만듭니다.",
   "Silver" : "실버",
   "Size" : "크기",
   "Sky" : "스카이",

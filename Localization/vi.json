@@ -667,7 +667,7 @@
   "Shows your camera in a bubble.": "Hiển thị camera của bạn trong một bong bóng.",
   "Shrink Camera to Bubble": "Thu camera về bong bóng",
   "Shrinks the camera back to a bubble": "Thu camera về lại bong bóng",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Tắt tiếng micrô khi âm thanh còn dưới ngưỡng, như tiếng thở và tiếng gõ phím giữa các câu.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Tắt tiếng micrô khi âm thanh còn dưới ngưỡng, dành cho những âm thanh nhỏ như tiếng thở giữa các câu.",
   "Silver": "Bạc",
   "Size": "Kích thước",
   "Sky": "Bầu trời",

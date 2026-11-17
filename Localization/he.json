@@ -685,7 +685,7 @@
   "Shows your camera in a bubble.": "מציג את המצלמה שלך בבועה.",
   "Shrink Camera to Bubble": "כווץ את המצלמה לבועה",
   "Shrinks the camera back to a bubble": "מכווץ את המצלמה בחזרה לבועה",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "משתיק את המיקרופון כל עוד הצליל שלו נשאר מתחת לסף, כמו נשימות והקשות מקלדת בין משפטים.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "משתיק את המיקרופון כל עוד הצליל שלו נשאר מתחת לסף, לצלילים שקטים כמו נשימות בין משפטים.",
   "Silver": "כסף",
   "Size": "גודל",
   "Sky": "שמיים",

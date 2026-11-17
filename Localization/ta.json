@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "உங்கள் கேமராவை ஒரு குமிழில் காட்டும்.",
   "Shrink Camera to Bubble": "கேமராவைக் குமிழாகச் சுருக்கு",
   "Shrinks the camera back to a bubble": "கேமராவை மீண்டும் குமிழாகச் சுருக்கும்",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "வாக்கியங்களுக்கு இடையிலான மூச்சு, விசை அழுத்தங்கள் போல, ஒலி வரம்புக்குக் கீழே இருக்கும் வரை மைக்ரோஃபோனை அமைதியாக்கும்.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "வாக்கியங்களுக்கு இடையிலான மூச்சு போன்ற மெல்லிய ஒலிகளுக்காக, ஒலி வரம்புக்குக் கீழே இருக்கும் வரை மைக்ரோஃபோனை அமைதியாக்கும்.",
   "Silver": "வெள்ளி",
   "Size": "அளவு",
   "Sky": "வானம்",

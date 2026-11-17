@@ -685,7 +685,7 @@
   "Shows your camera in a bubble.": "Muestra tu cámara en una burbuja.",
   "Shrink Camera to Bubble": "Reducir la cámara a burbuja",
   "Shrinks the camera back to a bubble": "Reduce la cámara de nuevo a una burbuja",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Silencia el micrófono mientras su sonido se mantiene por debajo del umbral, como respiraciones y pulsaciones de teclas entre frases.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Silencia el micrófono mientras su sonido se mantiene por debajo del umbral, para sonidos suaves como las respiraciones entre frases.",
   "Silver": "Plata",
   "Size": "Tamaño",
   "Sky": "Cielo",

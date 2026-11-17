@@ -685,7 +685,7 @@
   "Shows your camera in a bubble.": "Mostra la càmera en una bombolla.",
   "Shrink Camera to Bubble": "Redueix la càmera a bombolla",
   "Shrinks the camera back to a bubble": "Torna a reduir la càmera a una bombolla",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Silencia el micròfon mentre el so es manté per sota del llindar, com ara respiracions i tecles entre frases.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Silencia el micròfon mentre el so es manté per sota del llindar, per a sons fluixos com les respiracions entre frases.",
   "Silver": "Plata",
   "Size": "Mida",
   "Sky": "Cel",

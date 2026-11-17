@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "Näyttää kamerasi kuplassa.",
   "Shrink Camera to Bubble": "Pienennä kamera kuplaksi",
   "Shrinks the camera back to a bubble": "Pienentää kameran takaisin kuplaksi",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Hiljentää mikrofonin, kun sen ääni pysyy kynnyksen alapuolella, kuten hengitys ja näppäilyt lauseiden välissä.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Hiljentää mikrofonin, kun sen ääni pysyy kynnyksen alapuolella, hiljaisille äänille kuten hengitykselle lauseiden välissä.",
   "Silver": "Hopea",
   "Size": "Koko",
   "Sky": "Taivas",

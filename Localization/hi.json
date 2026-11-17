@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "आपका कैमरा एक बबल में दिखाता है।",
   "Shrink Camera to Bubble": "कैमरे को बबल में छोटा करें",
   "Shrinks the camera back to a bubble": "कैमरे को वापस बबल में छोटा करता है",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "जब तक माइक्रोफ़ोन की आवाज़ थ्रेशोल्ड से नीचे रहती है, उसे शांत रखता है, जैसे वाक्यों के बीच साँसें और कीस्ट्रोक।",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "जब तक माइक्रोफ़ोन की आवाज़ थ्रेशोल्ड से नीचे रहती है, उसे शांत रखता है, वाक्यों के बीच साँसों जैसी धीमी आवाज़ों के लिए।",
   "Silver": "चाँदी",
   "Size": "साइज़",
   "Sky": "आसमान",

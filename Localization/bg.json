@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "Показва камерата ви в балон.",
   "Shrink Camera to Bubble": "Свий камерата до балон",
   "Shrinks the camera back to a bubble": "Свива камерата обратно до балон",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Заглушава микрофона, докато звукът му остава под прага, например дишане и натискане на клавиши между изреченията.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Заглушава микрофона, докато звукът му остава под прага, за тихи звуци като дишането между изреченията.",
   "Silver": "Сребристо",
   "Size": "Размер",
   "Sky": "Небе",

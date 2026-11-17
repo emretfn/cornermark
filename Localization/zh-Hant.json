@@ -667,7 +667,7 @@
   "Shows your camera in a bubble.": "在泡泡中顯示你的相機畫面。",
   "Shrink Camera to Bubble": "將相機縮小為泡泡",
   "Shrinks the camera back to a bubble": "將相機縮回泡泡",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "麥克風聲音低於閾值時將其靜音，例如句子之間的呼吸聲和按鍵聲。",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "麥克風聲音低於閾值時將其靜音，用於句子之間的呼吸聲等輕微聲音。",
   "Silver": "銀色",
   "Size": "大小",
   "Sky": "天空",

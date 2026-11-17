@@ -688,7 +688,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "دوربین شما را در یک حباب نشان می‌دهد.",
   "Shrink Camera to Bubble" : "کوچک کردن دوربین به حباب",
   "Shrinks the camera back to a bubble" : "دوربین را دوباره به حباب کوچک می‌کند",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "تا وقتی صدای میکروفون زیر آستانه بماند آن را بی‌صدا می‌کند، مثل نفس‌ها و صدای کلیدها بین جمله‌ها.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "تا وقتی صدای میکروفون زیر آستانه بماند آن را بی‌صدا می‌کند، برای صداهای آرام مثل نفس‌ها بین جمله‌ها.",
   "Silver" : "نقره‌ای",
   "Size" : "اندازه",
   "Sky" : "آسمان",

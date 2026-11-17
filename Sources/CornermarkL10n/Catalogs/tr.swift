@@ -688,7 +688,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "Kameranızı bir balon içinde gösterir.",
   "Shrink Camera to Bubble" : "Kamerayı Balona Küçült",
   "Shrinks the camera back to a bubble" : "Kamerayı yeniden balona küçültür",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Mikrofonun sesi eşiğin altında kaldığı sürece onu susturur; örneğin cümle aralarındaki nefesler ve tuş sesleri.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Mikrofonun sesi eşiğin altında kaldığı sürece onu susturur; cümle aralarındaki nefesler gibi kısık sesler için.",
   "Silver" : "Gümüş",
   "Size" : "Boyut",
   "Sky" : "Gökyüzü",

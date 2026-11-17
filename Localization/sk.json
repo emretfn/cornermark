@@ -685,7 +685,7 @@
   "Shows your camera in a bubble.": "Zobrazí kameru v bubline.",
   "Shrink Camera to Bubble": "Zmenšiť kameru na bublinu",
   "Shrinks the camera back to a bubble": "Zmenší kameru späť na bublinu",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Stlmí mikrofón, kým jeho zvuk zostáva pod prahom, napríklad nádychy a stlačenia klávesov medzi vetami.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Stlmí mikrofón, kým jeho zvuk zostáva pod prahom, pre tiché zvuky, ako sú nádychy medzi vetami.",
   "Silver": "Strieborná",
   "Size": "Veľkosť",
   "Sky": "Obloha",

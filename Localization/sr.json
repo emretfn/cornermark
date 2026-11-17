@@ -685,7 +685,7 @@
   "Shows your camera in a bubble.": "Приказује камеру у мехурићу.",
   "Shrink Camera to Bubble": "Смањи камеру на мехурић",
   "Shrinks the camera back to a bubble": "Смањује камеру назад на мехурић",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Утишава микрофон док му звук остаје испод прага, попут дисања и притисака тастера између реченица.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Утишава микрофон док му звук остаје испод прага, за тихе звуке попут дисања између реченица.",
   "Silver": "Сребрна",
   "Size": "Величина",
   "Sky": "Небо",

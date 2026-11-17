@@ -684,7 +684,7 @@
   "Shows your camera in a bubble." : "Shows your camera in a bubble.",
   "Shrink Camera to Bubble" : "Shrink Camera to Bubble",
   "Shrinks the camera back to a bubble" : "Shrinks the camera back to a bubble",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.",
   "Silver" : "Silver",
   "Size" : "Size",
   "Sky" : "Sky",

@@ -688,7 +688,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "Zeigt deine Kamera in einer Blase.",
   "Shrink Camera to Bubble" : "Kamera zur Blase verkleinern",
   "Shrinks the camera back to a bubble" : "Verkleinert die Kamera wieder zur Blase",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Schaltet das Mikrofon stumm, solange sein Ton unter der Schwelle bleibt, etwa Atmen und Tastenanschläge zwischen Sätzen.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Schaltet das Mikrofon stumm, solange sein Ton unter der Schwelle bleibt, für leise Geräusche wie Atmen zwischen Sätzen.",
   "Silver" : "Silber",
   "Size" : "Größe",
   "Sky" : "Himmel",

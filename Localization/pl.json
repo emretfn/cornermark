@@ -694,7 +694,7 @@
   "Shows your camera in a bubble.": "Pokazuje obraz z kamery w bańce.",
   "Shrink Camera to Bubble": "Zmniejsz kamerę do bańki",
   "Shrinks the camera back to a bubble": "Zmniejsza kamerę z powrotem do bańki",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Wycisza mikrofon, dopóki jego dźwięk pozostaje poniżej progu, np. oddechy i stukanie klawiszy między zdaniami.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Wycisza mikrofon, dopóki jego dźwięk pozostaje poniżej progu, dla cichych dźwięków, takich jak oddechy między zdaniami.",
   "Silver": "Srebrny",
   "Size": "Rozmiar",
   "Sky": "Niebo",

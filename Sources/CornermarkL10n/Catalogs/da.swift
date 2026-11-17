@@ -688,7 +688,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "Viser dit kamera i en boble.",
   "Shrink Camera to Bubble" : "Formindsk kamera til boble",
   "Shrinks the camera back to a bubble" : "Formindsker kameraet tilbage til en boble",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Gør mikrofonen tavs, mens lyden holder sig under tærsklen, f.eks. vejrtrækning og tastetryk mellem sætningerne.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Gør mikrofonen tavs, mens lyden holder sig under tærsklen, til svage lyde som vejrtrækning mellem sætningerne.",
   "Silver" : "Sølv",
   "Size" : "Størrelse",
   "Sky" : "Himmel",

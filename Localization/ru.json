@@ -694,7 +694,7 @@
   "Shows your camera in a bubble.": "Показывает камеру в окошке.",
   "Shrink Camera to Bubble": "Уменьшить камеру до окошка",
   "Shrinks the camera back to a bubble": "Возвращает камеру в окошко",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Заглушает микрофон, пока звук остаётся ниже порога, например дыхание и нажатия клавиш между фразами.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Заглушает микрофон, пока звук остаётся ниже порога, для тихих звуков вроде дыхания между фразами.",
   "Silver": "Серебро",
   "Size": "Размер",
   "Sky": "Небо",

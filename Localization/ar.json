@@ -712,7 +712,7 @@
   "Shows your camera in a bubble.": "يعرض الكاميرا في فقاعة.",
   "Shrink Camera to Bubble": "تصغير الكاميرا إلى فقاعة",
   "Shrinks the camera back to a bubble": "يعيد تصغير الكاميرا إلى فقاعة",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "يكتم الميكروفون ما دام صوته أدنى من العتبة، مثل الأنفاس وضغطات المفاتيح بين الجمل.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "يكتم الميكروفون ما دام صوته أدنى من العتبة، للأصوات الخافتة مثل الأنفاس بين الجمل.",
   "Silver": "فضي",
   "Size": "الحجم",
   "Sky": "سماء",

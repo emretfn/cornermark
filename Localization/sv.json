@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "Visar kameran i en bubbla.",
   "Shrink Camera to Bubble": "Krymp kameran till bubbla",
   "Shrinks the camera back to a bubble": "Krymper kameran tillbaka till en bubbla",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Tystar mikrofonen medan ljudet håller sig under tröskeln, till exempel andning och tangenttryck mellan meningar.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Tystar mikrofonen medan ljudet håller sig under tröskeln, för svaga ljud som andning mellan meningar.",
   "Silver": "Silver",
   "Size": "Storlek",
   "Sky": "Himmel",

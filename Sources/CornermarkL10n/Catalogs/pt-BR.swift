@@ -697,7 +697,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "Mostra sua câmera em uma bolha.",
   "Shrink Camera to Bubble" : "Reduzir câmera a uma bolha",
   "Shrinks the camera back to a bubble" : "Reduz a câmera de volta a uma bolha",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Silencia o microfone enquanto o som fica abaixo do limite, como respirações e teclas entre as frases.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Silencia o microfone enquanto o som fica abaixo do limite, para sons baixos como as respirações entre as frases.",
   "Silver" : "Prata",
   "Size" : "Tamanho",
   "Sky" : "Céu",

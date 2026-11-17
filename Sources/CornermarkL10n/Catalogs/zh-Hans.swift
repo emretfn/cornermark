@@ -679,7 +679,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "在气泡中显示你的摄像头画面。",
   "Shrink Camera to Bubble" : "将摄像头缩小为气泡",
   "Shrinks the camera back to a bubble" : "将摄像头缩回气泡",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "麦克风声音低于阈值时将其静音，例如句子之间的呼吸声和按键声。",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "麦克风声音低于阈值时将其静音，用于句子之间的呼吸声等轻微声音。",
   "Silver" : "银色",
   "Size" : "大小",
   "Sky" : "天空",

@@ -679,7 +679,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "แสดงกล้องของคุณในฟอง",
   "Shrink Camera to Bubble" : "ย่อกล้องเป็นฟอง",
   "Shrinks the camera back to a bubble" : "ย่อกล้องกลับเป็นฟอง",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "ปิดเสียงไมโครโฟนขณะที่เสียงยังต่ำกว่าระดับเกณฑ์ เช่น เสียงหายใจและเสียงกดแป้นระหว่างประโยค",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "ปิดเสียงไมโครโฟนขณะที่เสียงยังต่ำกว่าระดับเกณฑ์ สำหรับเสียงเบา ๆ เช่น เสียงหายใจระหว่างประโยค",
   "Silver" : "เงิน",
   "Size" : "ขนาด",
   "Sky" : "ท้องฟ้า",

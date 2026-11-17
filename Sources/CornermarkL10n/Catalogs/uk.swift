@@ -706,7 +706,7 @@ extension Catalogs {
   "Shows your camera in a bubble." : "Показує камеру в бульбашці.",
   "Shrink Camera to Bubble" : "Зменшити камеру до бульбашки",
   "Shrinks the camera back to a bubble" : "Повертає камеру до розміру бульбашки",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences." : "Глушить мікрофон, поки його звук лишається нижче порога, наприклад дихання й натискання клавіш між реченнями.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences." : "Глушить мікрофон, поки його звук лишається нижче порога, для тихих звуків, як-от дихання між реченнями.",
   "Silver" : "Сріблястий",
   "Size" : "Розмір",
   "Sky" : "Небо",

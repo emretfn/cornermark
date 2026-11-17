@@ -676,7 +676,7 @@
   "Shows your camera in a bubble.": "Δείχνει την κάμερά σας σε μια φούσκα.",
   "Shrink Camera to Bubble": "Σμίκρυνση κάμερας σε φούσκα",
   "Shrinks the camera back to a bubble": "Σμικρύνει ξανά την κάμερα σε φούσκα",
-  "Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.": "Σιγάζει το μικρόφωνο όσο ο ήχος του μένει κάτω από το κατώφλι, όπως ανάσες και πατήματα πλήκτρων ανάμεσα στις προτάσεις.",
+  "Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences.": "Σιγάζει το μικρόφωνο όσο ο ήχος του μένει κάτω από το κατώφλι, για σιγανούς ήχους όπως οι ανάσες ανάμεσα στις προτάσεις.",
   "Silver": "Ασημί",
   "Size": "Μέγεθος",
   "Sky": "Ουρανός",

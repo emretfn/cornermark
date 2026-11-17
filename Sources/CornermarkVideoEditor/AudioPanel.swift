@@ -25,6 +25,8 @@ final class AudioPanel: SettingsPanel {
     /// One Voice cleanup step's row: its checkbox, and the row with its one setting, if it has one.
     private struct StepRow {
         let box: Checkbox
+        /// What the step does, in its tooltip and VoiceOver help.
+        let tip: String
         let isOn: WritableKeyPath<VoiceCleanup, Bool>
         let setting: Setting?
 
@@ -96,7 +98,7 @@ final class AudioPanel: SettingsPanel {
                  setting: (tr("Strength"), tr("Noise removal strength"), VoiceCleanup.noiseRemovalRange, \.noiseRemovalStrength, "strength",
                            { ($0 * 100).rounded() / 100 }, { Digits.percent($0) })),
             step(tr("Noise gate"), id: "noiseGate",
-                 tip: tr("Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences."),
+                 tip: tr("Silences the microphone while its sound stays below the threshold, for quiet sounds such as breaths between sentences."),
                  isOn: \.noiseGateOn,
                  setting: (tr("Threshold"), tr("Noise gate threshold"), VoiceCleanup.noiseGateRange, \.noiseGateThreshold, "threshold",
                            { $0.rounded() }, { Self.decibels($0) })),
@@ -120,14 +122,15 @@ final class AudioPanel: SettingsPanel {
         let box = Checkbox(title: title)
         box.setAccessibilityIdentifier("video.audio.voiceCleanup.\(id)")
         box.toolTip = tip
+        box.setAccessibilityHelp(tip)
         box.target = self
         box.action = #selector(cleanupToggled)
-        guard let setting else { return StepRow(box: box, isOn: isOn, setting: nil) }
+        guard let setting else { return StepRow(box: box, tip: tip, isOn: isOn, setting: nil) }
         let slider = slider(id: "video.audio.voiceCleanup.\(id).\(setting.name)", label: setting.label, range: setting.range, action: #selector(stepSlid(_:)))
         slider.format = setting.text
         let row = row(setting.row, [slider])
         row.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        return StepRow(box: box, isOn: isOn, setting: .init(slider: slider, row: row, value: setting.value, round: setting.round, text: setting.text,
+        return StepRow(box: box, tip: tip, isOn: isOn, setting: .init(slider: slider, row: row, value: setting.value, round: setting.round, text: setting.text,
                                                             key: CoalescingKey("audio.voiceCleanup.\(id)")))
     }
 
@@ -161,8 +164,12 @@ final class AudioPanel: SettingsPanel {
         for step in steps {
             let available = step.box !== noiseRemovalStep.box || runs
             step.box.isHidden = hidden
-            step.box.state = settings[keyPath: step.isOn] && available ? .on : .off
+            // A step that cannot run is greyed out but keeps showing what the project says, and its help says why.
+            step.box.state = settings[keyPath: step.isOn] ? .on : .off
             step.box.isEnabled = settings.isOn && available
+            let tip = available ? step.tip : noiseRemovalNote.stringValue
+            step.box.toolTip = tip
+            step.box.setAccessibilityHelp(tip)
             guard let setting = step.setting else { continue }
             setting.row.isHidden = hidden
             let value = settings[keyPath: setting.value]
@@ -193,7 +200,7 @@ final class AudioPanel: SettingsPanel {
     @objc private func cleanupToggled() {
         var next = audio
         next.voiceCleanup.isOn = cleanup.state == .on
-        // A greyed-out Noise removal shows off but keeps what the project says, so the project sounds the same on a Mac that has it.
+        // A greyed-out Noise removal keeps what the project says, so the project sounds the same on a Mac that has it.
         for step in steps where step.box !== noiseRemovalStep.box || noiseRemovalRuns {
             next.voiceCleanup[keyPath: step.isOn] = step.box.state == .on
         }
