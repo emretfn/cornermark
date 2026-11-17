@@ -83,8 +83,11 @@ final class PreviewMicrophone {
                 askedLease = nil
                 play(cleaned.url, lease: lease)
             case .failure:
-                // The previous sound plays on, and the next update asks for these settings again.
+                // The previous sound plays on, and the next update asks for these settings again. Nothing plays the copies asked
+                // for, so they are no longer held.
                 asked = nil
+                askedLease = nil
+                renders.release(lease)
             }
         }
     }

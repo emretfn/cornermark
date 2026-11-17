@@ -115,6 +115,29 @@ final class PreviewMicrophoneTests: XCTestCase {
         XCTAssertEqual(microphone.file?.lastPathComponent, "clean-100.m4a")
     }
 
+    func testARenderThatFailedGivesUpItsHoldOnTheCopiesItAskedFor() async throws {
+        let player = Player()
+        let renders = VoiceCleanupRenders { microphone, settings in
+            guard settings.lowCutFrequency == 100 else { throw CocoaError(.fileWriteUnknown) }
+            let made = VoiceCleanupCache.file(for: microphone, settings: settings)
+            try Data().write(to: made)
+            return (made, VoiceCleanupReport())
+        }
+        let microphone = PreviewMicrophone(recorded: recorded, playing: recorded, frames: player, renders: renders)
+        microphone.update(lowCut(100))
+        await microphone.prepared()
+        // Left by an earlier render on a Mac whose Noise removal could not run: the copy the failing settings would play there.
+        var without = lowCut(120)
+        without.noiseRemovalOn = false
+        let leftover = VoiceCleanupCache.file(for: recorded, settings: without)
+        try Data().write(to: leftover)
+
+        microphone.update(lowCut(120))
+        await microphone.prepared()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path), "the failed render no longer holds the copy, so it goes")
+        XCTAssertEqual(microphone.file, VoiceCleanupCache.file(for: recorded, settings: lowCut(100)), "the previous sound plays on")
+    }
+
     func testARenderThatCouldNotRunNoiseRemovalSaysSo() async throws {
         let player = Player(), renders = Renders()
         renders.answers = [.success(VoiceCleanupReport(noiseRemovalUnavailable: true))]
