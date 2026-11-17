@@ -271,6 +271,21 @@ func checkVideoAfterRecording() async throws {
     check(abs(editor.state.project.edits.audio.microphone.level - 0.5) < 1e-9 && (editor.view(identifier: "video.audio.microphone.level") as? NSSlider)?.isEnabled == true
           && (editor.view(identifier: "video.audio.systemAudio.level") as? NSSlider)?.isEnabled == false,
           "the microphone's level follows the slider and a track that is off greys its level")
+    let lowCutSlider = editor.view(identifier: "video.audio.voiceCleanup.lowCut.frequency") as? TrackingSlider
+    check(original.edits.audio.voiceCleanup == VoiceCleanup(isOn: true) && editor.view(identifier: "video.audio.voiceCleanup")?.isHidden == false
+          && lowCutSlider?.isHidden == false && lowCutSlider?.isEnabled == true && lowCutSlider?.doubleValue == 80,
+          "a new recording opens with Voice cleanup on and its Low cut at 80 Hz under the microphone")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    check(!editor.state.project.edits.audio.voiceCleanup.isOn && (editor.view(identifier: "video.audio.voiceCleanup.lowCut") as? NSControl)?.isEnabled == false
+          && lowCutSlider?.isEnabled == false, "Voice cleanup off greys its steps")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    if let lowCutSlider {
+        for v in stride(from: 80.0, through: 150, by: 10) { lowCutSlider.doubleValue = v; fire(lowCutSlider) }
+        lowCutSlider.onTrackingEnd()
+        steps += 1
+    }
+    check(editor.state.project.edits.audio.voiceCleanup.isOn && editor.state.project.edits.audio.voiceCleanup.lowCutFrequency == 150,
+          "the Low cut follows its slider", detail: "\(editor.state.project.edits.audio.voiceCleanup)")
     snapshotEditor(editor, name: "video-after-audio")
     snapshotEditor(editor, name: "video-after-audio-dark", dark: true)
 
