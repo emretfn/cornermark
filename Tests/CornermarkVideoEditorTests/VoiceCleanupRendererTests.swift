@@ -164,6 +164,23 @@ final class VoiceCleanupRendererTests: XCTestCase {
                        "the sound Noise removal would have changed passes as it came")
     }
 
+    func testATrackCleanedWithoutItsNoiseRemovalIsMadeAgainOnceTheUnitRuns() throws {
+        try XCTSkipUnless(TestSound.soundIsolationIsHere, "this Mac has no sound isolation unit, so it can never run")
+        let mic = folder.appendingPathComponent("mic.m4a")
+        try TestSound.write(mic, seconds: 3, channels: [[]], extra: TestSound.noise(amplitude: 0.05))
+        let settings = onlyNoiseRemoval(strength: 1)
+        let missing = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: 0x6E6F_6E65, componentManufacturer: 0x6E6F_6E65,
+                                                componentFlags: 0, componentFlagsMask: 0)
+        let without = try VoiceCleanupCache.prepare(mic, settings: settings, soundIsolation: missing)
+        XCTAssertTrue(without.report.noiseRemovalUnavailable, "the report says Noise removal could not run")
+        let noise = TestSound.rms(try TestSound.read(without.url).channels[0], rate: 48_000, from: 1, to: 2.5)
+
+        let with = try VoiceCleanupCache.prepare(mic, settings: settings)
+        XCTAssertFalse(with.report.noiseRemovalUnavailable)
+        XCTAssertLessThan(TestSound.rms(try TestSound.read(with.url).channels[0], rate: 48_000, from: 1, to: 2.5), noise / 2,
+                          "the same settings, once the unit runs, are cleaned again and not served the track made without it")
+    }
+
     func testLowCutRemovesSoundBelowItsFrequencyAndKeepsTheRest() throws {
         let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
         try TestSound.write(input, seconds: 3, channels: [[(50, 0.3), (1_000, 0.3)]])

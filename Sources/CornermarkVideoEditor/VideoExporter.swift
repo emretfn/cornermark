@@ -435,7 +435,7 @@ public enum VideoExporter {
                 continue
             }
             let cleaned = try await Task.detached(priority: .userInitiated) { try VoiceCleanupCache.prepare(recorded, settings: cleanup) }.value
-            files.append((cleaned, entry.gain))
+            files.append((cleaned.url, entry.gain))
         }
         return files
     }

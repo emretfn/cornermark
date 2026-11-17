@@ -450,25 +450,35 @@ enum VoiceCleanupCache {
         return microphone.deletingLastPathComponent().appendingPathComponent(prefix + digest).appendingPathExtension(microphone.pathExtension)
     }
 
-    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there. Copies cleaned for other settings are
-    /// removed once the new one is in place, so the project keeps one.
-    static func prepare(_ microphone: URL, settings: VoiceCleanup) throws -> URL {
+    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there, and what its render had to leave out.
+    /// Copies cleaned for other settings are removed once the new one is in place, so the project keeps one.
+    static func prepare(_ microphone: URL, settings: VoiceCleanup,
+                        soundIsolation: AudioComponentDescription = NoiseRemoval.apple) throws -> (url: URL, report: VoiceCleanupReport) {
         let fm = FileManager.default
         let target = file(for: microphone, settings: settings)
-        guard !fm.fileExists(atPath: target.path) else { return target }
+        guard !fm.fileExists(atPath: target.path) else { return (target, VoiceCleanupReport()) }
         let folder = microphone.deletingLastPathComponent()
         // Made under a hidden name and moved in whole, so a half-written file never carries a settings name.
         let partial = folder.appendingPathComponent(".\(prefix)\(UUID().uuidString)").appendingPathExtension(microphone.pathExtension)
+        let report: VoiceCleanupReport
+        var made = target
         do {
-            try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial)
-            if fm.fileExists(atPath: target.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: target) }
+            report = try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial, soundIsolation: soundIsolation)
+            // Sound that skipped Noise removal is what the settings without it make, so it takes their name: these settings are
+            // cleaned again, with Noise removal, once the unit runs.
+            if report.noiseRemovalUnavailable {
+                var without = settings
+                without.noiseRemovalOn = false
+                made = file(for: microphone, settings: without)
+            }
+            if fm.fileExists(atPath: made.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: made) }
         } catch {
             try? fm.removeItem(at: partial)
             throw error
         }
-        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) && name != target.lastPathComponent {
+        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) && name != made.lastPathComponent {
             try? fm.removeItem(at: folder.appendingPathComponent(name))
         }
-        return target
+        return (made, report)
     }
 }
