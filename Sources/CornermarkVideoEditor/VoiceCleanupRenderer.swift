@@ -104,34 +104,47 @@ final class LowCut: CleanupStep {
     }
 }
 
-/// Noise gate: silences the sound while its peaks stay below `threshold` dBFS. It opens on the first sample at or above the threshold,
-/// fading in over a millisecond so a word's first sound is kept, stays open for a hold time after the last such sample so the quiet
-/// ends of words and the dips of low tones do not chop, then fades out. All channels open and close together.
+/// Noise gate: silences the sound while its level stays below `threshold` dBFS. The level is the RMS over the last 10 ms, so noise
+/// whose single peaks reach above the threshold but whose level stays under it is silenced. The gate opens as soon as the level
+/// reaches the threshold, fading in over a millisecond so a word's first sound is kept, stays open for a hold time after the level
+/// last reached it so the quiet ends of words and the dips of low tones do not chop, then fades out. All channels open and close
+/// together, on the loudest of them.
 final class NoiseGate: CleanupStep {
-    private let threshold: Float
+    /// The threshold as a mean square, compared with the mean square of the window.
+    private let threshold: Double
     /// Gain change per sample while opening and closing.
     private let attack: Float, release: Float
     private let hold: Int
-    /// Samples since the last one at or above the threshold, and the gain now, kept across chunks.
+    /// The last 10 ms of squared samples (the loudest channel's at each frame) and their sum, kept across chunks.
+    private var window: [Double]
+    private var next = 0
+    private var sum = 0.0
+    /// Samples since the level last reached the threshold, and the gain now, kept across chunks.
     private var quiet: Int
     private var gain: Float = 0
 
     init(threshold: Double, format: AVAudioFormat) {
         let rate = format.sampleRate
-        self.threshold = Float(pow(10, threshold / 20))
+        self.threshold = pow(10, threshold / 10)
         attack = Float(1 / (0.001 * rate))
         release = Float(1 / (0.1 * rate))
         hold = Int(0.05 * rate)
         quiet = hold
+        window = Array(repeating: 0, count: max(Int(0.01 * rate), 1))
     }
 
     func process(_ buffer: AVAudioPCMBuffer) {
         guard let data = buffer.floatChannelData else { return }
         let channels = Int(buffer.format.channelCount)
         for i in 0..<Int(buffer.frameLength) {
-            var peak: Float = 0
-            for c in 0..<channels { peak = max(peak, abs(data[c][i])) }
-            quiet = peak >= threshold ? 0 : min(quiet + 1, hold)
+            var square = 0.0
+            for c in 0..<channels { square = max(square, Double(data[c][i]) * Double(data[c][i])) }
+            sum += square - window[next]
+            window[next] = square
+            next = (next + 1) % window.count
+            // Recomputed once per window so rounding in the running sum never builds up.
+            if next == 0 { sum = window.reduce(0, +) }
+            quiet = sum / Double(window.count) >= threshold ? 0 : min(quiet + 1, hold)
             gain = quiet < hold ? min(gain + attack, 1) : max(gain - release, 0)
             for c in 0..<channels { data[c][i] *= gain }
         }
@@ -142,7 +155,7 @@ final class NoiseGate: CleanupStep {
 /// settings, the recorded file and `version`, so a file made for anything else is never used, and it can always be made again.
 enum VoiceCleanupCache {
     /// Bump when a step starts sounding different, so files cleaned by an older build are made again.
-    static let version = 2
+    static let version = 3
     static let prefix = "voice-cleanup-"
 
     /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.
