@@ -169,21 +169,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private var isScrubbing = false
     private var enteredFullScreenForPreview = false
     private var preparation: Task<Void, Never>?
+    private let microphone: PreviewMicrophone
     /// The Microphone track file the preview plays: the recorded one, or its cleaned copy.
-    public private(set) var previewMicrophone: URL?
-    /// The Voice cleanup settings the preview last asked a cleaned copy for, nil while it plays the recorded sound.
-    private var cleanupAsked: VoiceCleanup?
-    private var cleanupJob: Task<Void, Never>?
-    /// Hold the cleaned file the preview plays, and the one it waits for, so no render for other settings removes them under it.
-    private var playingLease: VoiceCleanupRenders.Lease?
-    private var askedLease: VoiceCleanupRenders.Lease?
-    /// Set once the window closed, so a sound still being laid then gives its lease up instead of keeping it.
-    private var isClosed = false
-    /// How many Microphone files are being put into the player, and the last one asked for.
-    private var soundSwaps = 0
-    private var soundSwap: Task<Void, Never>?
+    public var previewMicrophone: URL? { microphone.file }
     /// Whether the cleaned Microphone track for the current settings is still being made; the preview plays the previous sound meanwhile.
-    public private(set) var isPreparingCleanup = false
+    public var isPreparingCleanup: Bool { microphone.isPreparing }
 
     /// Reads `project.json` from `folder`. Throws when the folder holds no project or its video is missing.
     public static func open(folder: URL) throws -> VideoEditorWindowController {
@@ -212,7 +202,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         history = UndoHistory(project.edits)
         self.frames = frames
         self.clock = clock
-        previewMicrophone = Self.microphoneFile(of: project, in: folder)
+        microphone = PreviewMicrophone(recorded: Self.recordedMicrophone(of: project, in: folder), playing: Self.microphoneFile(of: project, in: folder),
+                                       frames: frames)
         state = VideoEditorState(project: project)
         let window = VideoEditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 780),
                                        styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -361,6 +352,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     private func wire() {
+        microphone.onPreparing = { [unowned self] in inspector.audioPanel.isPreparing = $0 }
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
         inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }
@@ -1209,110 +1201,20 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// The Microphone track file a preview opening `project` plays: its cleaned copy when Voice cleanup is on and the copy for these
     /// settings is ready, else the recorded file.
     static func microphoneFile(of project: RecordingProject, in folder: URL) -> URL? {
-        guard project.source.audioTracks.contains(.microphone), let name = project.source.file(for: .microphone) else { return nil }
-        let recorded = folder.appendingPathComponent(name)
+        guard let recorded = recordedMicrophone(of: project, in: folder) else { return nil }
         let cleanup = project.edits.audio.voiceCleanup
         guard cleanup.isOn else { return recorded }
         return VoiceCleanupCache.ready(for: recorded, settings: cleanup) ?? recorded
     }
 
-    /// Keeps the preview's Microphone track on the current Voice cleanup settings. A change asks for the cleaned copy in the background,
-    /// superseding the one asked for before; the preview plays the previous sound until the copy is ready, then takes it without
-    /// stopping. Off stops the render under way and plays the recorded file again.
-    private func previewVoiceCleanup() {
-        let project = state.project
-        guard project.source.audioTracks.contains(.microphone), let name = project.source.file(for: .microphone) else { return }
-        let cleanup = project.edits.audio.voiceCleanup
-        let wanted = cleanup.isOn ? cleanup : nil
-        guard wanted != cleanupAsked else { return }
-        cleanupAsked = wanted
-        cleanupJob?.cancel()
-        let renders = VoiceCleanupRenders.shared
-        // Given up only after a new lease is taken, so a re-ask for the same settings never leaves the copy unheld in between.
-        let previousAsked = askedLease
-        askedLease = nil
-        defer { if let previousAsked { renders.release(previousAsked) } }
-        let recorded = folder.appendingPathComponent(name)
-        guard let wanted, FileManager.default.fileExists(atPath: recorded.path) else {
-            // An export's render goes on; only the one nobody waits for any more stops.
-            renders.cancel(recorded)
-            isPreparingCleanup = false
-            playMicrophone(recorded, lease: nil)
-            return
-        }
-        isPreparingCleanup = VoiceCleanupCache.ready(for: recorded, settings: wanted) == nil
-        let lease = renders.lease(recorded, settings: wanted)
-        askedLease = lease
-        // Asked even when the copy is there, so a render for older settings still under way is superseded and cannot replace it.
-        let render = renders.request(recorded, settings: wanted)
-        cleanupJob = Task { [weak self] in
-            let result = await render.result
-            guard let self, !Task.isCancelled, cleanupAsked == wanted else { return }
-            if case .failure(let error) = result, error is CancellationError {
-                // Superseded by an export for other settings, or stopped with a cancelled one: asked again, it renders after the export.
-                cleanupAsked = nil
-                previewVoiceCleanup()
-                inspector.audioPanel.isPreparing = isPreparingCleanup
-                return
-            }
-            isPreparingCleanup = false
-            // A render that failed leaves the previous sound playing.
-            if case .success(let cleaned) = result {
-                // The lease moves to the swap, which holds it until the player plays the file.
-                askedLease = nil
-                playMicrophone(cleaned.url, lease: lease)
-            }
-            inspector.audioPanel.isPreparing = false
-        }
-    }
-
-    /// Puts `file`, held by `lease`, into the player. The lease of the file played before is given up only once the player no longer
-    /// reads it; when the new file could not be laid, the old one plays on and keeps its lease.
-    private func playMicrophone(_ file: URL, lease: VoiceCleanupRenders.Lease?) {
-        let renders = VoiceCleanupRenders.shared
-        guard previewMicrophone != file else {
-            if soundSwaps > 0 {
-                // Being laid, under the lease of that swap.
-                if let lease { renders.release(lease) }
-            } else {
-                // Already playing, such as the copy that was ready when the editor opened: the new lease holds it from now on.
-                if let playingLease { renders.release(playingLease) }
-                playingLease = lease
-            }
-            return
-        }
-        let before = previewMicrophone
-        previewMicrophone = file
-        let frames = frames
-        soundSwaps += 1
-        soundSwap = Task { [weak self] in
-            let tookOver = await frames.setSound(file, for: .microphone)
-            self?.soundSwaps -= 1
-            guard let self, !isClosed else {
-                if let lease { renders.release(lease) }
-                return
-            }
-            guard tookOver else {
-                if let lease { renders.release(lease) }
-                // Not laid and not superseded: the file played before plays on.
-                if previewMicrophone == file { previewMicrophone = before }
-                return
-            }
-            if let playingLease { renders.release(playingLease) }
-            playingLease = lease
-        }
+    /// The recording's Microphone track file, nil without one.
+    private static func recordedMicrophone(of project: RecordingProject, in folder: URL) -> URL? {
+        guard project.source.audioTracks.contains(.microphone), let name = project.source.file(for: .microphone) else { return nil }
+        return folder.appendingPathComponent(name)
     }
 
     /// Waits for the cleaned Microphone track the preview asked for last, for a check to read the preview after it.
-    public func voiceCleanupPrepared() async {
-        // A preview that asks again replaces the job it waits on.
-        while let job = cleanupJob {
-            await job.value
-            if job == cleanupJob { break }
-        }
-        // And for the player to take it, which gives up the file played before.
-        await soundSwap?.value
-    }
+    public func voiceCleanupPrepared() async { await microphone.prepared() }
 
     private func refresh() {
         let background = state.project.edits.background
@@ -1325,9 +1227,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                                    project.source.audioTracks.isEmpty ? nil : .audio].compactMap { $0 })
         inspector.cameraPanel.show(project.edits.camera)
         inspector.keystrokesPanel.show(project.edits.keystrokes)
-        previewVoiceCleanup()
+        microphone.update(project.edits.audio.voiceCleanup)
         inspector.audioPanel.show(project.edits.audio, tracks: project.source.audioTracks)
-        inspector.audioPanel.isPreparing = isPreparingCleanup
         inspector.motionBlurPanel.show(project.edits.motionBlur)
         frames.setGains(Dictionary(uniqueKeysWithValues: AudioTrack.allCases.map { ($0, project.edits.audio[$0].gain) }))
         let size = ExportPlan(project: project, settings: ExportSettings())
@@ -1425,11 +1326,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func windowWillClose(_ notification: Notification) {
         preparation?.cancel()
         exportJob?.cancel()
-        cleanupJob?.cancel()
-        isClosed = true
-        for lease in [playingLease, askedLease].compactMap({ $0 }) { VoiceCleanupRenders.shared.release(lease) }
-        playingLease = nil
-        askedLease = nil
+        microphone.close()
         displayLink?.invalidate()
         displayLink = nil
         let now = clock()
