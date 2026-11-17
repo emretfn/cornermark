@@ -353,6 +353,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
 
     private func wire() {
         microphone.onPreparing = { [unowned self] in inspector.audioPanel.isPreparing = $0 }
+        microphone.onNoiseRemovalUnavailable = { [unowned self] in noiseRemovalAvailable = false }
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
         inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }

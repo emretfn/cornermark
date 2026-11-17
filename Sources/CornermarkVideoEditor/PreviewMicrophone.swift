@@ -9,11 +9,15 @@ import Foundation
 final class PreviewMicrophone {
     /// The file the preview plays, or is laying into the player: the recorded one, or its cleaned copy.
     private(set) var file: URL?
+    /// The file the player last took over, which plays on when a newer one cannot be laid.
+    private var playing: URL?
     /// Whether the cleaned copy for the current settings is still being made; the preview plays the previous sound meanwhile.
     private(set) var isPreparing = false {
         didSet { if isPreparing != oldValue { onPreparing(isPreparing) } }
     }
     var onPreparing: (Bool) -> Void = { _ in }
+    /// A render for the preview could not run Noise removal on this Mac, so the panel greys it out.
+    var onNoiseRemovalUnavailable: () -> Void = {}
 
     private let recorded: URL?
     private let frames: SourceFrames
@@ -36,6 +40,7 @@ final class PreviewMicrophone {
         self.frames = frames
         self.renders = renders
         file = playing
+        self.playing = playing
     }
 
     /// Keeps the preview on `settings`.
@@ -71,11 +76,15 @@ final class PreviewMicrophone {
                 return
             }
             isPreparing = false
-            // A render that failed leaves the previous sound playing.
-            if case .success(let cleaned) = result {
+            switch result {
+            case .success(let cleaned):
+                if cleaned.report.noiseRemovalUnavailable { onNoiseRemovalUnavailable() }
                 // The lease moves to the swap, which holds it until the player plays the file.
                 askedLease = nil
                 play(cleaned.url, lease: lease)
+            case .failure:
+                // The previous sound plays on, and the next update asks for these settings again.
+                asked = nil
             }
         }
     }
@@ -95,7 +104,6 @@ final class PreviewMicrophone {
             }
             return
         }
-        let before = file
         file = next
         let frames = frames
         swaps += 1
@@ -108,10 +116,11 @@ final class PreviewMicrophone {
             }
             guard tookOver else {
                 if let lease { renders.release(lease) }
-                // Not laid and not superseded: the file played before plays on.
-                if file == next { file = before }
+                // Not laid and not superseded: the file the player took last plays on.
+                if file == next { file = playing }
                 return
             }
+            playing = next
             if let playingLease { renders.release(playingLease) }
             playingLease = lease
         }
@@ -128,9 +137,10 @@ final class PreviewMicrophone {
         await swap?.value
     }
 
-    /// The editor closed: the render waited for stops and the leases go.
+    /// The editor closed: the render waited for stops, unless an export waits for it too, and the leases go.
     func close() {
         job?.cancel()
+        if let recorded { renders.cancel(recorded) }
         isClosed = true
         for lease in [playingLease, askedLease].compactMap({ $0 }) { renders.release(lease) }
         playingLease = nil
