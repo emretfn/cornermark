@@ -127,10 +127,7 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     /// Holds the cleaned copy of `microphone` for `settings`, made or not, until `release`. Taken before the copy is asked for, so no
     /// render can remove it between the time it is made and the time it is opened.
     func lease(_ microphone: URL, settings: VoiceCleanup) -> Lease {
-        var without = settings
-        without.noiseRemovalOn = false
-        let asked = VoiceCleanupCache.file(for: microphone, settings: settings), fallback = VoiceCleanupCache.file(for: microphone, settings: without)
-        let lease = Lease(microphone: microphone, files: asked == fallback ? [asked] : [asked, fallback])
+        let lease = Lease(microphone: microphone, files: VoiceCleanupCache.candidates(for: microphone, settings: settings))
         lock.withLock { for file in lease.files { leases[file, default: 0] += 1 } }
         return lease
     }

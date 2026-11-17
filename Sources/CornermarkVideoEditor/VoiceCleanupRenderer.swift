@@ -25,9 +25,7 @@ public enum VoiceCleanupRenderer {
         guard settings.runsNoiseRemoval, noiseRemoval?.failed != false else { return VoiceCleanupReport() }
         if noiseRemoval != nil {
             // The unit failed part way: the file is cleaned again from the start without it, so no stretch carries half a step.
-            var without = settings
-            without.noiseRemovalOn = false
-            try write(input, settings: without, to: output, soundIsolation: soundIsolation)
+            try write(input, settings: VoiceCleanupCache.withoutNoiseRemoval(settings), to: output, soundIsolation: soundIsolation)
         }
         return VoiceCleanupReport(noiseRemovalUnavailable: true)
     }
@@ -637,20 +635,26 @@ enum VoiceCleanupCache {
     private static func lead(of microphone: URL) -> String { prefix + microphone.deletingPathExtension().lastPathComponent + "-" }
 
     /// The settings without Noise removal, whose copy these settings play where Noise removal cannot run.
-    private static func withoutNoiseRemoval(_ settings: VoiceCleanup) -> VoiceCleanup {
+    static func withoutNoiseRemoval(_ settings: VoiceCleanup) -> VoiceCleanup {
         var without = settings
         without.noiseRemovalOn = false
         return without
     }
 
+    /// The copies of `microphone` that can play for `settings`: first the one cleaned for them, then, when they run Noise removal,
+    /// the one cleaned without it, which plays where Noise removal cannot run.
+    static func candidates(for microphone: URL, settings: VoiceCleanup) -> [URL] {
+        let asked = file(for: microphone, settings: settings), without = file(for: microphone, settings: withoutNoiseRemoval(settings))
+        return asked == without ? [asked] : [asked, without]
+    }
+
     /// The cleaned copy of `microphone` that plays for `settings` now, nil until it is made. Where Noise removal cannot run, that
     /// is the copy made without it. Preview and export look it up here, so they never wait for a copy that is already there.
     static func ready(for microphone: URL, settings: VoiceCleanup, soundIsolation: AudioComponentDescription = NoiseRemoval.apple) -> URL? {
-        let fm = FileManager.default, asked = file(for: microphone, settings: settings)
-        if fm.fileExists(atPath: asked.path) { return asked }
-        guard sound(of: settings).runsNoiseRemoval, !NoiseRemoval.isHere(soundIsolation) else { return nil }
-        let without = file(for: microphone, settings: withoutNoiseRemoval(settings))
-        return fm.fileExists(atPath: without.path) ? without : nil
+        let fm = FileManager.default, candidates = candidates(for: microphone, settings: settings)
+        if fm.fileExists(atPath: candidates[0].path) { return candidates[0] }
+        guard candidates.count > 1, !NoiseRemoval.isHere(soundIsolation) else { return nil }
+        return candidates.dropFirst().first { fm.fileExists(atPath: $0.path) }
     }
 
     /// The cleaned copy of `microphone` for `settings`, made first unless it is already there, and what its render had to leave out.
@@ -658,7 +662,7 @@ enum VoiceCleanupCache {
     static func prepare(_ microphone: URL, settings: VoiceCleanup,
                         soundIsolation: AudioComponentDescription = NoiseRemoval.apple) throws -> (url: URL, report: VoiceCleanupReport) {
         let fm = FileManager.default
-        let target = file(for: microphone, settings: settings)
+        let candidates = candidates(for: microphone, settings: settings), target = candidates[0]
         if let ready = ready(for: microphone, settings: settings, soundIsolation: soundIsolation) {
             return (ready, VoiceCleanupReport(noiseRemovalUnavailable: ready != target))
         }
@@ -671,7 +675,7 @@ enum VoiceCleanupCache {
             report = try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial, soundIsolation: soundIsolation)
             // Sound that skipped Noise removal is what the settings without it make, so it takes their name: these settings are
             // cleaned again, with Noise removal, once the unit runs.
-            if report.noiseRemovalUnavailable { made = file(for: microphone, settings: withoutNoiseRemoval(settings)) }
+            if report.noiseRemovalUnavailable, let without = candidates.last { made = without }
             if fm.fileExists(atPath: made.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: made) }
         } catch {
             try? fm.removeItem(at: partial)
