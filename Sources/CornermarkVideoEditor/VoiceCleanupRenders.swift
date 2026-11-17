@@ -22,6 +22,10 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     }
 
     private let render: Render
+    /// Deletes one file from disk.
+    private let remove: @Sendable (URL) -> Void
+    /// Deletes the copies given up, one batch after another, away from the caller's thread and outside the lock.
+    private let removals = DispatchQueue(label: "cornermark.voice-cleanup-removals", qos: .utility)
     private let lock = NSLock()
     /// Each microphone's newest job, which a request for the same settings joins.
     private var jobs: [URL: Job] = [:]
@@ -34,7 +38,12 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     private var latest: [URL: URL] = [:]
 
     /// `render` makes the cleaned file and returns where it is; it should stop with `CancellationError` when its task is cancelled.
-    init(render: @escaping Render = { try VoiceCleanupCache.prepare($0, settings: $1) }) { self.render = render }
+    /// `remove` deletes a copy nobody needs any more.
+    init(render: @escaping Render = { try VoiceCleanupCache.prepare($0, settings: $1) },
+         remove: @escaping @Sendable (URL) -> Void = { try? FileManager.default.removeItem(at: $0) }) {
+        self.render = render
+        self.remove = remove
+    }
 
     /// The cleaned copy of `microphone` for `settings`. `keep` is for an export: no later request cancels the render it waits for.
     /// A superseded request ends with `CancellationError`.
@@ -86,6 +95,8 @@ final class VoiceCleanupRenders: @unchecked Sendable {
             defer { self?.finished(microphone, id: id) }
             // One render per file at a time: a cancelled one stops at its next chunk, a kept one runs to its end.
             _ = await previous?.task.result
+            // A copy given up before this request may still be on its way out: it goes first, so it is made again, not handed out.
+            await self?.removed()
             try Task.checkCancellation()
             let made = try render(microphone, steps)
             self?.prune(microphone, keeping: made.url)
@@ -125,26 +136,37 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     }
 
     /// Gives the leased copy up. Once nobody holds it, it goes if newer settings were rendered since, and else with the next render.
+    /// It is deleted in the background, so the main thread can give a lease up without waiting for the disk; `removed` waits for it.
     func release(_ lease: Lease) {
-        lock.withLock {
+        let stale: [URL] = lock.withLock {
             var freed = false
             for file in lease.files {
                 guard let count = leases[file] else { continue }
                 leases[file] = count > 1 ? count - 1 : nil
                 freed = freed || count == 1
             }
-            guard freed, let made = latest[lease.microphone] else { return }
-            VoiceCleanupCache.prune(beside: lease.microphone, keeping: Set(leases.keys).union([made]))
+            guard freed, let made = latest[lease.microphone] else { return [] }
+            return VoiceCleanupCache.stale(beside: lease.microphone, keeping: Set(leases.keys).union([made]))
         }
+        guard !stale.isEmpty else { return }
+        let remove = remove
+        removals.async { stale.forEach(remove) }
+    }
+
+    /// Waits until the copies given up so far are deleted.
+    func removed() async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in removals.async { done.resume() } }
     }
 
     /// Removes the copies of `microphone` cleaned for other settings, but `made` and the ones held, so the project keeps one. Called
     /// as a render ends, when no other render of `microphone` writes, so half-written copies left by one that never finished go too.
+    /// It runs in the render's task, so it deletes them there, once the lock is let go.
     private func prune(_ microphone: URL, keeping made: URL) {
-        lock.withLock {
+        let stale: [URL] = lock.withLock {
             latest[microphone] = made
-            VoiceCleanupCache.prune(beside: microphone, keeping: Set(leases.keys).union([made]), partials: true)
+            return VoiceCleanupCache.stale(beside: microphone, keeping: Set(leases.keys).union([made]), partials: true)
         }
+        stale.forEach(remove)
     }
 
     private func finished(_ microphone: URL, id: Int) {

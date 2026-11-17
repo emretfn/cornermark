@@ -346,6 +346,7 @@ final class VideoExporterTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: mixed.path), "the preview's newer render leaves the file the export still mixes")
 
         leases.forEach(VoiceCleanupRenders.shared.release)
+        await VoiceCleanupRenders.shared.removed()
         XCTAssertFalse(FileManager.default.fileExists(atPath: mixed.path), "once the export is done with it, the older copy goes")
         XCTAssertTrue(FileManager.default.fileExists(atPath: previewed.path))
     }

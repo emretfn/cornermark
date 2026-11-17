@@ -115,6 +115,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path))
 
         renders.release(lease)
+        await renders.removed()
         XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path), "released, it goes, since newer settings were rendered since")
         XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path), "and the latest stays")
         let latest = try await renders.cleaned(mic, settings: lowCut(140)).url
@@ -140,7 +141,47 @@ final class VoiceCleanupRendersTests: XCTestCase {
         _ = try await renders.cleaned(mic, settings: lowCut(120))
         XCTAssertTrue(FileManager.default.fileExists(atPath: exported.path), "the export still holds the copy it got")
         renders.release(lease)
+        await renders.removed()
         XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path))
+    }
+
+    @MainActor
+    func testGivingUpALeaseOnTheMainThreadDeletesTheCopyElsewhereAndWithoutHoldingUpOtherCalls() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a")
+        /// Each deletion: the file, whether it ran on the main thread, and whether another call to the renders could go on meanwhile.
+        final class Deletions: @unchecked Sendable {
+            let lock = NSLock()
+            var renders: VoiceCleanupRenders?
+            var seen: [(file: URL, onMain: Bool, othersGoOn: Bool)] = []
+        }
+        let deletions = Deletions()
+        let renders = VoiceCleanupRenders(render: { microphone, settings in
+            let made = VoiceCleanupCache.file(for: microphone, settings: settings)
+            try Data().write(to: made)
+            return (made, VoiceCleanupReport())
+        }, remove: { file in
+            let done = DispatchSemaphore(value: 0)
+            Thread.detachNewThread {
+                deletions.lock.withLock { deletions.renders }?.cancel(mic)
+                done.signal()
+            }
+            let othersGoOn = done.wait(timeout: .now() + 1) == .success
+            deletions.lock.withLock { deletions.seen.append((file, Thread.isMainThread, othersGoOn)) }
+            try? FileManager.default.removeItem(at: file)
+        })
+        deletions.lock.withLock { deletions.renders = renders }
+
+        let lease = renders.lease(mic, settings: lowCut(100))
+        let exported = try await renders.cleaned(mic, settings: lowCut(100), keep: true).url
+        _ = try await renders.cleaned(mic, settings: lowCut(120))
+        renders.release(lease)
+        await renders.removed()
+        let seen = deletions.lock.withLock { deletions.seen }
+        XCTAssertEqual(seen.map(\.file.lastPathComponent), [exported.lastPathComponent], "the released copy goes")
+        XCTAssertEqual(seen.first?.onMain, false, "deleting it never stalls the editor")
+        XCTAssertEqual(seen.first?.othersGoOn, true, "nor holds up a preview or export asking for a copy meanwhile")
     }
 
     func testARenderLeavesTheCleanedCopiesOfAnotherMicrophoneInTheFolder() async throws {

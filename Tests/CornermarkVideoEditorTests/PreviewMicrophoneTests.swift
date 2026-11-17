@@ -134,6 +134,7 @@ final class PreviewMicrophoneTests: XCTestCase {
 
         microphone.update(lowCut(120))
         await microphone.prepared()
+        await renders.removed()
         XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path), "the failed render no longer holds the copy, so it goes")
         XCTAssertEqual(microphone.file, VoiceCleanupCache.file(for: recorded, settings: lowCut(100)), "the previous sound plays on")
     }

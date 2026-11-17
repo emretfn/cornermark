@@ -680,15 +680,14 @@ enum VoiceCleanupCache {
         return (made, report)
     }
 
-    /// Removes the cleaned copies of `microphone` but the ones in `keeping`, and with `partials` also the half-written ones: only
-    /// when no render of `microphone` is writing one.
-    static func prune(beside microphone: URL, keeping: Set<URL>, partials: Bool = false) {
-        let fm = FileManager.default, folder = microphone.deletingLastPathComponent()
+    /// The cleaned copies of `microphone` to remove: all but the ones in `keeping`, and with `partials` also the half-written ones,
+    /// which only go when no render of `microphone` is writing one.
+    static func stale(beside microphone: URL, keeping: Set<URL>, partials: Bool = false) -> [URL] {
+        let folder = microphone.deletingLastPathComponent()
         let kept = Set(keeping.map(\.lastPathComponent))
-        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where !kept.contains(name) {
-            guard isCopy(name, of: microphone, partial: false) || partials && isCopy(name, of: microphone, partial: true) else { continue }
-            try? fm.removeItem(at: folder.appendingPathComponent(name))
-        }
+        return ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { name in
+            !kept.contains(name) && (isCopy(name, of: microphone, partial: false) || partials && isCopy(name, of: microphone, partial: true))
+        }.map { folder.appendingPathComponent($0) }
     }
 
     /// Whether the file named `name` is a cleaned copy of `microphone`, or with `partial` one being written.
