@@ -424,7 +424,7 @@ public enum VideoExporter {
     }
 
     /// The recording's sound tracks the mix takes, each at its Track level. With Voice cleanup on, the Microphone track is its cleaned
-    /// copy, made first if it is not ready; the recorded file stays as it is.
+    /// copy, made first if it is not ready, or the one the preview is making when it is under way; the recorded file stays as it is.
     static func soundFiles(_ project: RecordingProject, in folder: URL) async throws -> [(url: URL, gain: Double)] {
         var files: [(url: URL, gain: Double)] = []
         for entry in project.audioMix {
@@ -434,7 +434,7 @@ public enum VideoExporter {
                 files.append((recorded, entry.gain))
                 continue
             }
-            let cleaned = try await Task.detached(priority: .userInitiated) { try VoiceCleanupCache.prepare(recorded, settings: cleanup) }.value
+            let cleaned = try await VoiceCleanupRenders.shared.cleaned(recorded, settings: cleanup, keep: true)
             files.append((cleaned, entry.gain))
         }
         return files

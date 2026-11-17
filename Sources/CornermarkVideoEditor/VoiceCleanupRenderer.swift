@@ -18,6 +18,8 @@ public enum VoiceCleanupRenderer {
         let steps = chain(settings, format: format)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { throw ExportError.writer("the sound could not be read") }
         while source.framePosition < source.length {
+            // A render run in a task stops at the next chunk once a newer one supersedes it.
+            try Task.checkCancellation()
             try source.read(into: buffer, frameCount: min(chunk, AVAudioFrameCount(source.length - source.framePosition)))
             guard buffer.frameLength > 0 else { break }
             for step in steps { step.process(buffer) }
