@@ -198,6 +198,59 @@ final class VideoExporterTests: XCTestCase {
         return TestSound.amplitude(of: frequency, in: sound.channels[0], rate: sound.rate, from: from, to: to)
     }
 
+    /// A Microphone track as a room records it: 50 Hz mains hum and steady fan noise throughout, a voice-like sound (a 140 Hz voice with
+    /// its harmonics, rising and falling three times a second) from 1 to 2 s.
+    private func makeNoisyMicrophone(seconds: Double) throws -> URL {
+        let url = folder.appendingPathComponent("mic.m4a")
+        let noise = TestSound.noise(amplitude: 0.03)
+        try TestSound.write(url, seconds: seconds, channels: [[(50, 0.1)]]) { c, t in
+            var sound = noise(c, t)
+            if t >= 1, t < 2 {
+                let pitch = 140 + 20 * sin(2 * .pi * 0.7 * t), syllables = max(0, sin(2 * .pi * 3 * t))
+                sound += Float(0.15 * syllables * (1...12).reduce(0) { $0 + sin(2 * .pi * pitch * Double($1) * t) / Double($1) })
+            }
+            return sound
+        }
+        return url
+    }
+
+    func testVoiceCleanupAtItsDefaultsTakesHumAndNoiseOutOfTheExport() async throws {
+        var (source, project) = try await makeSource(frames: 120)
+        let mic = try makeNoisyMicrophone(seconds: 4)
+        let recorded = try Data(contentsOf: mic)
+        project.source.microphone = "mic.m4a"
+
+        let raw = folder.appendingPathComponent("raw.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: raw)
+        project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
+        let clean = folder.appendingPathComponent("clean.mp4")
+        let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: clean)
+
+        XCTAssertTrue(report.hasAudio)
+        let before = try TestSound.read(raw), after = try TestSound.read(clean)
+        // Where nobody speaks.
+        let hum = TestSound.decibels(TestSound.amplitude(of: 50, in: after.channels[0], rate: after.rate, from: 2.5, to: 3.5)
+                                     / TestSound.amplitude(of: 50, in: before.channels[0], rate: before.rate, from: 2.5, to: 3.5))
+        let floor = TestSound.decibels(TestSound.noiseFloor(after.channels[0], rate: after.rate, from: 2.5, to: 3.5)
+                                       / TestSound.noiseFloor(before.channels[0], rate: before.rate, from: 2.5, to: 3.5))
+        XCTAssertLessThan(hum, -12, "the hum is clearly reduced")
+        if VoiceCleanupRenderer.noiseRemovalAvailable {
+            XCTAssertLessThan(floor, -6, "the fan noise is clearly reduced")
+        } else {
+            XCTAssertEqual(floor, 0, accuracy: 1, "without Noise removal on this Mac the fan noise stays, and the export still works")
+        }
+
+        project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 2.5, end: 3.5)]
+        let cutFile = folder.appendingPathComponent("cut.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: cutFile)
+        let cut = try TestSound.read(cutFile)
+        XCTAssertEqual(Double(cut.channels[0].count) / cut.rate, 1.5, accuracy: 0.03, "the cleaned sound keeps only what the clips keep")
+        XCTAssertLessThan(TestSound.amplitude(of: 50, in: cut.channels[0], rate: cut.rate, from: 0.6, to: 1.4)
+                          / TestSound.amplitude(of: 50, in: before.channels[0], rate: before.rate, from: 2.6, to: 3.4), 0.25,
+                          "the second clip carries the cleaned sound")
+        XCTAssertEqual(try Data(contentsOf: mic), recorded, "the recorded microphone file is never changed")
+    }
+
     func testWithVoiceCleanupOnTheExportCarriesTheCleanedMicrophoneTrackCutByTheSameClips() async throws {
         var (source, project) = try await makeSource(frames: 60)
         let mic = try makeHummingMicrophone(seconds: 2, bursts: [0.25, 1.25, 1.75])
@@ -207,7 +260,9 @@ final class VideoExporterTests: XCTestCase {
 
         let raw = folder.appendingPathComponent("raw.mp4")
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: raw)
+        // Knocks and pure tones are not speech, so Noise removal would take them out: this one follows the cut with Low cut alone.
         project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
+        project.edits.audio.voiceCleanup.noiseRemovalOn = false
         let clean = folder.appendingPathComponent("clean.mp4")
         let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: clean)
 
