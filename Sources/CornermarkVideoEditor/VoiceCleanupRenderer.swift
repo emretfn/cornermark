@@ -400,26 +400,30 @@ struct Leveling {
         try VoiceCleanupRenderer.run(source, through: [Compressor(gain: Self.gain(from: loudness), format: format)], into: compressed,
                                      format: format, measuring: meter)
         try normalize(AVAudioFile(forReading: compressed, commonFormat: .pcmFormatFloat32, interleaved: false),
-                      gain: Float(Self.gain(from: meter.integrated)), into: target)
+                      gain: Float(Self.gain(from: meter.integrated))) { try target.write(from: $0) }
     }
 
-    /// `source` times `gain`, written to `target`. A limiter that looks 5 ms ahead lowers the gain smoothly before any peak that would
-    /// pass the ceiling, so no sample does.
-    private func normalize(_ source: AVAudioFile, gain: Float, into target: AVAudioFile) throws {
-        let ceiling = Self.ceiling
+    /// `source` times `gain`, handed to `write` a chunk at a time. A limiter that looks 5 ms ahead lowers the gain smoothly before any
+    /// peak that would pass the ceiling, so no sample does. It finds the peaks between samples as well (BS.1770's true peak, 4 times
+    /// oversampled), so the sound does not pass the ceiling once it is played back or encoded either.
+    private func normalize(_ source: AVAudioFile, gain: Float, into write: (AVAudioPCMBuffer) throws -> Void) throws {
+        let ceiling = Self.ceiling, length = Int(source.length)
         let channels = Int(format.channelCount), look = max(1, Int(format.sampleRate * 0.005))
         let release = 1 - exp(-1 / (format.sampleRate * 0.1))
         guard let input = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: VoiceCleanupRenderer.chunk),
               let output = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: VoiceCleanupRenderer.chunk),
               let out = output.floatChannelData else { throw VoiceCleanupError.unreadable }
-        // Frames read but not yet written, by frame number modulo `look`.
-        var delay = [[Float]](repeating: [Float](repeating: 0, count: look), count: channels)
-        // The gain each read frame needs to stay under the ceiling, increasing from front to back, so the front is the lowest needed
-        // over the next `look` frames.
+        // Frames read but not yet written, by frame number modulo `span`: the look-ahead and the frames the true peak needs after one.
+        let span = look + TruePeak.taps
+        var delay = [[Float]](repeating: [Float](repeating: 0, count: span), count: channels)
+        var peaks = [TruePeak](repeating: TruePeak(), count: channels)
+        // The gain each frame needs to stay under the ceiling, increasing from front to back, so the front is the lowest needed over
+        // the next `look` frames.
         var needed: [(frame: Int, gain: Double)] = [], front = 0
         // The last `look` lowest gains, averaged, so the gain glides down over `look` frames and reaches each peak's need in time.
         var recent = [Double](repeating: 1, count: look), sum = Double(look), level = 1.0
-        var read = 0, written = 0
+        // Frames read, frames whose need is known, frames written, and the true peak just before the last known frame.
+        var read = 0, known = 0, written = 0, before: Float = 0
         output.frameLength = 0
 
         func emit() throws {
@@ -430,11 +434,11 @@ struct Leveling {
             let glide = sum / Double(look)
             level = glide < level ? glide : level + (glide - level) * release
             let n = Int(output.frameLength)
-            for c in 0..<channels { out[c][n] = max(-ceiling, min(ceiling, delay[c][slot] * Float(level))) }
+            for c in 0..<channels { out[c][n] = max(-ceiling, min(ceiling, delay[c][written % span] * Float(level))) }
             output.frameLength += 1
             written += 1
             if output.frameLength == output.frameCapacity {
-                try target.write(from: output)
+                try write(output)
                 output.frameLength = 0
             }
             if front > 4_096 {
@@ -443,30 +447,75 @@ struct Leveling {
             }
         }
 
+        /// Takes in the next frame, `sample(c)` on channel `c`; past the end, silence that only lets the last frames' peaks be found.
+        func take(_ sample: (Int) -> Float) throws {
+            var peak: Float = 0
+            for c in 0..<channels {
+                let v = sample(c)
+                if read < length { delay[c][read % span] = v }
+                peak = max(peak, peaks[c].add(v))
+            }
+            read += 1
+            // `peak` is the highest the sound reaches from frame `frame` to the next; the frame needs that and the stretch before it.
+            let frame = read - 1 - TruePeak.lag
+            guard frame >= 0, frame < length else { return }
+            let highest = max(before, peak)
+            before = peak
+            let need = highest > ceiling ? Double(ceiling / highest) : 1
+            while needed.count > front, needed[needed.count - 1].gain >= need { needed.removeLast() }
+            needed.append((frame, need))
+            known = frame + 1
+            while known - written >= look { try emit() }
+        }
+
         while source.framePosition < source.length {
             try Task.checkCancellation()
             try source.read(into: input, frameCount: min(VoiceCleanupRenderer.chunk, AVAudioFrameCount(source.length - source.framePosition)))
             guard input.frameLength > 0, let data = input.floatChannelData else { break }
-            for i in 0..<Int(input.frameLength) {
-                var peak: Float = 0
-                for c in 0..<channels {
-                    let v = data[c][i] * gain
-                    delay[c][read % look] = v
-                    peak = max(peak, abs(v))
-                }
-                let need = peak > ceiling ? Double(ceiling / peak) : 1
-                while needed.count > front, needed[needed.count - 1].gain >= need { needed.removeLast() }
-                needed.append((read, need))
-                read += 1
-                if read >= look { try emit() }
-            }
+            for i in 0..<Int(input.frameLength) { try take { data[$0][i] * gain } }
         }
-        while written < read { try emit() }
-        if output.frameLength > 0 { try target.write(from: output) }
+        while known < read, known < length { try take { _ in 0 } }
+        while written < known { try emit() }
+        if output.frameLength > 0 { try write(output) }
     }
 
     /// The gain that brings sound measured at `loudness` to the target; none for silence.
     private static func gain(from loudness: Double) -> Double { loudness.isFinite ? pow(10, (target - loudness) / 20) : 1 }
+}
+
+/// One channel's true peak as BS.1770 finds it: the sound oversampled 4 times by a windowed-sinc interpolator, so a peak that falls
+/// between two samples is seen at most a fraction of a dB short.
+struct TruePeak {
+    /// The interpolator's length in samples, and how many samples late the stretch it judges ends.
+    static let taps = 12
+    static let lag = taps / 2
+    /// For each of the 4 phases, the weights of the last `taps` samples, newest first, that make the sound `lag` samples back plus a
+    /// quarter, a half or three quarters of a sample. Phase 0 is the sample itself.
+    private static let weights: [[Float]] = (0..<4).map { phase in
+        let raw = (0..<taps).map { k -> Double in
+            let t = Double(k - lag) + Double(phase) / 4
+            let sinc = t == 0 ? 1 : sin(.pi * t) / (.pi * t)
+            return sinc * 0.5 * (1 + cos(.pi * t / (Double(lag) + 0.5)))
+        }
+        let total = raw.reduce(0, +)
+        return raw.map { Float($0 / total) }
+    }
+
+    private var history = [Float](repeating: 0, count: taps)
+    private var next = 0
+
+    /// Takes the next sample in and gives back the highest the sound reaches from `lag` samples back to the sample after it.
+    mutating func add(_ sample: Float) -> Float {
+        history[next] = sample
+        next = (next + 1) % Self.taps
+        var peak: Float = 0
+        for phase in Self.weights {
+            var value: Float = 0
+            for k in 0..<Self.taps { value += phase[k] * history[(next - 1 - k + 2 * Self.taps) % Self.taps] }
+            peak = max(peak, abs(value))
+        }
+        return peak
+    }
 }
 
 /// Leveling's compressor: the sound times `gain`, then 3:1 above -20 dBFS with a soft knee, following the level in 5 ms and letting
@@ -508,7 +557,7 @@ final class Compressor: CleanupStep {
 /// settings, the recorded file and `version`, so a file made for anything else is never used, and it can always be made again.
 enum VoiceCleanupCache {
     /// Bump when a step starts sounding different, so files cleaned by an older build are made again.
-    static let version = 5
+    static let version = 6
     static let prefix = "voice-cleanup-"
 
     /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.

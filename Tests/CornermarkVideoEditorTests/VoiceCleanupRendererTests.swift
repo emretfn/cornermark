@@ -5,11 +5,16 @@ import XCTest
 
 /// Synthetic sound for the Voice cleanup tests: tones written to a file the way a recording writes its Microphone track.
 enum TestSound {
-    /// An AAC file at 48 kHz whose channel `c` is the sum of `tones[c]`, each a (frequency in Hz, amplitude) sine.
-    static func write(_ url: URL, seconds: Double, channels tones: [[(Double, Double)]], extra: ((Int, Double) -> Float)? = nil) throws {
+    /// An AAC file at 48 kHz whose channel `c` is the sum of `tones[c]`, each a (frequency in Hz, amplitude) sine. `lossless` writes
+    /// 32-bit float PCM instead (give the URL a .caf extension), for a test that must see every sample as the renderer made it.
+    static func write(_ url: URL, seconds: Double, channels tones: [[(Double, Double)]], lossless: Bool = false,
+                      extra: ((Int, Double) -> Float)? = nil) throws {
         let rate = 48_000.0
-        let file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: tones.count,
-                                                              AVEncoderBitRateKey: 128_000 * tones.count])
+        let settings: [String: Any] = lossless
+            ? [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: tones.count, AVLinearPCMBitDepthKey: 32,
+               AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false]
+            : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: tones.count, AVEncoderBitRateKey: 128_000 * tones.count]
+        let file = try AVAudioFile(forWriting: url, settings: settings)
         let frames = Int(seconds * rate)
         let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(frames))!
         buffer.frameLength = buffer.frameCapacity
@@ -55,6 +60,28 @@ enum TestSound {
     }
 
     static func decibels(_ ratio: Double) -> Double { 20 * log10(max(ratio, 1e-12)) }
+
+    /// The highest peak of `samples`, between samples too: the largest value of the sound resampled to 8 times its rate by Core Audio's
+    /// own converter.
+    static func truePeak(_ samples: [Float], rate: Double) throws -> Float {
+        let from = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!, to = AVAudioFormat(standardFormatWithSampleRate: rate * 8, channels: 1)!
+        let converter = try XCTUnwrap(AVAudioConverter(from: from, to: to))
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+        let input = AVAudioPCMBuffer(pcmFormat: from, frameCapacity: AVAudioFrameCount(samples.count))!
+        input.frameLength = input.frameCapacity
+        samples.withUnsafeBufferPointer { input.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
+        let output = AVAudioPCMBuffer(pcmFormat: to, frameCapacity: AVAudioFrameCount(samples.count * 8 + 4_096))!
+        var given = false
+        var error: NSError?
+        _ = converter.convert(to: output, error: &error) { _, status in
+            if given { status.pointee = .endOfStream; return nil }
+            given = true
+            status.pointee = .haveData
+            return input
+        }
+        if let error { throw error }
+        return UnsafeBufferPointer(start: output.floatChannelData![0], count: Int(output.frameLength)).map(abs).max() ?? 0
+    }
 
     /// The root mean square of `samples` between `from` and `to` seconds: how loud everything there is together.
     static func rms(_ samples: [Float], rate: Double, from: Double, to: Double) -> Double {
@@ -340,6 +367,25 @@ final class VoiceCleanupRendererTests: XCTestCase {
             XCTAssertLessThan(after.channels[0].map(abs).max() ?? 1, 1, "speech peaking at \(level) dB never clips")
             XCTAssertEqual(try AVAudioFile(forReading: output).length, try AVAudioFile(forReading: input).length)
         }
+    }
+
+    func testLevelingCatchesASpikeBetweenSamplesUnderItsCeilingWithoutFlatteningIt() throws {
+        let input = folder.appendingPathComponent("mic.caf"), output = folder.appendingPathComponent("clean.caf")
+        // Quiet speech with one sharp 12 kHz spike at 3 s, a quarter of the rate and half way between samples, so every sample sits
+        // 3 dB under the spike's real peak.
+        let speech = folder.appendingPathComponent("speech.m4a")
+        try self.speech(speech, level: -30, seconds: 6)
+        let voice = try TestSound.read(speech).channels[0]
+        try TestSound.write(input, seconds: 6, channels: [[]], lossless: true) { _, t in
+            let i = Int(t * 48_000)
+            return (i < voice.count ? voice[i] : 0) + (t >= 3 && t < 3.02 ? Float(0.9 * sin(2 * .pi * 12_000 * t + .pi / 4)) : 0)
+        }
+        try VoiceCleanupRenderer.render(input, settings: onlyLeveling, to: output)
+
+        let after = try TestSound.read(output).channels[0]
+        XCTAssertLessThanOrEqual(try TestSound.truePeak(after, rate: 48_000), Leveling.ceiling * 1.012,
+                                 "the spike's peak between samples stays under the ceiling, within 0.1 dB")
+        XCTAssertLessThan(after.filter { abs($0) >= Leveling.ceiling * 0.999 }.count, 3, "the limiter lowered the spike instead of cutting it flat")
     }
 
     func testLevelingEvensOutLoudAndSoftSpeech() throws {
