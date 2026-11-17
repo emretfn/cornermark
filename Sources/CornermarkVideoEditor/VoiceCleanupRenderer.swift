@@ -10,13 +10,38 @@ public enum VoiceCleanupRenderer {
 
     /// Writes `input` cleaned as `settings` say to `output`, replacing a file already there. Every channel is cleaned the same way,
     /// so a microphone in one channel of two stays where it was. `settings.isOn` is the caller's business: this cleans either way.
-    public static func render(_ input: URL, settings: VoiceCleanup, to output: URL) throws {
+    /// A step that cannot run on this Mac is skipped and named in the report; the others still clean the sound.
+    @discardableResult
+    public static func render(_ input: URL, settings: VoiceCleanup, to output: URL) throws -> VoiceCleanupReport {
+        try render(input, settings: settings, to: output, soundIsolation: NoiseRemoval.apple)
+    }
+
+    /// `render`, with Noise removal done by the audio unit `soundIsolation` describes, so a test can name one that is not there.
+    static func render(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription) throws -> VoiceCleanupReport {
+        let steps = try write(input, settings: settings, to: output, soundIsolation: soundIsolation)
+        let noiseRemoval = steps.lazy.compactMap { $0 as? NoiseRemoval }.first
+        guard settings.runsNoiseRemoval, noiseRemoval?.failed != false else { return VoiceCleanupReport() }
+        if noiseRemoval != nil {
+            // The unit failed part way: the file is cleaned again from the start without it, so no stretch carries half a step.
+            var without = settings
+            without.noiseRemovalOn = false
+            try write(input, settings: without, to: output, soundIsolation: soundIsolation)
+        }
+        return VoiceCleanupReport(noiseRemovalUnavailable: true)
+    }
+
+    /// Cleans `input` into `output` and hands back the steps that ran, so the caller can ask how they went.
+    @discardableResult
+    private static func write(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription) throws -> [CleanupStep] {
         let source = try AVAudioFile(forReading: input, commonFormat: .pcmFormatFloat32, interleaved: false)
         let format = source.processingFormat
         try? FileManager.default.removeItem(at: output)
         let target = try AVAudioFile(forWriting: output, settings: outputSettings(like: source.fileFormat), commonFormat: .pcmFormatFloat32, interleaved: false)
-        let steps = chain(settings, format: format)
-        guard let leveling = steps.last as? Leveling else { return try run(source, through: steps, into: target) }
+        let steps = chain(settings, format: format, soundIsolation: soundIsolation)
+        guard let leveling = steps.last as? Leveling else {
+            try run(source, through: steps, into: target)
+            return steps
+        }
         // Leveling needs the loudness of the whole track before it can set any of it, so the sound goes through two temporary files:
         // the steps (Leveling measuring), then Leveling's compressor (measuring again), then its normalization into `target`.
         let measured = temporaryFile(), compressed = temporaryFile()
@@ -24,6 +49,7 @@ public enum VoiceCleanupRenderer {
         try run(source, through: steps, into: measured, format: format)
         try run(AVAudioFile(forReading: measured, commonFormat: .pcmFormatFloat32, interleaved: false), through: [leveling.compressor()], into: compressed, format: format)
         try leveling.normalize(AVAudioFile(forReading: compressed, commonFormat: .pcmFormatFloat32, interleaved: false), into: target)
+        return steps
     }
 
     /// Runs `source` through `steps` into a new uncompressed float file at `url`, so a pass in between loses nothing. The file is
@@ -72,14 +98,19 @@ public enum VoiceCleanupRenderer {
     }
 
     /// The steps that are on, always in this order: Low cut, Noise removal, Noise gate, Leveling. Track level comes later, in the mix.
-    static func chain(_ settings: VoiceCleanup, format: AVAudioFormat) -> [CleanupStep] {
+    /// Noise removal at strength 0 is left out, so the sound is exactly as it came in; when its unit cannot be made, it is left out too.
+    static func chain(_ settings: VoiceCleanup, format: AVAudioFormat, soundIsolation: AudioComponentDescription = NoiseRemoval.apple) -> [CleanupStep] {
         var steps: [CleanupStep] = []
         if settings.lowCutOn { steps.append(LowCut(frequency: settings.lowCutFrequency, format: format)) }
-        if settings.noiseRemovalOn { steps.append(PassThrough()) }
+        if settings.runsNoiseRemoval, let step = NoiseRemoval(strength: settings.noiseRemovalStrength, format: format, unit: soundIsolation) { steps.append(step) }
         if settings.noiseGateOn { steps.append(NoiseGate(threshold: settings.noiseGateThreshold, format: format)) }
         if settings.levelingOn { steps.append(Leveling(format: format)) }
         return steps
     }
+
+    /// Whether Noise removal can run on this Mac: Apple's sound isolation unit is there. The audio panel greys the step out when it
+    /// is not, or when a render reported it could not run.
+    public static var noiseRemovalAvailable: Bool { NoiseRemoval.available }
 
     /// The recorded file's encoding, rate and channels. AAC keeps a cleaned track about as small as the recorded one.
     private static func outputSettings(like format: AVAudioFormat) -> [String: Any] {
@@ -89,6 +120,12 @@ public enum VoiceCleanupRenderer {
         }
         return settings
     }
+}
+
+/// What a render had to leave out.
+public struct VoiceCleanupReport: Equatable, Sendable {
+    /// Noise removal was asked for, but Apple's sound isolation unit could not be made or failed, so the sound skipped that step.
+    public var noiseRemovalUnavailable = false
 }
 
 /// One Voice cleanup step: a transform of the sound, fed the file chunk after chunk from start to end. A step keeps whatever it needs
@@ -153,6 +190,112 @@ final class LowCut: CleanupStep {
         for c in sections.indices where c < Int(buffer.format.channelCount) {
             for s in sections[c].indices { sections[c][s].run(data[c], count: count) }
         }
+    }
+}
+
+/// Noise removal: Apple's sound isolation audio unit, run offline, keeps the voice and drops steady background noise. Strength mixes
+/// its answer with the sound as it came in. The unit answers `delay` frames late, which the renderer takes back out.
+final class NoiseRemoval: CleanupStep {
+    /// Apple's sound isolation unit, on every Mac since macOS 13.
+    static let apple = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: kAudioUnitSubType_AUSoundIsolation,
+                                                 componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
+    /// Frames handed to the unit at a time.
+    private static let slice: AVAudioFrameCount = 4_096
+
+    /// Whether Apple's unit is on this Mac. A file it could not clean says so in its own report and leaves the next file to try.
+    static var available: Bool {
+        var description = apple
+        return AudioComponentFindNext(nil, &description) != nil
+    }
+
+    /// The sound waiting to go into the unit, read by its input block. A class of its own, so the engine does not hold the step.
+    private final class Feed {
+        var samples: [[Float]]
+        let buffer: AVAudioPCMBuffer
+        var short = false
+        init?(format: AVAudioFormat) {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: NoiseRemoval.slice) else { return nil }
+            samples = Array(repeating: [], count: Int(format.channelCount))
+            self.buffer = buffer
+        }
+    }
+
+    let delay: Int
+    /// The unit stopped answering part way. What it wrote is not to be trusted.
+    private(set) var failed = false
+    private let engine = AVAudioEngine()
+    private let strength: Float
+    private let feed: Feed
+    private let output: AVAudioPCMBuffer
+    /// The sound as it came in, `delay` frames late, so it lines up with the unit's answer for the mix.
+    private var dry: [[Float]]
+
+    /// Nil when the unit cannot be made or started for `format`.
+    init?(strength: Double, format: AVAudioFormat, unit description: AudioComponentDescription) {
+        var find = description
+        guard AudioComponentFindNext(nil, &find) != nil, let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.slice),
+              let feed = Feed(format: format) else { return nil }
+        let unit = AVAudioUnitEffect(audioComponentDescription: description)
+        // The high-quality voice model where the OS has it, the standard one before.
+        let voice: Int
+        if #available(macOS 15, *) { voice = kAUSoundIsolationSoundType_HighQualityVoice } else { voice = kAUSoundIsolationSoundType_Voice }
+        AudioUnitSetParameter(unit.audioUnit, kAUSoundIsolationParam_SoundToIsolate, kAudioUnitScope_Global, 0, AudioUnitParameterValue(voice), 0)
+        // The unit gives only its answer; strength is mixed here, against the dry sound lined up to it.
+        AudioUnitSetParameter(unit.audioUnit, kAUSoundIsolationParam_WetDryMixPercent, kAudioUnitScope_Global, 0, 100, 0)
+        do {
+            try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: Self.slice)
+            engine.attach(unit)
+            engine.connect(engine.inputNode, to: unit, format: format)
+            engine.connect(unit, to: engine.mainMixerNode, format: format)
+            let fed = engine.inputNode.setManualRenderingInputPCMFormat(format) { count in
+                let n = Int(count), buffer = feed.buffer
+                guard count <= buffer.frameCapacity, let data = buffer.floatChannelData else { return nil }
+                for c in feed.samples.indices {
+                    let have = min(n, feed.samples[c].count)
+                    if have < n { feed.short = true }
+                    feed.samples[c].withUnsafeBufferPointer { data[c].update(from: $0.baseAddress!, count: have) }
+                    (data[c] + have).update(repeating: 0, count: n - have)
+                    feed.samples[c].removeFirst(have)
+                }
+                buffer.frameLength = count
+                return UnsafePointer(buffer.audioBufferList)
+            }
+            guard fed else { return nil }
+            try engine.start()
+        } catch {
+            return nil
+        }
+        self.feed = feed
+        self.output = output
+        self.strength = Float(min(max(strength, 0), 1))
+        delay = Int((unit.auAudioUnit.latency * format.sampleRate).rounded())
+        dry = Array(repeating: Array(repeating: 0, count: delay), count: Int(format.channelCount))
+    }
+
+    deinit { engine.stop() }
+
+    func process(_ buffer: AVAudioPCMBuffer) {
+        guard !failed, let data = buffer.floatChannelData else { return }
+        let n = Int(buffer.frameLength), channels = min(Int(buffer.format.channelCount), dry.count)
+        for c in 0..<channels {
+            let samples = UnsafeBufferPointer(start: data[c], count: n)
+            feed.samples[c] += samples
+            dry[c] += samples
+        }
+        var done = 0
+        while done < n {
+            let count = min(Int(Self.slice), n - done)
+            guard (try? engine.renderOffline(AVAudioFrameCount(count), to: output)) == .success, Int(output.frameLength) == count, !feed.short,
+                  let wet = output.floatChannelData else {
+                failed = true
+                return
+            }
+            for c in 0..<channels {
+                for i in 0..<count { data[c][done + i] = strength * wet[c][i] + (1 - strength) * dry[c][done + i] }
+            }
+            done += count
+        }
+        for c in 0..<channels { dry[c].removeFirst(n) }
     }
 }
 
@@ -351,7 +494,7 @@ final class Compressor: CleanupStep {
 /// settings, the recorded file and `version`, so a file made for anything else is never used, and it can always be made again.
 enum VoiceCleanupCache {
     /// Bump when a step starts sounding different, so files cleaned by an older build are made again.
-    static let version = 4
+    static let version = 5
     static let prefix = "voice-cleanup-"
 
     /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.
@@ -368,23 +511,33 @@ enum VoiceCleanupCache {
         return microphone.deletingLastPathComponent().appendingPathComponent(prefix + digest).appendingPathExtension(microphone.pathExtension)
     }
 
-    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there. Copies cleaned for other settings stay:
-    /// `VoiceCleanupRenders` removes the ones nobody holds.
-    static func prepare(_ microphone: URL, settings: VoiceCleanup) throws -> URL {
+    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there, and what its render had to leave out.
+    /// Copies cleaned for other settings stay: `VoiceCleanupRenders` removes the ones nobody holds.
+    static func prepare(_ microphone: URL, settings: VoiceCleanup,
+                        soundIsolation: AudioComponentDescription = NoiseRemoval.apple) throws -> (url: URL, report: VoiceCleanupReport) {
         let fm = FileManager.default
         let target = file(for: microphone, settings: settings)
-        guard !fm.fileExists(atPath: target.path) else { return target }
+        guard !fm.fileExists(atPath: target.path) else { return (target, VoiceCleanupReport()) }
         let folder = microphone.deletingLastPathComponent()
         // Made under a hidden name and moved in whole, so a half-written file never carries a settings name.
         let partial = folder.appendingPathComponent(".\(prefix)\(UUID().uuidString)").appendingPathExtension(microphone.pathExtension)
+        let report: VoiceCleanupReport
+        var made = target
         do {
-            try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial)
-            if fm.fileExists(atPath: target.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: target) }
+            report = try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial, soundIsolation: soundIsolation)
+            // Sound that skipped Noise removal is what the settings without it make, so it takes their name: these settings are
+            // cleaned again, with Noise removal, once the unit runs.
+            if report.noiseRemovalUnavailable {
+                var without = settings
+                without.noiseRemovalOn = false
+                made = file(for: microphone, settings: without)
+            }
+            if fm.fileExists(atPath: made.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: made) }
         } catch {
             try? fm.removeItem(at: partial)
             throw error
         }
-        return target
+        return (made, report)
     }
 
     /// Removes the cleaned copies of `microphone` but the ones in `keeping`.

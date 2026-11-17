@@ -6,7 +6,9 @@ import Foundation
 /// waits for it: the export then gets its sound and the new render starts after it. A finished render removes the copies made for other
 /// settings, except the ones leased by an export or the preview.
 final class VoiceCleanupRenders: @unchecked Sendable {
-    typealias Render = @Sendable (URL, VoiceCleanup) throws -> URL
+    /// A cleaned copy, and what its render had to leave out.
+    typealias Cleaned = (url: URL, report: VoiceCleanupReport)
+    typealias Render = @Sendable (URL, VoiceCleanup) throws -> Cleaned
 
     /// The one the editor and the exporter share.
     static let shared = VoiceCleanupRenders()
@@ -14,7 +16,7 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     private struct Job {
         let id: Int
         let settings: VoiceCleanup
-        let task: Task<URL, Error>
+        let task: Task<Cleaned, Error>
         /// How many exports wait for it. While one does, a newer request must not cancel it.
         var keeps: Int
     }
@@ -33,13 +35,13 @@ final class VoiceCleanupRenders: @unchecked Sendable {
 
     /// The cleaned copy of `microphone` for `settings`. `keep` is for an export: no later request cancels the render it waits for.
     /// A superseded request ends with `CancellationError`.
-    func request(_ microphone: URL, settings: VoiceCleanup, keep: Bool = false) -> Task<URL, Error> {
+    func request(_ microphone: URL, settings: VoiceCleanup, keep: Bool = false) -> Task<Cleaned, Error> {
         job(microphone, settings: settings, keep: keep).task
     }
 
     /// Waits for the cleaned copy, rendering it when no render for these settings is under way. Cancelled, it stops waiting at once,
     /// and the render stops too unless an export still waits for it.
-    func cleaned(_ microphone: URL, settings: VoiceCleanup, keep: Bool = false) async throws -> URL {
+    func cleaned(_ microphone: URL, settings: VoiceCleanup, keep: Bool = false) async throws -> Cleaned {
         let job = job(microphone, settings: settings, keep: keep)
         let cleaned = try await withTaskCancellationHandler {
             try await job.task.value
@@ -59,7 +61,7 @@ final class VoiceCleanupRenders: @unchecked Sendable {
         }
     }
 
-    private func job(_ microphone: URL, settings: VoiceCleanup, keep: Bool) -> (task: Task<URL, Error>, id: Int) {
+    private func job(_ microphone: URL, settings: VoiceCleanup, keep: Bool) -> (task: Task<Cleaned, Error>, id: Int) {
         var steps = settings
         steps.isOn = true
         lock.lock()
@@ -76,13 +78,13 @@ final class VoiceCleanupRenders: @unchecked Sendable {
         if let previous, previous.keeps == 0 { previous.task.cancel() }
         nextID += 1
         let id = nextID, render = render
-        let task = Task.detached(priority: .userInitiated) { [weak self] () throws -> URL in
+        let task = Task.detached(priority: .userInitiated) { [weak self] () throws -> Cleaned in
             defer { self?.finished(microphone, id: id) }
             // One render per file at a time: a cancelled one stops at its next chunk, a kept one runs to its end.
             _ = await previous?.task.result
             try Task.checkCancellation()
             let made = try render(microphone, steps)
-            self?.prune(microphone, keeping: made)
+            self?.prune(microphone, keeping: made.url)
             return made
         }
         jobs[microphone] = Job(id: id, settings: steps, task: task, keeps: keep ? 1 : 0)
@@ -104,23 +106,31 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     /// A hold on the cleaned copy of a microphone for some settings: while it is held, a render for other settings does not remove it.
     struct Lease: Hashable {
         let microphone: URL
-        let file: URL
+        /// The copy's name, and with Noise removal on also the name the copy takes when Noise removal cannot run.
+        let files: [URL]
     }
 
     /// Holds the cleaned copy of `microphone` for `settings`, made or not, until `release`. Taken before the copy is asked for, so no
     /// render can remove it between the time it is made and the time it is opened.
     func lease(_ microphone: URL, settings: VoiceCleanup) -> Lease {
-        let lease = Lease(microphone: microphone, file: VoiceCleanupCache.file(for: microphone, settings: settings))
-        lock.withLock { leases[lease.file, default: 0] += 1 }
+        var without = settings
+        without.noiseRemovalOn = false
+        let asked = VoiceCleanupCache.file(for: microphone, settings: settings), fallback = VoiceCleanupCache.file(for: microphone, settings: without)
+        let lease = Lease(microphone: microphone, files: asked == fallback ? [asked] : [asked, fallback])
+        lock.withLock { for file in lease.files { leases[file, default: 0] += 1 } }
         return lease
     }
 
     /// Gives the leased copy up. Once nobody holds it, it goes if newer settings were rendered since, and else with the next render.
     func release(_ lease: Lease) {
         lock.withLock {
-            guard let count = leases[lease.file] else { return }
-            leases[lease.file] = count > 1 ? count - 1 : nil
-            guard count == 1, let made = latest[lease.microphone] else { return }
+            var freed = false
+            for file in lease.files {
+                guard let count = leases[file] else { continue }
+                leases[file] = count > 1 ? count - 1 : nil
+                freed = freed || count == 1
+            }
+            guard freed, let made = latest[lease.microphone] else { return }
             VoiceCleanupCache.prune(beside: lease.microphone, keeping: Set(leases.keys).union([made]))
         }
     }

@@ -293,6 +293,34 @@ func checkVideoAfterRecording() async throws {
     check(!editor.isPreparingCleanup && preparing?.isHidden == true && cleaned.count == 1 && editor.previewMicrophone?.lastPathComponent == cleaned.first,
           "and stops once the cleaned copy for the latest settings is ready: the preview plays it, the only one kept",
           detail: "\(cleaned) preview \(editor.previewMicrophone?.lastPathComponent ?? "none")")
+    let noiseBox = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval") as? NSButton
+    let strengthSlider = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval.strength") as? TrackingSlider
+    let unavailableNote = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval.unavailable")
+    if VoiceCleanupRenderer.noiseRemovalAvailable {
+        check(noiseBox?.state == .on && noiseBox?.isEnabled == true && strengthSlider?.doubleValue == 1 && unavailableNote?.isHidden == true,
+              "Noise removal sits under Low cut, on at full strength")
+        if let strengthSlider {
+            for v in stride(from: 1.0, through: 0.6, by: -0.1) { strengthSlider.doubleValue = v; fire(strengthSlider) }
+            strengthSlider.onTrackingEnd()
+            steps += 1
+        }
+        check(abs(editor.state.project.edits.audio.voiceCleanup.noiseRemovalStrength - 0.6) < 1e-9, "Noise removal's strength follows its slider",
+              detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    } else {
+        check(noiseBox?.isEnabled == false && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false,
+              "on a Mac without the sound isolation unit, Noise removal is greyed out and says it is not available")
+    }
+    // As after an export that could not run Noise removal.
+    editor.noiseRemovalAvailable = false
+    check(noiseBox?.isEnabled == false && noiseBox?.state == .off && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false
+          && editor.state.project.edits.audio.voiceCleanup.noiseRemovalOn,
+          "when Noise removal cannot run, its box and strength are greyed out, a note says it is not available, and the project keeps it on")
+    snapshotEditor(editor, name: "video-after-audio-noise-removal-unavailable")
+    editor.noiseRemovalAvailable = true
+    if VoiceCleanupRenderer.noiseRemovalAvailable {
+        check(noiseBox?.isEnabled == true && noiseBox?.state == .on && strengthSlider?.isEnabled == true && unavailableNote?.isHidden == true,
+              "and it comes back as it was once it can run")
+    }
     let gateSlider = editor.view(identifier: "video.audio.voiceCleanup.noiseGate.threshold") as? TrackingSlider
     check(gateSlider?.isHidden == false && gateSlider?.isEnabled == true && gateSlider?.doubleValue == -50,
           "the Noise gate sits under the Low cut with its threshold at -50 dB")

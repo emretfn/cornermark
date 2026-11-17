@@ -22,7 +22,7 @@ private final class HeldRender: @unchecked Sendable {
         }
     }
 
-    func render(_ microphone: URL, settings: VoiceCleanup) throws -> URL {
+    func render(_ microphone: URL, settings: VoiceCleanup) throws -> VoiceCleanupRenders.Cleaned {
         lock.withLock { startedOn.append(settings.lowCutFrequency) }
         while !lock.withLock({ isReleased }) {
             guard !Task.isCancelled else { break }
@@ -32,7 +32,7 @@ private final class HeldRender: @unchecked Sendable {
             lock.withLock { stoppedOn.append(settings.lowCutFrequency) }
             throw CancellationError()
         }
-        return URL(fileURLWithPath: "/tmp/clean-\(Int(settings.lowCutFrequency)).m4a")
+        return (URL(fileURLWithPath: "/tmp/clean-\(Int(settings.lowCutFrequency)).m4a"), VoiceCleanupReport())
     }
 
     func waitUntilStarted(_ count: Int) async throws {
@@ -51,7 +51,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         return settings
     }
 
-    private func isCancelled(_ task: Task<URL, Error>) async -> Bool {
+    private func isCancelled(_ task: Task<VoiceCleanupRenders.Cleaned, Error>) async -> Bool {
         if case .failure(let error) = await task.result { return error is CancellationError }
         return false
     }
@@ -65,7 +65,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         let third = renders.request(microphone, settings: lowCut(140))
         held.release()
 
-        let latest = try await third.value
+        let latest = try await third.value.url
         XCTAssertEqual(latest.lastPathComponent, "clean-140.m4a")
         let firstCancelled = await isCancelled(first), secondCancelled = await isCancelled(second)
         XCTAssertTrue(firstCancelled, "the render in flight is superseded")
@@ -81,7 +81,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         let export = renders.request(microphone, settings: lowCut(100), keep: true)
         held.release()
 
-        let exported = try await export.value, previewed = try await preview.value
+        let exported = try await export.value.url, previewed = try await preview.value.url
         XCTAssertEqual(exported.lastPathComponent, "clean-100.m4a")
         XCTAssertEqual(previewed, exported)
         XCTAssertEqual(held.started, [100], "one render serves both")
@@ -95,7 +95,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         let preview = renders.request(microphone, settings: lowCut(120))
         held.release()
 
-        let exported = try await export.value, previewed = try await preview.value
+        let exported = try await export.value.url, previewed = try await preview.value.url
         XCTAssertEqual(exported.lastPathComponent, "clean-100.m4a", "the export mixes the sound it asked for")
         XCTAssertEqual(previewed.lastPathComponent, "clean-120.m4a", "and the newer settings render after it")
         XCTAssertEqual(held.started, [100, 120])
@@ -109,15 +109,15 @@ final class VoiceCleanupRendersTests: XCTestCase {
         let renders = VoiceCleanupRenders()
 
         let lease = renders.lease(mic, settings: lowCut(100))
-        let exported = try await renders.cleaned(mic, settings: lowCut(100), keep: true)
-        let newer = try await renders.cleaned(mic, settings: lowCut(120))
+        let exported = try await renders.cleaned(mic, settings: lowCut(100), keep: true).url
+        let newer = try await renders.cleaned(mic, settings: lowCut(120)).url
         XCTAssertTrue(FileManager.default.fileExists(atPath: exported.path), "the export still holds it, so the newer render leaves it")
         XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path))
 
         renders.release(lease)
         XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path), "released, it goes, since newer settings were rendered since")
         XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path), "and the latest stays")
-        let latest = try await renders.cleaned(mic, settings: lowCut(140))
+        let latest = try await renders.cleaned(mic, settings: lowCut(140)).url
         XCTAssertFalse(FileManager.default.fileExists(atPath: newer.path), "a file nobody holds goes with the next render")
         XCTAssertTrue(FileManager.default.fileExists(atPath: latest.path))
     }
@@ -148,7 +148,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         try TestSound.write(mic, seconds: 1, channels: [[(50, 0.3), (1_000, 0.3)]])
         let settings = lowCut(100)
         // Cancelled before it starts, the render stops at its first chunk, once the file it writes is already there.
-        let render = Task.detached { () throws -> URL in
+        let render = Task.detached { () throws -> VoiceCleanupRenders.Cleaned in
             withUnsafeCurrentTask { $0?.cancel() }
             return try VoiceCleanupCache.prepare(mic, settings: settings)
         }
@@ -171,7 +171,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         try await held.waitUntilStarted(2)
         renders.cancel(microphone)
         held.release()
-        let exported = try await export.value
+        let exported = try await export.value.url
         XCTAssertEqual(exported.lastPathComponent, "clean-120.m4a", "the export still gets its sound")
     }
 
@@ -199,7 +199,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         let again = renders.request(microphone, settings: lowCut(100), keep: true)
         held.release()
 
-        let exported = try await again.value
+        let exported = try await again.value.url
         XCTAssertEqual(exported.lastPathComponent, "clean-100.m4a", "the new export does not join the render the cancelled one stopped")
     }
 
@@ -215,7 +215,7 @@ final class VoiceCleanupRendersTests: XCTestCase {
         let again = renders.request(microphone, settings: lowCut(100))
         try await held.waitUntilStarted(2)
         held.release()
-        let exported = try await export.value, previewed = try await again.value
+        let exported = try await export.value.url, previewed = try await again.value.url
         XCTAssertEqual(exported.lastPathComponent, "clean-120.m4a", "the export is not cancelled by the preview asking again")
         XCTAssertEqual(previewed.lastPathComponent, "clean-100.m4a", "and the preview gets its sound after it")
         XCTAssertEqual(held.started, [100, 120, 100])

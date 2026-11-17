@@ -47,7 +47,37 @@ enum TestSound {
         return 2 * (s * s + c * c).squareRoot() / Double(count)
     }
 
+    /// Whether this Mac has Apple's sound isolation unit. Only that decides whether a test can measure Noise removal: a render that
+    /// reports the step unavailable while the unit is here is a failure, not a reason to skip.
+    static var soundIsolationIsHere: Bool {
+        var unit = NoiseRemoval.apple
+        return AudioComponentFindNext(nil, &unit) != nil
+    }
+
     static func decibels(_ ratio: Double) -> Double { 20 * log10(max(ratio, 1e-12)) }
+
+    /// The root mean square of `samples` between `from` and `to` seconds: how loud everything there is together.
+    static func rms(_ samples: [Float], rate: Double, from: Double, to: Double) -> Double {
+        let range = Int(from * rate)..<min(Int(to * rate), samples.count)
+        return (range.reduce(0.0) { $0 + Double(samples[$1] * samples[$1]) } / Double(max(range.count, 1))).squareRoot()
+    }
+
+    /// How loud the broadband noise is between `from` and `to` seconds, with low hum hardly counting: the RMS of the change from one
+    /// sample to the next, which a slow sine barely has and noise has in full.
+    static func noiseFloor(_ samples: [Float], rate: Double, from: Double, to: Double) -> Double {
+        let range = max(Int(from * rate), 1)..<min(Int(to * rate), samples.count)
+        let sum = range.reduce(0.0) { let d = Double(samples[$1] - samples[$1 - 1]); return $0 + d * d }
+        return (sum / Double(max(range.count, 1)) / 2).squareRoot()
+    }
+
+    /// Steady broadband noise of about `amplitude` peak, the same on every run: a fan or a room, as a microphone hears it.
+    static func noise(amplitude: Double) -> (Int, Double) -> Float {
+        var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+        return { _, _ in
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Float(amplitude * (Double(state >> 11) / Double(1 << 53) * 2 - 1))
+        }
+    }
 }
 
 final class VoiceCleanupRendererTests: XCTestCase {
@@ -62,6 +92,93 @@ final class VoiceCleanupRendererTests: XCTestCase {
 
     private func onlyLowCut(at frequency: Double) -> VoiceCleanup {
         VoiceCleanup(isOn: true, lowCutOn: true, lowCutFrequency: frequency, noiseRemovalOn: false, noiseGateOn: false, levelingOn: false)
+    }
+
+    private func onlyNoiseRemoval(strength: Double) -> VoiceCleanup {
+        VoiceCleanup(isOn: true, lowCutOn: false, noiseRemovalOn: true, noiseRemovalStrength: strength, noiseGateOn: false, levelingOn: false)
+    }
+
+    func testNoiseRemovalLowersSteadyNoiseWhereNobodySpeaks() throws {
+        let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
+        // Fan noise throughout, a voice-like tone in the middle.
+        let noise = TestSound.noise(amplitude: 0.05)
+        try TestSound.write(input, seconds: 6, channels: [[]]) { c, t in noise(c, t) + (t > 2.5 && t < 3.5 ? Float(0.2 * sin(2 * .pi * 300 * t)) : 0) }
+        try XCTSkipUnless(TestSound.soundIsolationIsHere, "this Mac has no sound isolation unit, so there is nothing to measure")
+        let report = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 1), to: output)
+        XCTAssertFalse(report.noiseRemovalUnavailable, "the unit is here, so Noise removal runs")
+
+        let before = try TestSound.read(input), after = try TestSound.read(output)
+        let change = TestSound.decibels(TestSound.rms(after.channels[0], rate: 48_000, from: 4.5, to: 5.5)
+                                        / TestSound.rms(before.channels[0], rate: 48_000, from: 4.5, to: 5.5))
+        XCTAssertLessThan(change, -6, "steady noise where nobody speaks is clearly lower")
+        XCTAssertEqual(after.channels[0].count, before.channels[0].count, "the cleaned track is as long as the recorded one")
+    }
+
+    func testNoiseRemovalAtStrengthZeroLeavesTheSoundAsItCameIn() throws {
+        let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
+        try TestSound.write(input, seconds: 3, channels: [[(300, 0.2)]], extra: TestSound.noise(amplitude: 0.05))
+        let report = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 0), to: output)
+
+        XCTAssertFalse(report.noiseRemovalUnavailable)
+        let before = try TestSound.read(input), after = try TestSound.read(output)
+        let change = TestSound.decibels(TestSound.rms(after.channels[0], rate: 48_000, from: 0.5, to: 2.5) / TestSound.rms(before.channels[0], rate: 48_000, from: 0.5, to: 2.5))
+        XCTAssertEqual(change, 0, accuracy: 0.5, "nothing is taken out")
+        XCTAssertEqual(TestSound.decibels(TestSound.amplitude(of: 300, in: after.channels[0], rate: 48_000, from: 0.5, to: 2.5)
+                                          / TestSound.amplitude(of: 300, in: before.channels[0], rate: 48_000, from: 0.5, to: 2.5)), 0, accuracy: 0.5)
+    }
+
+    func testNoiseRemovalAtHalfStrengthKeepsHalfTheSoundAsRecordedOnItsMoment() throws {
+        let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
+        let noise = TestSound.noise(amplitude: 0.05)
+        // Steady noise with one loud knock at 3 s.
+        try TestSound.write(input, seconds: 6, channels: [[]]) { c, t in noise(c, t) + (t >= 3 && t < 3.005 ? Float(0.8 * cos(2 * .pi * 2_000 * t)) : 0) }
+        try XCTSkipUnless(TestSound.soundIsolationIsHere, "this Mac has no sound isolation unit, so there is nothing to measure")
+        let half = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 0.5), to: output)
+        let full = folder.appendingPathComponent("full.m4a")
+        let all = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 1), to: full)
+        XCTAssertEqual([half, all].map(\.noiseRemovalUnavailable), [false, false], "the unit is here, so Noise removal runs")
+
+        let before = try TestSound.read(input).channels[0], halfway = try TestSound.read(output).channels[0], whole = try TestSound.read(full).channels[0]
+        func noiseLevel(_ s: [Float]) -> Double { TestSound.rms(s, rate: 48_000, from: 4.5, to: 5.5) }
+        XCTAssertLessThan(noiseLevel(halfway), noiseLevel(before) * 0.7, "half strength takes noise out")
+        XCTAssertGreaterThan(noiseLevel(halfway), noiseLevel(whole) * 1.5, "but less than full strength")
+        let knock = halfway.indices.first { $0 > 2 * 48_000 && abs(halfway[$0]) > 0.25 }.map { Double($0) / 48_000 }
+        XCTAssertEqual(knock ?? 0, 3, accuracy: 0.001, "the sound stays on its moment however late the unit answers")
+    }
+
+    func testWithoutItsUnitNoiseRemovalIsReportedUnavailableAndTheOtherStepsStillClean() throws {
+        let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
+        try TestSound.write(input, seconds: 3, channels: [[(50, 0.3), (1_000, 0.3)]])
+        var settings = onlyLowCut(at: 150)
+        settings.noiseRemovalOn = true
+        let missing = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: 0x6E6F_6E65, componentManufacturer: 0x6E6F_6E65,
+                                                componentFlags: 0, componentFlagsMask: 0)
+        let report = try VoiceCleanupRenderer.render(input, settings: settings, to: output, soundIsolation: missing)
+
+        XCTAssertTrue(report.noiseRemovalUnavailable, "the renderer says Noise removal could not run")
+        let before = try TestSound.read(input), after = try TestSound.read(output)
+        XCTAssertEqual(after.channels[0].count, before.channels[0].count, "the cleaned track is still whole")
+        func level(_ f: Double, _ s: [Float]) -> Double { TestSound.amplitude(of: f, in: s, rate: 48_000, from: 1, to: 2.5) }
+        XCTAssertLessThan(TestSound.decibels(level(50, after.channels[0]) / level(50, before.channels[0])), -20, "Low cut still runs")
+        XCTAssertEqual(TestSound.decibels(level(1_000, after.channels[0]) / level(1_000, before.channels[0])), 0, accuracy: 1,
+                       "the sound Noise removal would have changed passes as it came")
+    }
+
+    func testATrackCleanedWithoutItsNoiseRemovalIsMadeAgainOnceTheUnitRuns() throws {
+        try XCTSkipUnless(TestSound.soundIsolationIsHere, "this Mac has no sound isolation unit, so it can never run")
+        let mic = folder.appendingPathComponent("mic.m4a")
+        try TestSound.write(mic, seconds: 3, channels: [[]], extra: TestSound.noise(amplitude: 0.05))
+        let settings = onlyNoiseRemoval(strength: 1)
+        let missing = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: 0x6E6F_6E65, componentManufacturer: 0x6E6F_6E65,
+                                                componentFlags: 0, componentFlagsMask: 0)
+        let without = try VoiceCleanupCache.prepare(mic, settings: settings, soundIsolation: missing)
+        XCTAssertTrue(without.report.noiseRemovalUnavailable, "the report says Noise removal could not run")
+        let noise = TestSound.rms(try TestSound.read(without.url).channels[0], rate: 48_000, from: 1, to: 2.5)
+
+        let with = try VoiceCleanupCache.prepare(mic, settings: settings)
+        XCTAssertFalse(with.report.noiseRemovalUnavailable)
+        XCTAssertLessThan(TestSound.rms(try TestSound.read(with.url).channels[0], rate: 48_000, from: 1, to: 2.5), noise / 2,
+                          "the same settings, once the unit runs, are cleaned again and not served the track made without it")
     }
 
     func testLowCutRemovesSoundBelowItsFrequencyAndKeepsTheRest() throws {
@@ -246,13 +363,14 @@ final class VoiceCleanupRendererTests: XCTestCase {
         try TestSound.write(input, seconds: 2, channels: [[(50, 0.3), (1_000, 0.3)]])
         var settings = VoiceCleanup(isOn: true)
         settings.lowCutOn = false
+        settings.noiseRemovalOn = false
         settings.levelingOn = false
         try VoiceCleanupRenderer.render(input, settings: settings, to: output)
         let before = try TestSound.read(input), after = try TestSound.read(output)
         for f in [50.0, 1_000] {
             let change = TestSound.decibels(TestSound.amplitude(of: f, in: after.channels[0], rate: 48_000, from: 0.5, to: 1.5)
                                             / TestSound.amplitude(of: f, in: before.channels[0], rate: 48_000, from: 0.5, to: 1.5))
-            XCTAssertEqual(change, 0, accuracy: 1, "with Low cut and Leveling off, \(Int(f)) Hz passes Noise removal and Noise gate unchanged for now")
+            XCTAssertEqual(change, 0, accuracy: 1, "with Low cut, Noise removal and Leveling off, \(Int(f)) Hz passes Noise gate unchanged for now")
         }
     }
 }

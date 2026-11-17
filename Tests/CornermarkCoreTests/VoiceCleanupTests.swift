@@ -59,4 +59,10 @@ final class VoiceCleanupTests: XCTestCase {
         let damaged = try decode(#"{"edits":{"audio":{"voiceCleanup":{"isOn":true,"lowCutFrequency":"high","levelingOn":false}}}}"#).edits.audio.voiceCleanup
         XCTAssertEqual(damaged, VoiceCleanup(isOn: true, levelingOn: false), "a damaged value costs only that value")
     }
+
+    func testNoiseRemovalRunsOnlyWhenOnAboveStrengthZero() {
+        XCTAssertTrue(VoiceCleanup(noiseRemovalOn: true, noiseRemovalStrength: 0.4).runsNoiseRemoval)
+        XCTAssertFalse(VoiceCleanup(noiseRemovalOn: true, noiseRemovalStrength: 0).runsNoiseRemoval, "at strength 0 there is nothing to take out")
+        XCTAssertFalse(VoiceCleanup(noiseRemovalOn: false, noiseRemovalStrength: 1).runsNoiseRemoval)
+    }
 }
