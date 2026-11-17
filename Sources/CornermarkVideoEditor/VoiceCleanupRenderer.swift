@@ -16,14 +16,58 @@ public enum VoiceCleanupRenderer {
         try? FileManager.default.removeItem(at: output)
         let target = try AVAudioFile(forWriting: output, settings: outputSettings(like: source.fileFormat), commonFormat: .pcmFormatFloat32, interleaved: false)
         let steps = chain(settings, format: format)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { throw ExportError.writer("the sound could not be read") }
+        guard let leveling = steps.last as? Leveling else { return try run(source, through: steps, into: target) }
+        // Leveling needs the loudness of the whole track before it can set any of it, so the sound goes through two temporary files:
+        // the steps (Leveling measuring), then Leveling's compressor (measuring again), then its normalization into `target`.
+        let measured = temporaryFile(), compressed = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: measured); try? FileManager.default.removeItem(at: compressed) }
+        try run(source, through: steps, into: measured, format: format)
+        try run(AVAudioFile(forReading: measured, commonFormat: .pcmFormatFloat32, interleaved: false), through: [leveling.compressor()], into: compressed, format: format)
+        try leveling.normalize(AVAudioFile(forReading: compressed, commonFormat: .pcmFormatFloat32, interleaved: false), into: target)
+    }
+
+    /// Runs `source` through `steps` into a new uncompressed float file at `url`, so a pass in between loses nothing. The file is
+    /// closed when this returns.
+    private static func run(_ source: AVAudioFile, through steps: [CleanupStep], into url: URL, format: AVAudioFormat) throws {
+        let file = try AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        try run(source, through: steps, into: file)
+    }
+
+    private static func temporaryFile() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("cornermark-leveling-\(UUID().uuidString).caf")
+    }
+
+    /// Reads all of `source`, a chunk at a time, through `steps` into `target`.
+    private static func run(_ source: AVAudioFile, through steps: [CleanupStep], into target: AVAudioFile) throws {
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: chunk) else { throw ExportError.writer("the sound could not be read") }
+        // Steps that look ahead give their sound back late. The first frames out are dropped and as many silent frames are fed in
+        // after the end, so the cleaned track keeps the recorded one's length and stays in sync with the video.
+        let delay = steps.reduce(0) { $0 + $1.delay }
+        var skip = delay, tail = delay
+        func clean() throws {
+            for step in steps { step.process(buffer) }
+            let dropped = min(skip, Int(buffer.frameLength))
+            skip -= dropped
+            if dropped > 0, let data = buffer.floatChannelData {
+                let kept = Int(buffer.frameLength) - dropped
+                for c in 0..<Int(source.processingFormat.channelCount) { data[c].update(from: data[c] + dropped, count: kept) }
+                buffer.frameLength = AVAudioFrameCount(kept)
+            }
+            if buffer.frameLength > 0 { try target.write(from: buffer) }
+        }
         while source.framePosition < source.length {
             // A render run in a task stops at the next chunk once a newer one supersedes it.
             try Task.checkCancellation()
             try source.read(into: buffer, frameCount: min(chunk, AVAudioFrameCount(source.length - source.framePosition)))
             guard buffer.frameLength > 0 else { break }
-            for step in steps { step.process(buffer) }
-            try target.write(from: buffer)
+            try clean()
+        }
+        while tail > 0, let data = buffer.floatChannelData {
+            let count = min(Int(chunk), tail)
+            tail -= count
+            for c in 0..<Int(source.processingFormat.channelCount) { data[c].update(repeating: 0, count: count) }
+            buffer.frameLength = AVAudioFrameCount(count)
+            try clean()
         }
     }
 
@@ -32,8 +76,8 @@ public enum VoiceCleanupRenderer {
         var steps: [CleanupStep] = []
         if settings.lowCutOn { steps.append(LowCut(frequency: settings.lowCutFrequency, format: format)) }
         if settings.noiseRemovalOn { steps.append(PassThrough()) }
-        if settings.noiseGateOn { steps.append(PassThrough()) }
-        if settings.levelingOn { steps.append(PassThrough()) }
+        if settings.noiseGateOn { steps.append(NoiseGate(threshold: settings.noiseGateThreshold, format: format)) }
+        if settings.levelingOn { steps.append(Leveling(format: format)) }
         return steps
     }
 
@@ -50,8 +94,14 @@ public enum VoiceCleanupRenderer {
 /// One Voice cleanup step: a transform of the sound, fed the file chunk after chunk from start to end. A step keeps whatever it needs
 /// between chunks, so one instance cleans one file.
 protocol CleanupStep: AnyObject {
+    /// How many frames late the step gives its sound back, so it can look that far ahead. The renderer takes it out again.
+    var delay: Int { get }
     /// Changes `buffer`'s deinterleaved float samples in place, keeping its length.
     func process(_ buffer: AVAudioPCMBuffer)
+}
+
+extension CleanupStep {
+    var delay: Int { 0 }
 }
 
 /// A step whose cleaning is not built yet. It leaves the sound as it is.
@@ -106,11 +156,202 @@ final class LowCut: CleanupStep {
     }
 }
 
+/// Noise gate: silences the sound while its level stays below `threshold` dBFS. The level is the RMS over 10 ms, so noise whose
+/// single peaks reach above the threshold but whose level stays under it is silenced. The Noise gate gives the sound back 10 ms
+/// late, so it judges each moment on the 10 ms that follow it: it has opened, fading in over a millisecond, by the time a word's
+/// first sound comes out, even a word only a little over the threshold. It stays open for a hold time after the level last
+/// reached the threshold so the quiet ends of words and the dips of low tones do not chop, then fades out. All channels open and
+/// close together, on the loudest of them.
+final class NoiseGate: CleanupStep {
+    /// The threshold as a mean square, compared with the mean square of the window.
+    private let threshold: Double
+    /// Gain change per sample while opening and closing.
+    private let attack: Float, release: Float
+    private let hold: Int
+    /// The 10 ms of squared samples (the loudest channel's at each frame) the Noise gate is judging, and their sum, kept across chunks.
+    private var window: [Double]
+    private var next = 0
+    private var sum = 0.0
+    /// Each channel's last 10 ms of sound, not given back yet, kept across chunks.
+    private var waiting: [[Float]]
+    /// Samples since the level last reached the threshold, and the gain now, kept across chunks.
+    private var quiet: Int
+    private var gain: Float = 0
+
+    var delay: Int { window.count }
+
+    init(threshold: Double, format: AVAudioFormat) {
+        let rate = format.sampleRate
+        self.threshold = pow(10, threshold / 10)
+        attack = Float(1 / (0.001 * rate))
+        release = Float(1 / (0.1 * rate))
+        hold = Int(0.05 * rate)
+        quiet = hold
+        window = Array(repeating: 0, count: max(Int(0.01 * rate), 1))
+        waiting = Array(repeating: Array(repeating: 0, count: window.count), count: Int(format.channelCount))
+    }
+
+    func process(_ buffer: AVAudioPCMBuffer) {
+        guard let data = buffer.floatChannelData else { return }
+        let channels = min(Int(buffer.format.channelCount), waiting.count)
+        for i in 0..<Int(buffer.frameLength) {
+            var square = 0.0
+            for c in 0..<channels { square = max(square, Double(data[c][i]) * Double(data[c][i])) }
+            sum += square - window[next]
+            window[next] = square
+            // The sample that leaves the window now is the one given back, so the window holds the 10 ms that follow it.
+            for c in 0..<channels {
+                let sample = data[c][i]
+                data[c][i] = waiting[c][next]
+                waiting[c][next] = sample
+            }
+            next = (next + 1) % window.count
+            // Recomputed once per window so rounding in the running sum never builds up.
+            if next == 0 { sum = window.reduce(0, +) }
+            quiet = sum / Double(window.count) >= threshold ? 0 : min(quiet + 1, hold)
+            gain = quiet < hold ? min(gain + attack, 1) : max(gain - release, 0)
+            for c in 0..<channels { data[c][i] *= gain }
+        }
+    }
+}
+
+/// Leveling: a compressor that evens out loud and soft speech, then the whole track brought to -16 LUFS under a peak ceiling, so it
+/// never clips. In the chain it only measures; `render` then runs `compressor()` and `normalize` over the whole track in turn.
+final class Leveling: CleanupStep {
+    /// The loudness the track ends at, the common target for streamed speech.
+    static let target = -16.0
+    /// The highest sample allowed, 1.5 dB under full scale, which leaves room for the peaks between samples and for the AAC encoder.
+    static let ceiling = Float(pow(10, -1.5 / 20))
+
+    private let format: AVAudioFormat
+    private let meter: LoudnessMeter
+    private var compressing: Compressor?
+
+    init(format: AVAudioFormat) {
+        self.format = format
+        meter = LoudnessMeter(format: format)
+    }
+
+    func process(_ buffer: AVAudioPCMBuffer) { meter.add(buffer) }
+
+    /// The second pass: the sound raised or lowered to the target first, so the compressor's threshold sits at the same place in
+    /// every voice, then its loud stretches pulled down.
+    func compressor() -> CleanupStep {
+        let compressor = Compressor(gain: Self.gain(from: meter.integrated), format: format)
+        compressing = compressor
+        return compressor
+    }
+
+    /// The last pass: `source`, the compressor's output, brought to the target and written to `target`. A limiter that looks 5 ms
+    /// ahead lowers the gain smoothly before any peak that would pass the ceiling, so no sample does.
+    func normalize(_ source: AVAudioFile, into target: AVAudioFile) throws {
+        let gain = Float(Self.gain(from: compressing?.loudness ?? -.infinity)), ceiling = Self.ceiling
+        let channels = Int(format.channelCount), look = max(1, Int(format.sampleRate * 0.005))
+        let release = 1 - exp(-1 / (format.sampleRate * 0.1))
+        guard let input = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: VoiceCleanupRenderer.chunk),
+              let output = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: VoiceCleanupRenderer.chunk),
+              let out = output.floatChannelData else { throw ExportError.writer("the sound could not be read") }
+        // Frames read but not yet written, by frame number modulo `look`.
+        var delay = [[Float]](repeating: [Float](repeating: 0, count: look), count: channels)
+        // The gain each read frame needs to stay under the ceiling, increasing from front to back, so the front is the lowest needed
+        // over the next `look` frames.
+        var needed: [(frame: Int, gain: Double)] = [], front = 0
+        // The last `look` lowest gains, averaged, so the gain glides down over `look` frames and reaches each peak's need in time.
+        var recent = [Double](repeating: 1, count: look), sum = Double(look), level = 1.0
+        var read = 0, written = 0
+        output.frameLength = 0
+
+        func emit() throws {
+            while needed[front].frame < written { front += 1 }
+            let slot = written % look
+            sum += needed[front].gain - recent[slot]
+            recent[slot] = needed[front].gain
+            let glide = sum / Double(look)
+            level = glide < level ? glide : level + (glide - level) * release
+            let n = Int(output.frameLength)
+            for c in 0..<channels { out[c][n] = max(-ceiling, min(ceiling, delay[c][slot] * Float(level))) }
+            output.frameLength += 1
+            written += 1
+            if output.frameLength == output.frameCapacity {
+                try target.write(from: output)
+                output.frameLength = 0
+            }
+            if front > 4_096 {
+                needed.removeFirst(front)
+                front = 0
+            }
+        }
+
+        while source.framePosition < source.length {
+            try source.read(into: input, frameCount: min(VoiceCleanupRenderer.chunk, AVAudioFrameCount(source.length - source.framePosition)))
+            guard input.frameLength > 0, let data = input.floatChannelData else { break }
+            for i in 0..<Int(input.frameLength) {
+                var peak: Float = 0
+                for c in 0..<channels {
+                    let v = data[c][i] * gain
+                    delay[c][read % look] = v
+                    peak = max(peak, abs(v))
+                }
+                let need = peak > ceiling ? Double(ceiling / peak) : 1
+                while needed.count > front, needed[needed.count - 1].gain >= need { needed.removeLast() }
+                needed.append((read, need))
+                read += 1
+                if read >= look { try emit() }
+            }
+        }
+        while written < read { try emit() }
+        if output.frameLength > 0 { try target.write(from: output) }
+    }
+
+    /// The gain that brings sound measured at `loudness` to the target; none for silence.
+    private static func gain(from loudness: Double) -> Double { loudness.isFinite ? pow(10, (target - loudness) / 20) : 1 }
+}
+
+/// Leveling's compressor: the sound times `gain`, then 3:1 above -20 dBFS with a soft knee, following the level in 5 ms and letting
+/// go in 150 ms, the same on every channel. It measures what it puts out.
+final class Compressor: CleanupStep {
+    private let gain: Float
+    private let attack: Double, release: Double
+    private var envelope = 0.0
+    private let meter: LoudnessMeter
+    private static let threshold = -20.0, ratio = 3.0, knee = 6.0
+
+    init(gain: Double, format: AVAudioFormat) {
+        self.gain = Float(gain)
+        attack = 1 - exp(-1 / (format.sampleRate * 0.005))
+        release = 1 - exp(-1 / (format.sampleRate * 0.15))
+        meter = LoudnessMeter(format: format)
+    }
+
+    var loudness: Double { meter.integrated }
+
+    func process(_ buffer: AVAudioPCMBuffer) {
+        guard let data = buffer.floatChannelData else { return }
+        let channels = Int(buffer.format.channelCount)
+        for i in 0..<Int(buffer.frameLength) {
+            var power = 0.0
+            for c in 0..<channels {
+                data[c][i] *= gain
+                power = max(power, Double(data[c][i] * data[c][i]))
+            }
+            envelope += (power - envelope) * (power > envelope ? attack : release)
+            let over = 10 * log10(envelope + 1e-20) - Self.threshold
+            let slope = 1 / Self.ratio - 1
+            let reduction = over <= -Self.knee / 2 ? 0
+                : over < Self.knee / 2 ? slope * (over + Self.knee / 2) * (over + Self.knee / 2) / (2 * Self.knee)
+                : slope * over
+            let scale = Float(pow(10, reduction / 20))
+            for c in 0..<channels { data[c][i] *= scale }
+        }
+        meter.add(buffer)
+    }
+}
+
 /// The cleaned Microphone track kept inside the project folder beside the recorded one. It is a cache: its name is made from the
 /// settings, the recorded file and `version`, so a file made for anything else is never used, and it can always be made again.
 enum VoiceCleanupCache {
     /// Bump when a step starts sounding different, so files cleaned by an older build are made again.
-    static let version = 1
+    static let version = 4
     static let prefix = "voice-cleanup-"
 
     /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.
