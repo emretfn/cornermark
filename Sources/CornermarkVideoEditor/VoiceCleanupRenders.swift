@@ -75,35 +75,35 @@ final class VoiceCleanupRenders: @unchecked Sendable {
 
     private func job(_ microphone: URL, settings: VoiceCleanup, keep: Bool) -> (task: Task<Cleaned, Error>, id: Int) {
         let steps = VoiceCleanupCache.sound(of: settings)
-        lock.lock()
-        defer { lock.unlock() }
-        // A render that was stopped but has not ended yet serves nobody: the request starts a new one after it.
-        if var job = jobs[microphone], job.settings == steps, !job.task.isCancelled {
-            if keep {
-                job.keeps += 1
-                jobs[microphone] = job
+        return lock.withLock {
+            // A render that was stopped but has not ended yet serves nobody: the request starts a new one after it.
+            if var job = jobs[microphone], job.settings == steps, !job.task.isCancelled {
+                if keep {
+                    job.keeps += 1
+                    jobs[microphone] = job
+                }
+                return (job.task, job.id)
             }
-            return (job.task, job.id)
+            let previous = jobs[microphone]
+            if let previous {
+                if previous.keeps == 0 { previous.task.cancel() } else { kept[previous.id] = previous }
+            }
+            nextID += 1
+            let id = nextID, render = render
+            let task = Task.detached(priority: .userInitiated) { [weak self] () throws -> Cleaned in
+                defer { self?.finished(microphone, id: id) }
+                // One render per file at a time: a cancelled one stops at its next chunk, a kept one runs to its end.
+                _ = await previous?.task.result
+                // A copy given up before this request may still be on its way out: it goes first, so it is made again, not handed out.
+                await self?.removed()
+                try Task.checkCancellation()
+                let made = try render(microphone, steps)
+                self?.prune(microphone, keeping: made.url)
+                return made
+            }
+            jobs[microphone] = Job(id: id, settings: steps, task: task, keeps: keep ? 1 : 0)
+            return (task, id)
         }
-        let previous = jobs[microphone]
-        if let previous {
-            if previous.keeps == 0 { previous.task.cancel() } else { kept[previous.id] = previous }
-        }
-        nextID += 1
-        let id = nextID, render = render
-        let task = Task.detached(priority: .userInitiated) { [weak self] () throws -> Cleaned in
-            defer { self?.finished(microphone, id: id) }
-            // One render per file at a time: a cancelled one stops at its next chunk, a kept one runs to its end.
-            _ = await previous?.task.result
-            // A copy given up before this request may still be on its way out: it goes first, so it is made again, not handed out.
-            await self?.removed()
-            try Task.checkCancellation()
-            let made = try render(microphone, steps)
-            self?.prune(microphone, keeping: made.url)
-            return made
-        }
-        jobs[microphone] = Job(id: id, settings: steps, task: task, keeps: keep ? 1 : 0)
-        return (task, id)
     }
 
     /// A caller of job `id` stopped waiting. The render stops once no export waits for it.
@@ -170,9 +170,9 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     }
 
     private func finished(_ microphone: URL, id: Int) {
-        lock.lock()
-        defer { lock.unlock() }
-        if jobs[microphone]?.id == id { jobs[microphone] = nil }
-        kept[id] = nil
+        lock.withLock {
+            if jobs[microphone]?.id == id { jobs[microphone] = nil }
+            kept[id] = nil
+        }
     }
 }
