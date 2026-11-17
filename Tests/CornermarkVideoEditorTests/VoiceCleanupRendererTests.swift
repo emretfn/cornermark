@@ -378,7 +378,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
         let voice = try TestSound.read(speech).channels[0]
         try TestSound.write(input, seconds: 6, channels: [[]], lossless: true) { _, t in
             let i = Int(t * 48_000)
-            return (i < voice.count ? voice[i] : 0) + (t >= 3 && t < 3.02 ? Float(0.9 * sin(2 * .pi * 12_000 * t + .pi / 4)) : 0)
+            return (i < voice.count ? voice[i] : 0) + (t >= 3 && t < 3.002 ? Float(0.5 * sin(2 * .pi * 12_000 * t + .pi / 4)) : 0)
         }
         try VoiceCleanupRenderer.render(input, settings: onlyLeveling, to: output)
 
@@ -386,6 +386,33 @@ final class VoiceCleanupRendererTests: XCTestCase {
         XCTAssertLessThanOrEqual(try TestSound.truePeak(after, rate: 48_000), Leveling.ceiling * 1.012,
                                  "the spike's peak between samples stays under the ceiling, within 0.1 dB")
         XCTAssertLessThan(after.filter { abs($0) >= Leveling.ceiling * 0.999 }.count, 3, "the limiter lowered the spike instead of cutting it flat")
+    }
+
+    func testLevelingBringsPeakySpeechToMinus16LUFS() throws {
+        let input = folder.appendingPathComponent("mic.caf"), output = folder.appendingPathComponent("clean.m4a")
+        // Speech whose every syllable starts with a sharp click 13 dB over the voice, as plosives close to the microphone make it: the
+        // limiter has to pull the clicks down hard, which takes loudness out of the voice right after them.
+        let speech = folder.appendingPathComponent("speech.m4a")
+        try self.speech(speech, level: -30, seconds: 8, loud: 0)
+        let voice = try TestSound.read(speech).channels[0]
+        try TestSound.write(input, seconds: 8, channels: [[]], lossless: true) { _, t in
+            let i = Int(t * 48_000), into = t.truncatingRemainder(dividingBy: 0.25)
+            return (i < voice.count ? voice[i] : 0) + (into < 0.002 ? Float(0.15 * sin(2 * .pi * 3_000 * t)) : 0)
+        }
+        try VoiceCleanupRenderer.render(input, settings: onlyLeveling, to: output)
+
+        XCTAssertEqual(try Loudness.integrated(of: output), -16, accuracy: 1, "peaky speech still lands on -16 LUFS")
+    }
+
+    func testLevelingRaisesANearlySilentTrackBy40dBAtMost() throws {
+        let input = folder.appendingPathComponent("mic.m4a"), output = folder.appendingPathComponent("clean.m4a")
+        // Speech so far from the microphone that it is barely there, more than 40 dB under -16 LUFS.
+        try speech(input, level: -55, loud: 0)
+        let before = try Loudness.integrated(of: input)
+        XCTAssertLessThan(before, -60)
+        try VoiceCleanupRenderer.render(input, settings: onlyLeveling, to: output)
+
+        XCTAssertEqual(try Loudness.integrated(of: output) - before, 40, accuracy: 0.5, "a track this quiet is raised by 40 dB, not all the way")
     }
 
     func testLevelingEvensOutLoudAndSoftSpeech() throws {

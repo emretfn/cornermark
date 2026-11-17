@@ -397,10 +397,34 @@ struct Leveling {
         let compressed = VoiceCleanupRenderer.temporaryFile()
         defer { try? FileManager.default.removeItem(at: compressed) }
         let meter = LoudnessMeter(format: format)
-        try VoiceCleanupRenderer.run(source, through: [Compressor(gain: Self.gain(from: loudness), format: format)], into: compressed,
+        // A nearly silent track is raised by `boost` at most, so its hiss does not end up as loud as speech.
+        let goal = loudness.isFinite ? min(Self.target, loudness + Self.boost) : Self.target
+        try VoiceCleanupRenderer.run(source, through: [Compressor(gain: Double(Self.factor(Self.decibels(from: loudness, to: goal))), format: format)], into: compressed,
                                      format: format, measuring: meter)
-        try normalize(AVAudioFile(forReading: compressed, commonFormat: .pcmFormatFloat32, interleaved: false),
-                      gain: Float(Self.gain(from: meter.integrated))) { try target.write(from: $0) }
+        let leveled = try AVAudioFile(forReading: compressed, commonFormat: .pcmFormatFloat32, interleaved: false)
+        // The limiter takes loudness out of peaky speech, so the limited sound is measured and the gain corrected by what it missed.
+        // Raising the gain makes the limiter work harder, so a correction that falls short is made again by how much the last one
+        // moved the loudness, a few times at most. When raising it no longer helps, the closest gain measured stays.
+        var gain = Self.decibels(from: meter.integrated, to: goal), slope = 1.0
+        var last: (gain: Double, loudness: Double)?, closest: (gain: Double, miss: Double)?
+        for _ in 0..<Self.corrections {
+            let limited = LoudnessMeter(format: format)
+            leveled.framePosition = 0
+            try normalize(leveled, gain: Self.factor(gain)) { limited.add($0) }
+            let loudness = limited.integrated, miss = goal - loudness
+            guard loudness.isFinite else { break }
+            if closest.map({ abs(miss) < abs($0.miss) }) ?? true { closest = (gain, miss) }
+            guard abs(miss) > 0.3 else { break }
+            if let last {
+                let moved = (loudness - last.loudness) / (gain - last.gain)
+                guard moved > 0.1 else { gain = closest?.gain ?? gain; break }
+                slope = min(moved, 1)
+            }
+            last = (gain, loudness)
+            gain += miss / slope
+        }
+        leveled.framePosition = 0
+        try normalize(leveled, gain: Self.factor(gain)) { try target.write(from: $0) }
     }
 
     /// `source` times `gain`, handed to `write` a chunk at a time. A limiter that looks 5 ms ahead lowers the gain smoothly before any
@@ -479,8 +503,15 @@ struct Leveling {
         if output.frameLength > 0 { try write(output) }
     }
 
-    /// The gain that brings sound measured at `loudness` to the target; none for silence.
-    private static func gain(from loudness: Double) -> Double { loudness.isFinite ? pow(10, (target - loudness) / 20) : 1 }
+    /// The most Leveling raises a track's loudness, in dB: enough for speech peaking at -40 dBFS, not enough to make a nearly silent
+    /// track's hiss as loud as speech.
+    static let boost = 40.0
+    /// How many times the limited sound is measured, at most, to correct the gain.
+    private static let corrections = 3
+
+    /// The gain in dB that brings sound measured at `loudness` to `goal`; none for silence.
+    private static func decibels(from loudness: Double, to goal: Double) -> Double { loudness.isFinite ? goal - loudness : 0 }
+    private static func factor(_ decibels: Double) -> Float { Float(pow(10, decibels / 20)) }
 }
 
 /// One channel's true peak as BS.1770 finds it: the sound oversampled 4 times by a windowed-sinc interpolator, so a peak that falls
