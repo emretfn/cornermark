@@ -64,7 +64,8 @@ final class VoiceCleanupRenders: @unchecked Sendable {
         steps.isOn = true
         lock.lock()
         defer { lock.unlock() }
-        if var job = jobs[microphone], job.settings == steps {
+        // A render that was stopped but has not ended yet serves nobody: the request starts a new one after it.
+        if var job = jobs[microphone], job.settings == steps, !job.task.isCancelled {
             if keep {
                 job.keeps += 1
                 jobs[microphone] = job

@@ -188,6 +188,21 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertEqual(held.stopped, [100], "and the render nobody else waits for stops too")
     }
 
+    func testExportingAgainRightAfterCancellingAnExportGetsTheSound() async throws {
+        let held = HeldRender()
+        let renders = VoiceCleanupRenders(render: held.render)
+        let export = Task { try await renders.cleaned(microphone, settings: lowCut(100), keep: true) }
+        try await held.waitUntilStarted(1)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        export.cancel()
+        // The cancelled render has not stopped yet when the export is asked for again.
+        let again = renders.request(microphone, settings: lowCut(100), keep: true)
+        held.release()
+
+        let exported = try await again.value
+        XCTAssertEqual(exported.lastPathComponent, "clean-100.m4a", "the new export does not join the render the cancelled one stopped")
+    }
+
     func testAPreviewWhoseRenderAnExportSupersededGetsItsSoundByAskingAgain() async throws {
         let held = HeldRender()
         let renders = VoiceCleanupRenders(render: held.render)
