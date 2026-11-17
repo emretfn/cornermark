@@ -30,7 +30,7 @@ public enum VoiceCleanupRenderer {
         var steps: [CleanupStep] = []
         if settings.lowCutOn { steps.append(LowCut(frequency: settings.lowCutFrequency, format: format)) }
         if settings.noiseRemovalOn { steps.append(PassThrough()) }
-        if settings.noiseGateOn { steps.append(PassThrough()) }
+        if settings.noiseGateOn { steps.append(NoiseGate(threshold: settings.noiseGateThreshold, format: format)) }
         if settings.levelingOn { steps.append(PassThrough()) }
         return steps
     }
@@ -104,11 +104,45 @@ final class LowCut: CleanupStep {
     }
 }
 
+/// Noise gate: silences the sound while its peaks stay below `threshold` dBFS. It opens on the first sample at or above the threshold,
+/// fading in over a millisecond so a word's first sound is kept, stays open for a hold time after the last such sample so the quiet
+/// ends of words and the dips of low tones do not chop, then fades out. All channels open and close together.
+final class NoiseGate: CleanupStep {
+    private let threshold: Float
+    /// Gain change per sample while opening and closing.
+    private let attack: Float, release: Float
+    private let hold: Int
+    /// Samples since the last one at or above the threshold, and the gain now, kept across chunks.
+    private var quiet: Int
+    private var gain: Float = 0
+
+    init(threshold: Double, format: AVAudioFormat) {
+        let rate = format.sampleRate
+        self.threshold = Float(pow(10, threshold / 20))
+        attack = Float(1 / (0.001 * rate))
+        release = Float(1 / (0.1 * rate))
+        hold = Int(0.05 * rate)
+        quiet = hold
+    }
+
+    func process(_ buffer: AVAudioPCMBuffer) {
+        guard let data = buffer.floatChannelData else { return }
+        let channels = Int(buffer.format.channelCount)
+        for i in 0..<Int(buffer.frameLength) {
+            var peak: Float = 0
+            for c in 0..<channels { peak = max(peak, abs(data[c][i])) }
+            quiet = peak >= threshold ? 0 : min(quiet + 1, hold)
+            gain = quiet < hold ? min(gain + attack, 1) : max(gain - release, 0)
+            for c in 0..<channels { data[c][i] *= gain }
+        }
+    }
+}
+
 /// The cleaned Microphone track kept inside the project folder beside the recorded one. It is a cache: its name is made from the
 /// settings, the recorded file and `version`, so a file made for anything else is never used, and it can always be made again.
 enum VoiceCleanupCache {
     /// Bump when a step starts sounding different, so files cleaned by an older build are made again.
-    static let version = 1
+    static let version = 2
     static let prefix = "voice-cleanup-"
 
     /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.
