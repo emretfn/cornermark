@@ -334,7 +334,12 @@ final class VideoExporterTests: XCTestCase {
 
     func testWithVoiceCleanupOnTheExportedMicrophoneSitsAtMinus16LUFSAndTrackLevelStillApplies() async throws {
         var (source, project) = try await makeSource(frames: 60)
-        _ = try makeHummingMicrophone(seconds: 2, tones: [(50, 0.02), (1_000, 0.02)])
+        // Quiet speech: Noise removal keeps a voice, where it would take pure tones out.
+        let voice = try speech("Hello, testing the microphone.").prefix(2 * 48_000 - 4_800)
+        try TestSound.write(folder.appendingPathComponent("mic.m4a"), seconds: 2, channels: [[]]) { _, t in
+            let i = Int((t * 48_000).rounded()) - 4_800
+            return voice.indices.contains(i) ? 0.05 * voice[i] : 0
+        }
         project.source.microphone = "mic.m4a"
         project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
         let full = folder.appendingPathComponent("full.mp4")

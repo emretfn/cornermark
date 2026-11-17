@@ -314,6 +314,22 @@ func checkVideoAfterRecording() async throws {
         check(noiseBox?.isEnabled == true && noiseBox?.state == .on && strengthSlider?.isEnabled == true && unavailableNote?.isHidden == true,
               "and it comes back as it was once it can run")
     }
+    let gateSlider = editor.view(identifier: "video.audio.voiceCleanup.noiseGate.threshold") as? TrackingSlider
+    check(gateSlider?.isHidden == false && gateSlider?.isEnabled == true && gateSlider?.doubleValue == -50,
+          "the Noise gate sits under the Low cut with its threshold at -50 dB")
+    if let gateSlider {
+        for v in stride(from: -50.0, through: -40, by: 2) { gateSlider.doubleValue = v; fire(gateSlider) }
+        gateSlider.onTrackingEnd()
+        steps += 1
+    }
+    check(editor.state.project.edits.audio.voiceCleanup.noiseGateThreshold == -40, "the Noise gate follows its slider",
+          detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    act("video.audio.voiceCleanup.noiseGate") { ($0 as? NSButton)?.performClick(nil) }
+    check(!editor.state.project.edits.audio.voiceCleanup.noiseGateOn && gateSlider?.isEnabled == false, "Noise gate off greys its threshold")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    check((editor.view(identifier: "video.audio.voiceCleanup.noiseGate") as? NSControl)?.isEnabled == false, "Voice cleanup off greys the Noise gate")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    act("video.audio.voiceCleanup.noiseGate") { ($0 as? NSButton)?.performClick(nil) }
     act("video.audio.voiceCleanup.leveling") { ($0 as? NSButton)?.performClick(nil) }
     check(!editor.state.project.edits.audio.voiceCleanup.levelingOn && editor.state.project.edits.audio.voiceCleanup.isOn,
           "the Leveling box turns Leveling off and leaves the rest of Voice cleanup on")
