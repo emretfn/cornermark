@@ -184,6 +184,60 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertEqual(seen.first?.othersGoOn, true, "nor holds up a preview or export asking for a copy meanwhile")
     }
 
+    func testACopyLeasedAndAskedForRightAfterAnotherLeaseGaveItUpIsNotDeleted() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a")
+        /// The preview asking for the copy again while the release that gave it up is still on its way to queue its deletion.
+        final class Interleave: @unchecked Sendable {
+            let lock = NSLock()
+            let queue = DispatchQueue(label: "test-removals")
+            var renders: VoiceCleanupRenders?
+            var armed = false
+            var asked: Task<VoiceCleanupRenders.Cleaned, Error>?
+            let rendered = DispatchSemaphore(value: 0)
+        }
+        let interleave = Interleave()
+        let renders = VoiceCleanupRenders(render: { microphone, settings in
+            let made = VoiceCleanupCache.file(for: microphone, settings: settings)
+            try Data().write(to: made)
+            interleave.rendered.signal()
+            return (made, VoiceCleanupReport())
+        }, removals: { batch in
+            let (renders, armed) = interleave.lock.withLock { () -> (VoiceCleanupRenders?, Bool) in
+                defer { interleave.armed = false }
+                return (interleave.renders, interleave.armed)
+            }
+            if armed, let renders {
+                Thread.detachNewThread {
+                    _ = renders.lease(mic, settings: self.lowCut(100))
+                    let asked = renders.request(mic, settings: self.lowCut(100))
+                    interleave.lock.withLock { interleave.asked = asked }
+                }
+                // Gives the preview the time to be handed the copy before the release queues the copy's deletion.
+                _ = interleave.rendered.wait(timeout: .now() + 0.5)
+            }
+            interleave.queue.async(execute: batch)
+        })
+        interleave.lock.withLock { interleave.renders = renders }
+
+        let lease = renders.lease(mic, settings: lowCut(100))
+        _ = try await renders.cleaned(mic, settings: lowCut(100), keep: true)
+        _ = try await renders.cleaned(mic, settings: lowCut(120))
+        while interleave.rendered.wait(timeout: .now()) == .success {}
+        interleave.lock.withLock { interleave.armed = true }
+        renders.release(lease)
+
+        var asked: Task<VoiceCleanupRenders.Cleaned, Error>?
+        for _ in 0..<5_000 where asked == nil {
+            try await Task.sleep(nanoseconds: 1_000_000)
+            asked = interleave.lock.withLock { interleave.asked }
+        }
+        let copy = try await XCTUnwrap(asked).value.url
+        await renders.removed()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path), "the copy the preview leased and was handed stays")
+    }
+
     func testARenderLeavesTheCleanedCopiesOfAnotherMicrophoneInTheFolder() async throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }

@@ -9,6 +9,8 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     /// A cleaned copy, and what its render had to leave out.
     typealias Cleaned = (url: URL, report: VoiceCleanupReport)
     typealias Render = @Sendable (URL, VoiceCleanup) throws -> Cleaned
+    /// Runs a batch of deletions after the batches queued before it, away from the caller's thread.
+    typealias Queue = @Sendable (@escaping @Sendable () -> Void) -> Void
 
     /// The one the editor and the exporter share.
     static let shared = VoiceCleanupRenders()
@@ -25,7 +27,7 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     /// Deletes one file from disk.
     private let remove: @Sendable (URL) -> Void
     /// Deletes the copies given up, one batch after another, away from the caller's thread and outside the lock.
-    private let removals = DispatchQueue(label: "cornermark.voice-cleanup-removals", qos: .utility)
+    private let removals: Queue
     private let lock = NSLock()
     /// Each microphone's newest job, which a request for the same settings joins.
     private var jobs: [URL: Job] = [:]
@@ -38,11 +40,14 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     private var latest: [URL: URL] = [:]
 
     /// `render` makes the cleaned file and returns where it is; it should stop with `CancellationError` when its task is cancelled.
-    /// `remove` deletes a copy nobody needs any more.
+    /// `remove` deletes a copy nobody needs any more. `removals` runs the deletions; by default on a queue of their own.
     init(render: @escaping Render = { try VoiceCleanupCache.prepare($0, settings: $1) },
-         remove: @escaping @Sendable (URL) -> Void = { try? FileManager.default.removeItem(at: $0) }) {
+         remove: @escaping @Sendable (URL) -> Void = { try? FileManager.default.removeItem(at: $0) },
+         removals: Queue? = nil) {
         self.render = render
         self.remove = remove
+        let queue = DispatchQueue(label: "cornermark.voice-cleanup-removals", qos: .utility)
+        self.removals = removals ?? { queue.async(execute: $0) }
     }
 
     /// The cleaned copy of `microphone` for `settings`. `keep` is for an export: no later request cancels the render it waits for.
@@ -135,24 +140,26 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     /// Gives the leased copy up. Once nobody holds it, it goes if newer settings were rendered since, and else with the next render.
     /// It is deleted in the background, so the main thread can give a lease up without waiting for the disk; `removed` waits for it.
     func release(_ lease: Lease) {
-        let stale: [URL] = lock.withLock {
+        let remove = remove
+        lock.withLock {
             var freed = false
             for file in lease.files {
                 guard let count = leases[file] else { continue }
                 leases[file] = count > 1 ? count - 1 : nil
                 freed = freed || count == 1
             }
-            guard freed, let made = latest[lease.microphone] else { return [] }
-            return VoiceCleanupCache.stale(beside: lease.microphone, keeping: Set(leases.keys).union([made]))
+            guard freed, let made = latest[lease.microphone] else { return }
+            let stale = VoiceCleanupCache.stale(beside: lease.microphone, keeping: Set(leases.keys).union([made]))
+            guard !stale.isEmpty else { return }
+            // Queued before the lock is let go, so a render asked for after it waits for these deletions instead of handing a copy out
+            // that one of them then removes.
+            removals { stale.forEach(remove) }
         }
-        guard !stale.isEmpty else { return }
-        let remove = remove
-        removals.async { stale.forEach(remove) }
     }
 
     /// Waits until the copies given up so far are deleted.
     func removed() async {
-        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in removals.async { done.resume() } }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in removals { done.resume() } }
     }
 
     /// Removes the copies of `microphone` cleaned for other settings, but `made` and the ones held, so the project keeps one. Called
