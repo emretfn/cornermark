@@ -22,6 +22,7 @@ final class AudioPanel: SettingsPanel {
     private let noiseGate = Checkbox(title: tr("Noise gate"))
     private var noiseGateThreshold: TrackingSlider!
     private var noiseGateRow: NSStackView!
+    private let leveling = Checkbox(title: tr("Leveling"))
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -43,7 +44,7 @@ final class AudioPanel: SettingsPanel {
         }
         add(views)
         if let mic = rows[.microphone] { stack.setCustomSpacing(DS.Space.s16, after: mic.levelRow) }
-        stack.setCustomSpacing(DS.Space.s16, after: noiseGateRow)
+        stack.setCustomSpacing(DS.Space.s16, after: leveling)
         setAccessibilityIdentifier("video.audio")
     }
 
@@ -57,7 +58,9 @@ final class AudioPanel: SettingsPanel {
         lowCut.toolTip = tr("Removes hum and rumble below the chosen frequency.")
         noiseGate.setAccessibilityIdentifier("video.audio.voiceCleanup.noiseGate")
         noiseGate.toolTip = tr("Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.")
-        for box in [cleanup, lowCut, noiseGate] {
+        leveling.setAccessibilityIdentifier("video.audio.voiceCleanup.leveling")
+        leveling.toolTip = tr("Evens out loud and soft speech and brings the microphone to a steady loudness.")
+        for box in [cleanup, lowCut, noiseGate, leveling] {
             box.target = self
             box.action = #selector(cleanupToggled)
         }
@@ -71,7 +74,7 @@ final class AudioPanel: SettingsPanel {
         noiseGateThreshold.format = { Self.decibels($0) }
         noiseGateRow = row(tr("Threshold"), [noiseGateThreshold])
         noiseGateRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        return [cleanup, lowCut, lowCutRow, noiseGate, noiseGateRow]
+        return [cleanup, lowCut, lowCutRow, noiseGate, noiseGateRow, leveling]
     }
 
     static func hertz(_ value: Double) -> String { tr("{frequency} Hz", ["frequency": Digits.text(Int(value.rounded()))]) }
@@ -96,7 +99,7 @@ final class AudioPanel: SettingsPanel {
 
     /// Step rows stay readable but greyed while the master switch is off, like a section whose switch is off.
     private func showVoiceCleanup(_ settings: VoiceCleanup, hidden: Bool) {
-        for view in [cleanup, lowCut, lowCutRow, noiseGate, noiseGateRow] as [NSView] { view.isHidden = hidden }
+        for view in [cleanup, lowCut, lowCutRow, noiseGate, noiseGateRow, leveling] as [NSView] { view.isHidden = hidden }
         cleanup.state = settings.isOn ? .on : .off
         lowCut.state = settings.lowCutOn ? .on : .off
         lowCut.isEnabled = settings.isOn
@@ -112,6 +115,8 @@ final class AudioPanel: SettingsPanel {
         let thresholdOn = settings.isOn && settings.noiseGateOn
         noiseGateThreshold.isEnabled = thresholdOn
         (noiseGateRow.arrangedSubviews.first as? NSTextField)?.textColor = thresholdOn ? DS.Color.textSecondary : DS.Color.textDisabled
+        leveling.state = settings.levelingOn ? .on : .off
+        leveling.isEnabled = settings.isOn
     }
 
     private func track(of control: NSControl) -> AudioTrack? { control.identifier.flatMap { AudioTrack(rawValue: $0.rawValue) } }
@@ -129,6 +134,7 @@ final class AudioPanel: SettingsPanel {
         next.voiceCleanup.isOn = cleanup.state == .on
         next.voiceCleanup.lowCutOn = lowCut.state == .on
         next.voiceCleanup.noiseGateOn = noiseGate.state == .on
+        next.voiceCleanup.levelingOn = leveling.state == .on
         guard next != audio else { return }
         audio = next
         onChange(next, nil)

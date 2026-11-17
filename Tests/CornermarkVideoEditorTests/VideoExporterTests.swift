@@ -208,6 +208,7 @@ final class VideoExporterTests: XCTestCase {
         let raw = folder.appendingPathComponent("raw.mp4")
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: raw)
         project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
+        project.edits.audio.voiceCleanup.levelingOn = false
         let clean = folder.appendingPathComponent("clean.mp4")
         let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: clean)
 
@@ -246,6 +247,7 @@ final class VideoExporterTests: XCTestCase {
         project.source.microphone = "mic.m4a"
         var cleanup = VoiceCleanup(isOn: true)
         cleanup.lowCutFrequency = 60
+        cleanup.levelingOn = false
         project.edits.audio.voiceCleanup = cleanup
         let low = folder.appendingPathComponent("low.mp4")
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: low)
@@ -259,6 +261,21 @@ final class VideoExporterTests: XCTestCase {
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: again)
         XCTAssertEqual(TestSound.decibels(try level(150, in: again, from: 0.5, to: 1.5) / level(150, in: low, from: 0.5, to: 1.5)), 0, accuracy: 0.5,
                        "going back to 60 Hz cleans for 60 Hz again")
+    }
+
+    func testWithVoiceCleanupOnTheExportedMicrophoneSitsAtMinus16LUFSAndTrackLevelStillApplies() async throws {
+        var (source, project) = try await makeSource(frames: 60)
+        _ = try makeHummingMicrophone(seconds: 2, tones: [(50, 0.02), (1_000, 0.02)])
+        project.source.microphone = "mic.m4a"
+        project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
+        let full = folder.appendingPathComponent("full.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: full)
+        XCTAssertEqual(try Loudness.integrated(of: full), -16, accuracy: 1, "a quiet microphone is leveled to -16 LUFS at Track level 100%")
+
+        project.edits.audio.microphone.level = 0.5
+        let half = folder.appendingPathComponent("half.mp4")
+        _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: half)
+        XCTAssertEqual(try Loudness.integrated(of: half), -22, accuracy: 1, "Track level 50% lowers the leveled microphone by 6 dB")
     }
 
     func testCancellingLeavesNoFile() async throws {
