@@ -29,6 +29,8 @@ final class AudioPanel: SettingsPanel {
         let tip: String
         let isOn: WritableKeyPath<VoiceCleanup, Bool>
         let setting: Setting?
+        /// Noise removal, the one step this Mac may not be able to run.
+        var isNoiseRemoval: Bool { isOn == \.noiseRemovalOn }
 
         struct Setting {
             let slider: TrackingSlider
@@ -42,7 +44,6 @@ final class AudioPanel: SettingsPanel {
         }
     }
     private var steps: [StepRow] = []
-    private var noiseRemovalStep: StepRow { steps[1] }
     private var noiseRemovalNote: NSTextField!
     /// False once a render reported Noise removal unavailable. The panel also asks the renderer whether the unit is on this Mac; when
     /// either says no, the row is greyed out and says so, and the other steps still clean.
@@ -110,7 +111,7 @@ final class AudioPanel: SettingsPanel {
         for step in steps {
             views.append(step.box)
             if let setting = step.setting { views.append(setting.row) }
-            if step.box === noiseRemovalStep.box { views.append(noiseRemovalNote) }
+            if step.isNoiseRemoval { views.append(noiseRemovalNote) }
         }
         return views
     }
@@ -162,7 +163,7 @@ final class AudioPanel: SettingsPanel {
         let runs = noiseRemovalRuns
         noiseRemovalNote.isHidden = hidden || runs
         for step in steps {
-            let available = step.box !== noiseRemovalStep.box || runs
+            let available = !step.isNoiseRemoval || runs
             step.box.isHidden = hidden
             // A step that cannot run is greyed out but keeps showing what the project says, and its help says why.
             step.box.state = settings[keyPath: step.isOn] ? .on : .off
@@ -201,7 +202,7 @@ final class AudioPanel: SettingsPanel {
         var next = audio
         next.voiceCleanup.isOn = cleanup.state == .on
         // A greyed-out Noise removal keeps what the project says, so the project sounds the same on a Mac that has it.
-        for step in steps where step.box !== noiseRemovalStep.box || noiseRemovalRuns {
+        for step in steps where !step.isNoiseRemoval || noiseRemovalRuns {
             next.voiceCleanup[keyPath: step.isOn] = step.box.state == .on
         }
         commit(next, key: nil)
