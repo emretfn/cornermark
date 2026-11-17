@@ -160,6 +160,25 @@ func checkVideoAfterRecording() async throws {
     check(player?.player.rate == 0, "and the harness never starts it")
     live.window?.close()
 
+    // The same recording without its microphone has no Voice cleanup to show.
+    let noMicrophone = w.root.appendingPathComponent("no-microphone", isDirectory: true)
+    try FileManager.default.createDirectory(at: noMicrophone, withIntermediateDirectories: true)
+    var withoutMicrophone = original
+    withoutMicrophone.source.microphone = nil
+    for name in [original.source.video, original.source.systemAudio].compactMap({ $0 }) {
+        try FileManager.default.copyItem(at: folder.appendingPathComponent(name), to: noMicrophone.appendingPathComponent(name))
+    }
+    try RecordingProjectFile.write(withoutMicrophone, to: noMicrophone)
+    let unheard = try VideoEditorWindowController.open(folder: noMicrophone)
+    unheard.select(.audio)
+    let cleanupIDs = ["video.audio.voiceCleanup", "video.audio.voiceCleanup.lowCut", "video.audio.voiceCleanup.noiseRemoval",
+                      "video.audio.voiceCleanup.noiseGate", "video.audio.voiceCleanup.leveling"]
+    check(unheard.view(identifier: "video.audio.systemAudio")?.isHidden == false && unheard.view(identifier: "video.audio.microphone")?.isHidden == true
+          && cleanupIDs.allSatisfy { unheard.view(identifier: $0)?.isHidden == true },
+          "a recording without a microphone hides Voice cleanup and keeps its System audio row",
+          detail: cleanupIDs.map { "\($0) hidden \(unheard.view(identifier: $0)?.isHidden.description ?? "missing")" }.joined(separator: ", "))
+    unheard.window?.close()
+
     guard let editor = w.coordinator.openVideoEditor(folder), let window = editor.window else { return check(false, "the project opens in the editor") }
     defer { w.coordinator.closeAllEditors() }
     check(!editor.playsSound, "the coordinator turns sound on only for an editor on screen, so an offscreen run is silent")
@@ -271,6 +290,77 @@ func checkVideoAfterRecording() async throws {
     check(abs(editor.state.project.edits.audio.microphone.level - 0.5) < 1e-9 && (editor.view(identifier: "video.audio.microphone.level") as? NSSlider)?.isEnabled == true
           && (editor.view(identifier: "video.audio.systemAudio.level") as? NSSlider)?.isEnabled == false,
           "the microphone's level follows the slider and a track that is off greys its level")
+    let lowCutSlider = editor.view(identifier: "video.audio.voiceCleanup.lowCut.frequency") as? TrackingSlider
+    check(original.edits.audio.voiceCleanup == VoiceCleanup(isOn: true) && editor.view(identifier: "video.audio.voiceCleanup")?.isHidden == false
+          && lowCutSlider?.isHidden == false && lowCutSlider?.isEnabled == true && lowCutSlider?.doubleValue == 80,
+          "a new recording opens with Voice cleanup on and its Low cut at 80 Hz under the microphone")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    check(!editor.state.project.edits.audio.voiceCleanup.isOn && (editor.view(identifier: "video.audio.voiceCleanup.lowCut") as? NSControl)?.isEnabled == false
+          && lowCutSlider?.isEnabled == false, "Voice cleanup off greys its steps")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    if let lowCutSlider {
+        for v in stride(from: 80.0, through: 150, by: 10) { lowCutSlider.doubleValue = v; fire(lowCutSlider) }
+        lowCutSlider.onTrackingEnd()
+        steps += 1
+    }
+    check(editor.state.project.edits.audio.voiceCleanup.isOn && editor.state.project.edits.audio.voiceCleanup.lowCutFrequency == 150,
+          "the Low cut follows its slider", detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    let preparing = editor.view(identifier: "video.audio.voiceCleanup.preparing")
+    check(editor.isPreparingCleanup && preparing?.isHidden == false, "a Voice cleanup change says it is preparing the cleaned microphone")
+    await editor.voiceCleanupPrepared()
+    let cleaned = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasPrefix("voice-cleanup-") }
+    check(!editor.isPreparingCleanup && preparing?.isHidden == true && cleaned.count == 1 && editor.previewMicrophone?.lastPathComponent == cleaned.first,
+          "and stops once the cleaned copy for the latest settings is ready: the preview plays it, the only one kept",
+          detail: "\(cleaned) preview \(editor.previewMicrophone?.lastPathComponent ?? "none")")
+    let noiseBox = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval") as? NSButton
+    let strengthSlider = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval.strength") as? TrackingSlider
+    let unavailableNote = editor.view(identifier: "video.audio.voiceCleanup.noiseRemoval.unavailable")
+    if VoiceCleanupRenderer.noiseRemovalAvailable {
+        check(noiseBox?.state == .on && noiseBox?.isEnabled == true && strengthSlider?.doubleValue == 1 && unavailableNote?.isHidden == true,
+              "Noise removal sits under Low cut, on at full strength")
+        if let strengthSlider {
+            for v in stride(from: 1.0, through: 0.6, by: -0.1) { strengthSlider.doubleValue = v; fire(strengthSlider) }
+            strengthSlider.onTrackingEnd()
+            steps += 1
+        }
+        check(abs(editor.state.project.edits.audio.voiceCleanup.noiseRemovalStrength - 0.6) < 1e-9, "Noise removal's strength follows its slider",
+              detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    } else {
+        check(noiseBox?.isEnabled == false && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false,
+              "on a Mac without the sound isolation unit, Noise removal is greyed out and says it is not available")
+    }
+    // As after an export that could not run Noise removal.
+    editor.noiseRemovalAvailable = false
+    check(noiseBox?.isEnabled == false && noiseBox?.state == .on && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false
+          && noiseBox?.toolTip == "Not available on this Mac" && noiseBox?.accessibilityHelp() == "Not available on this Mac"
+          && editor.state.project.edits.audio.voiceCleanup.noiseRemovalOn,
+          "when Noise removal cannot run, its box and strength are greyed out with the box still on, a note, tip and VoiceOver help say it is not available, and the project keeps it on")
+    snapshotEditor(editor, name: "video-after-audio-noise-removal-unavailable")
+    editor.noiseRemovalAvailable = true
+    if VoiceCleanupRenderer.noiseRemovalAvailable {
+        check(noiseBox?.isEnabled == true && noiseBox?.state == .on && strengthSlider?.isEnabled == true && unavailableNote?.isHidden == true,
+              "and it comes back as it was once it can run")
+    }
+    let gateSlider = editor.view(identifier: "video.audio.voiceCleanup.noiseGate.threshold") as? TrackingSlider
+    check(gateSlider?.isHidden == false && gateSlider?.isEnabled == true && gateSlider?.doubleValue == -50,
+          "the Noise gate sits under the Low cut with its threshold at -50 dB")
+    if let gateSlider {
+        for v in stride(from: -50.0, through: -40, by: 2) { gateSlider.doubleValue = v; fire(gateSlider) }
+        gateSlider.onTrackingEnd()
+        steps += 1
+    }
+    check(editor.state.project.edits.audio.voiceCleanup.noiseGateThreshold == -40, "the Noise gate follows its slider",
+          detail: "\(editor.state.project.edits.audio.voiceCleanup)")
+    act("video.audio.voiceCleanup.noiseGate") { ($0 as? NSButton)?.performClick(nil) }
+    check(!editor.state.project.edits.audio.voiceCleanup.noiseGateOn && gateSlider?.isEnabled == false, "Noise gate off greys its threshold")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    check((editor.view(identifier: "video.audio.voiceCleanup.noiseGate") as? NSControl)?.isEnabled == false, "Voice cleanup off greys the Noise gate")
+    act("video.audio.voiceCleanup") { ($0 as? NSButton)?.performClick(nil) }
+    act("video.audio.voiceCleanup.noiseGate") { ($0 as? NSButton)?.performClick(nil) }
+    act("video.audio.voiceCleanup.leveling") { ($0 as? NSButton)?.performClick(nil) }
+    check(!editor.state.project.edits.audio.voiceCleanup.levelingOn && editor.state.project.edits.audio.voiceCleanup.isOn,
+          "the Leveling box turns Leveling off and leaves the rest of Voice cleanup on")
+    act("video.audio.voiceCleanup.leveling") { ($0 as? NSButton)?.performClick(nil) }
     snapshotEditor(editor, name: "video-after-audio")
     snapshotEditor(editor, name: "video-after-audio-dark", dark: true)
 

@@ -169,6 +169,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     private var isScrubbing = false
     private var enteredFullScreenForPreview = false
     private var preparation: Task<Void, Never>?
+    private let microphone: PreviewMicrophone
+    /// The Microphone track file the preview plays: the recorded one, or its cleaned copy.
+    public var previewMicrophone: URL? { microphone.file }
+    /// Whether the cleaned Microphone track for the current settings is still being made; the preview plays the previous sound meanwhile.
+    public var isPreparingCleanup: Bool { microphone.isPreparing }
 
     /// Reads `project.json` from `folder`. Throws when the folder holds no project or its video is missing.
     public static func open(folder: URL) throws -> VideoEditorWindowController {
@@ -180,6 +185,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         for track in project.source.audioTracks {
             if let name = project.source.file(for: track) { sound[track] = folder.appendingPathComponent(name) }
         }
+        sound[.microphone] = microphoneFile(of: project, in: folder)
         let editor = VideoEditorWindowController(folder: folder, project: project, frames: PlayerFrames(url: video, sound: sound))
         if let name = project.source.camera, FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
             let camera = PlayerFrames(url: folder.appendingPathComponent(name))
@@ -196,6 +202,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         history = UndoHistory(project.edits)
         self.frames = frames
         self.clock = clock
+        microphone = PreviewMicrophone(recorded: Self.recordedMicrophone(of: project, in: folder), playing: Self.microphoneFile(of: project, in: folder),
+                                       frames: frames)
         state = VideoEditorState(project: project)
         let window = VideoEditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 780),
                                        styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -344,6 +352,8 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     }
 
     private func wire() {
+        microphone.onPreparing = { [unowned self] in inspector.audioPanel.isPreparing = $0 }
+        microphone.onNoiseRemovalUnavailable = { [unowned self] in noiseRemovalAvailable = false }
         inspector.onSelect = { [unowned self] in select($0) }
         inspector.onCursor = { [unowned self] in setCursor($0) }
         inspector.onCursorSizeEnd = { [unowned self] in history.endCoalescing() }
@@ -757,6 +767,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// Returns once the zoom target shows the exact frame it asked for.
     public func zoomTargetSettled() async { await inspector.zoomPanel.target.pictureSettled() }
 
+    /// False once an export reported that Noise removal could not run here; the audio panel then greys the step out and says so.
+    public var noiseRemovalAvailable: Bool {
+        get { inspector.audioPanel.noiseRemovalAvailable }
+        set { inspector.audioPanel.noiseRemovalAvailable = newValue }
+    }
+
     // MARK: Undo
 
     public var canUndo: Bool { history.canUndo }
@@ -1017,6 +1033,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         exportJob = nil
         switch result {
         case .success(let report):
+            if report.voiceCleanup.noiseRemovalUnavailable { noiseRemovalAvailable = false }
             state.export = .closed
             refresh()
             setPanelVisible(false)
@@ -1182,6 +1199,24 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// How many click rings the preview shows, one layer each.
     public var previewRingLayerCount: Int { preview.visibleRingCount }
 
+    /// The Microphone track file a preview opening `project` plays: its cleaned copy when Voice cleanup is on and the copy for these
+    /// settings is ready, else the recorded file.
+    static func microphoneFile(of project: RecordingProject, in folder: URL) -> URL? {
+        guard let recorded = recordedMicrophone(of: project, in: folder) else { return nil }
+        let cleanup = project.edits.audio.voiceCleanup
+        guard cleanup.isOn else { return recorded }
+        return VoiceCleanupRenders.shared.ready(recorded, settings: cleanup) ?? recorded
+    }
+
+    /// The recording's Microphone track file, nil without one.
+    private static func recordedMicrophone(of project: RecordingProject, in folder: URL) -> URL? {
+        guard project.source.audioTracks.contains(.microphone), let name = project.source.file(for: .microphone) else { return nil }
+        return folder.appendingPathComponent(name)
+    }
+
+    /// Waits for the cleaned Microphone track the preview asked for last, for a check to read the preview after it.
+    public func voiceCleanupPrepared() async { await microphone.prepared() }
+
     private func refresh() {
         let background = state.project.edits.background
         if backgroundPicture.file != background.image {
@@ -1193,6 +1228,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
                                    project.source.audioTracks.isEmpty ? nil : .audio].compactMap { $0 })
         inspector.cameraPanel.show(project.edits.camera)
         inspector.keystrokesPanel.show(project.edits.keystrokes)
+        microphone.update(project.edits.audio.voiceCleanup)
         inspector.audioPanel.show(project.edits.audio, tracks: project.source.audioTracks)
         inspector.motionBlurPanel.show(project.edits.motionBlur)
         frames.setGains(Dictionary(uniqueKeysWithValues: AudioTrack.allCases.map { ($0, project.edits.audio[$0].gain) }))
@@ -1291,6 +1327,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     public func windowWillClose(_ notification: Notification) {
         preparation?.cancel()
         exportJob?.cancel()
+        microphone.close()
         displayLink?.invalidate()
         displayLink = nil
         let now = clock()

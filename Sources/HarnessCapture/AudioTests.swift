@@ -109,6 +109,9 @@ func runAudioTests() async {
               "each track is as long as the video", detail: "video \(videoSeconds) system \(sys?.duration ?? 0) mic \(micTrack?.duration ?? 0)")
         check(report.project.source.microphone == "offline-mic.m4a" && report.project.source.systemAudio == "offline-system.m4a",
               "the project names both tracks")
+        check(report.project.edits.audio.voiceCleanup == VoiceCleanup(isOn: true),
+              "the project of a recording with a microphone starts with Voice cleanup on at its defaults",
+              detail: "\(report.project.edits.audio.voiceCleanup)")
         if let facts = await readAudio(dir.appendingPathComponent("offline-system.m4a")) {
             let flashes = await flashTimes(video)
             let offsets = syncOffsets(flashes: flashes, clicks: clickOnsets(facts.channels[0], rate: facts.rate))
