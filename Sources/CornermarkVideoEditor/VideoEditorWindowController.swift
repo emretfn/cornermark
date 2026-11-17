@@ -177,6 +177,11 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// Hold the cleaned file the preview plays, and the one it waits for, so no render for other settings removes them under it.
     private var playingLease: VoiceCleanupRenders.Lease?
     private var askedLease: VoiceCleanupRenders.Lease?
+    /// Set once the window closed, so a sound still being laid then gives its lease up instead of keeping it.
+    private var isClosed = false
+    /// How many Microphone files are being put into the player, and the last one asked for.
+    private var soundSwaps = 0
+    private var soundSwap: Task<Void, Never>?
     /// Whether the cleaned Microphone track for the current settings is still being made; the preview plays the previous sound meanwhile.
     public private(set) var isPreparingCleanup = false
 
@@ -1217,16 +1222,16 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         cleanupAsked = wanted
         cleanupJob?.cancel()
         let renders = VoiceCleanupRenders.shared
-        if let askedLease { renders.release(askedLease) }
+        // Given up only after a new lease is taken, so a re-ask for the same settings never leaves the copy unheld in between.
+        let previousAsked = askedLease
         askedLease = nil
+        defer { if let previousAsked { renders.release(previousAsked) } }
         let recorded = folder.appendingPathComponent(name)
         guard let wanted, FileManager.default.fileExists(atPath: recorded.path) else {
             // An export's render goes on; only the one nobody waits for any more stops.
             renders.cancel(recorded)
             isPreparingCleanup = false
-            playMicrophone(recorded)
-            if let playingLease { renders.release(playingLease) }
-            playingLease = nil
+            playMicrophone(recorded, lease: nil)
             return
         }
         isPreparingCleanup = !FileManager.default.fileExists(atPath: VoiceCleanupCache.file(for: recorded, settings: wanted).path)
@@ -1247,19 +1252,49 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             isPreparingCleanup = false
             // A render that failed leaves the previous sound playing.
             if case .success(let cleaned) = result {
-                playMicrophone(cleaned)
-                if let playingLease { renders.release(playingLease) }
-                playingLease = lease
+                // The lease moves to the swap, which holds it until the player plays the file.
                 askedLease = nil
+                playMicrophone(cleaned, lease: lease)
             }
             inspector.audioPanel.isPreparing = false
         }
     }
 
-    private func playMicrophone(_ file: URL) {
-        guard previewMicrophone != file else { return }
+    /// Puts `file`, held by `lease`, into the player. The lease of the file played before is given up only once the player no longer
+    /// reads it; when the new file could not be laid, the old one plays on and keeps its lease.
+    private func playMicrophone(_ file: URL, lease: VoiceCleanupRenders.Lease?) {
+        let renders = VoiceCleanupRenders.shared
+        guard previewMicrophone != file else {
+            if soundSwaps > 0 {
+                // Being laid, under the lease of that swap.
+                if let lease { renders.release(lease) }
+            } else {
+                // Already playing, such as the copy that was ready when the editor opened: the new lease holds it from now on.
+                if let playingLease { renders.release(playingLease) }
+                playingLease = lease
+            }
+            return
+        }
+        let before = previewMicrophone
         previewMicrophone = file
-        frames.setSound(file, for: .microphone)
+        let frames = frames
+        soundSwaps += 1
+        soundSwap = Task { [weak self] in
+            let tookOver = await frames.setSound(file, for: .microphone)
+            self?.soundSwaps -= 1
+            guard let self, !isClosed else {
+                if let lease { renders.release(lease) }
+                return
+            }
+            guard tookOver else {
+                if let lease { renders.release(lease) }
+                // Not laid and not superseded: the file played before plays on.
+                if previewMicrophone == file { previewMicrophone = before }
+                return
+            }
+            if let playingLease { renders.release(playingLease) }
+            playingLease = lease
+        }
     }
 
     /// Waits for the cleaned Microphone track the preview asked for last, for a check to read the preview after it.
@@ -1267,8 +1302,10 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         // A preview that asks again replaces the job it waits on.
         while let job = cleanupJob {
             await job.value
-            if job == cleanupJob { return }
+            if job == cleanupJob { break }
         }
+        // And for the player to take it, which gives up the file played before.
+        await soundSwap?.value
     }
 
     private func refresh() {
@@ -1383,6 +1420,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         preparation?.cancel()
         exportJob?.cancel()
         cleanupJob?.cancel()
+        isClosed = true
         for lease in [playingLease, askedLease].compactMap({ $0 }) { VoiceCleanupRenders.shared.release(lease) }
         playingLease = nil
         askedLease = nil

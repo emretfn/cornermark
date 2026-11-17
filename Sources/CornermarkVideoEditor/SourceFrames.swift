@@ -22,13 +22,16 @@ public protocol SourceFrames: AnyObject {
     /// True keeps every sound of the source off, whatever the volume and the gains say.
     var isSilent: Bool { get set }
     /// Plays `file` for `track` from now on, such as the cleaned Microphone track once it is ready, without stopping playback. A source
-    /// without separate tracks ignores it.
-    func setSound(_ file: URL, for track: AudioTrack)
+    /// without separate tracks ignores it. Returns true once nothing plays the track's previous file any more; false when the previous
+    /// file may still play, because the new one could not be laid or a newer call took over.
+    @discardableResult
+    func setSound(_ file: URL, for track: AudioTrack) async -> Bool
 }
 
 extension SourceFrames {
     public func setGains(_ gains: [AudioTrack: Double]) {}
-    public func setSound(_ file: URL, for track: AudioTrack) {}
+    @discardableResult
+    public func setSound(_ file: URL, for track: AudioTrack) async -> Bool { true }
     public var isSilent: Bool {
         get { true }
         set {}
@@ -67,6 +70,8 @@ public final class PlayerFrames: SourceFrames {
 
     /// Sound files to lay beside the pictures. `load` puts them into the player, so a cut that moves the player moves the sound too.
     private var soundFiles: [AudioTrack: URL]
+    /// The sound files the player's item plays.
+    private var laidFiles: [AudioTrack: URL] = [:]
     /// The source's own pictures, which every composition of sound files is laid over.
     private let pictures: AVAsset
     /// Counts the times the sound was laid, so a slower, older laying does not replace a newer one.
@@ -94,28 +99,35 @@ public final class PlayerFrames: SourceFrames {
 
     public func load() async {
         isLoaded = true
-        if !soundFiles.isEmpty { await laySound() }
+        if !soundFiles.isEmpty { _ = await laySound() }
         guard let asset = player.currentItem?.asset else { return }
         hasAudio = !((try? await asset.loadTracks(withMediaType: .audio)) ?? []).isEmpty
     }
 
-    public func setSound(_ file: URL, for track: AudioTrack) {
-        guard soundFiles[track] != nil, soundFiles[track] != file else { return }
+    @discardableResult
+    public func setSound(_ file: URL, for track: AudioTrack) async -> Bool {
+        guard soundFiles[track] != nil else { return false }
         soundFiles[track] = file
-        guard isLoaded else { return }
-        Task { await laySound() }
+        // Not loaded yet, nothing plays; `load` lays the files as they are then.
+        guard isLoaded else { return true }
+        guard laidFiles != soundFiles else {
+            // Already playing these files: an older laying still under way gives up instead of replacing them.
+            layings += 1
+            return true
+        }
+        return await laySound()
     }
 
     /// Plays the pictures and every sound file as one composition, each track from the start of the recording. Laid again, the new
-    /// composition takes over at the moment the player is on, playing or not.
-    private func laySound() async {
+    /// composition takes over at the moment the player is on, playing or not. False when it did not take over.
+    private func laySound() async -> Bool {
         layings += 1
         let laying = layings, files = soundFiles
         guard let picture = try? await pictures.loadTracks(withMediaType: .video).first,
-              let range = try? await picture.load(.timeRange) else { return }
+              let range = try? await picture.load(.timeRange) else { return false }
         let composition = AVMutableComposition()
         guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-              (try? video.insertTimeRange(range, of: picture, at: range.start)) != nil else { return }
+              (try? video.insertTimeRange(range, of: picture, at: range.start)) != nil else { return false }
         var tracks: [AudioTrack: AVAssetTrack] = [:]
         var assets: [AVAsset] = []
         for track in AudioTrack.allCases {
@@ -129,7 +141,7 @@ public final class PlayerFrames: SourceFrames {
                   (try? into.insertTimeRange(whole, of: source, at: .zero)) != nil else { continue }
             tracks[track] = into
         }
-        guard laying == layings, !tracks.isEmpty, let current = player.currentItem else { return }
+        guard laying == layings, !tracks.isEmpty, let current = player.currentItem else { return false }
         let relaid = !soundTracks.isEmpty, time = playerTime
         current.remove(output)
         let item = AVPlayerItem(asset: composition)
@@ -140,8 +152,10 @@ public final class PlayerFrames: SourceFrames {
         player.replaceCurrentItem(with: item)
         soundTracks = tracks
         soundAssets = assets
+        laidFiles = files
         applyGains()
         if !relaid { parkedAt = nil }
+        return true
     }
 
     public func setGains(_ next: [AudioTrack: Double]) {
