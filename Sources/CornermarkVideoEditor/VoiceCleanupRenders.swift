@@ -162,6 +162,15 @@ final class VoiceCleanupRenders: @unchecked Sendable {
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in removals { done.resume() } }
     }
 
+    /// The cleaned copy of `microphone` for `settings` when it is already made, such as for a preview opening, else nil. It first waits
+    /// for the copies given up so far to be deleted, so a copy on its way out, such as one the editor closed just before, is not it.
+    func ready(_ microphone: URL, settings: VoiceCleanup) -> URL? {
+        let done = DispatchSemaphore(value: 0)
+        removals { done.signal() }
+        done.wait()
+        return VoiceCleanupCache.ready(for: microphone, settings: settings)
+    }
+
     /// Removes the copies of `microphone` cleaned for other settings, but `made` and the ones held, so the project keeps one. Called
     /// as a render ends, when no other render of `microphone` writes, so half-written copies left by one that never finished go too.
     /// It runs in the render's task, so it deletes them there, once the lock is let go.

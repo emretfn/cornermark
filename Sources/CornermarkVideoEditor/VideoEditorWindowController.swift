@@ -1205,7 +1205,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         guard let recorded = recordedMicrophone(of: project, in: folder) else { return nil }
         let cleanup = project.edits.audio.voiceCleanup
         guard cleanup.isOn else { return recorded }
-        return VoiceCleanupCache.ready(for: recorded, settings: cleanup) ?? recorded
+        return VoiceCleanupRenders.shared.ready(recorded, settings: cleanup) ?? recorded
     }
 
     /// The recording's Microphone track file, nil without one.

@@ -238,6 +238,28 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path), "the copy the preview leased and was handed stays")
     }
 
+    func testACopyGivenUpButNotDeletedYetIsNotReadyForAPreviewOpening() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a")
+        let renders = VoiceCleanupRenders(render: { microphone, settings in
+            let made = VoiceCleanupCache.file(for: microphone, settings: settings)
+            try Data().write(to: made)
+            return (made, VoiceCleanupReport())
+        }, remove: { file in
+            // A slow disk: the deletion is still on its way when the editor opens again.
+            usleep(300_000)
+            try? FileManager.default.removeItem(at: file)
+        })
+
+        let lease = renders.lease(mic, settings: lowCut(100))
+        _ = try await renders.cleaned(mic, settings: lowCut(100), keep: true)
+        _ = try await renders.cleaned(mic, settings: lowCut(120))
+        renders.release(lease)
+        XCTAssertNil(renders.ready(mic, settings: lowCut(100)), "the copy on its way out is not handed to the preview")
+        XCTAssertNotNil(renders.ready(mic, settings: lowCut(120)), "the latest is")
+    }
+
     func testARenderLeavesTheCleanedCopiesOfAnotherMicrophoneInTheFolder() async throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
