@@ -1,7 +1,6 @@
 import AVFoundation
 import CornermarkCore
 import CryptoKit
-import os
 
 /// Makes the cleaned Microphone track: the recorded file through the Voice cleanup steps, written as a new file of the same length,
 /// sample rate and channels. It runs offline, as fast as the machine allows, and never changes the recorded file.
@@ -28,7 +27,6 @@ public enum VoiceCleanupRenderer {
             without.noiseRemovalOn = false
             try write(input, settings: without, to: output, soundIsolation: soundIsolation)
         }
-        NoiseRemoval.failed(soundIsolation)
         return VoiceCleanupReport(noiseRemovalUnavailable: true)
     }
 
@@ -108,8 +106,8 @@ public enum VoiceCleanupRenderer {
         return steps
     }
 
-    /// Whether Noise removal can run on this Mac: its unit is there and no render has seen it fail. The audio panel greys the step
-    /// out when it cannot.
+    /// Whether Noise removal can run on this Mac: Apple's sound isolation unit is there. The audio panel greys the step out when it
+    /// is not, or when a render reported it could not run.
     public static var noiseRemovalAvailable: Bool { NoiseRemoval.available }
 
     /// The recorded file's encoding, rate and channels. AAC keeps a cleaned track about as small as the recorded one.
@@ -201,18 +199,11 @@ final class NoiseRemoval: CleanupStep {
                                                  componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
     /// Frames handed to the unit at a time.
     private static let slice: AVAudioFrameCount = 4_096
-    private static let failure = OSAllocatedUnfairLock(initialState: false)
 
+    /// Whether Apple's unit is on this Mac. A file it could not clean says so in its own report and leaves the next file to try.
     static var available: Bool {
         var description = apple
-        return AudioComponentFindNext(nil, &description) != nil && !failure.withLock { $0 }
-    }
-
-    /// Remembers for this run of the app that Apple's unit could not clean a file here.
-    static func failed(_ unit: AudioComponentDescription) {
-        guard unit.componentType == apple.componentType, unit.componentSubType == apple.componentSubType,
-              unit.componentManufacturer == apple.componentManufacturer else { return }
-        failure.withLock { $0 = true }
+        return AudioComponentFindNext(nil, &description) != nil
     }
 
     /// The sound waiting to go into the unit, read by its input block. A class of its own, so the engine does not hold the step.
