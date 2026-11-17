@@ -409,7 +409,7 @@ public enum VideoExporter {
         let (tracks, cleanup, leases) = try await soundFiles(project, in: folder)
         // The cleaned Microphone track stays until the mix is done with it, whatever the preview renders meanwhile.
         defer { leases.forEach(VoiceCleanupRenders.shared.release) }
-        let mix = try await AudioMixReader(files: [(video, 1)] + tracks, clips: project.timeline.clips, duration: plan.duration)
+        let mix = try await AudioMixReader(files: [(video, 1, false)] + tracks, clips: project.timeline.clips, duration: plan.duration)
         defer { mix?.cancel() }
         do {
             let sink = Sink(writer: writer, audio: mix)
@@ -429,22 +429,23 @@ public enum VideoExporter {
 
     /// The recording's sound tracks the mix takes, each at its Track level. With Voice cleanup on, the Microphone track is its cleaned
     /// copy, made first if it is not ready, or the one the preview is making when it is under way, and its report says what the cleaning
-    /// left out; the recorded file stays as it is. The cleaned copy comes leased: release the leases once the mix is done.
+    /// left out; the recorded file stays as it is. The cleaned copy comes leased: release the leases once the mix is done. A cleaned
+    /// copy is `required`, so the mix fails rather than leave the voice out; a recorded track may be missing.
     static func soundFiles(_ project: RecordingProject, in folder: URL) async throws
-        -> (files: [(url: URL, gain: Double)], cleanup: VoiceCleanupReport, leases: [VoiceCleanupRenders.Lease]) {
-        var files: [(url: URL, gain: Double)] = [], report = VoiceCleanupReport()
+        -> (files: [(url: URL, gain: Double, required: Bool)], cleanup: VoiceCleanupReport, leases: [VoiceCleanupRenders.Lease]) {
+        var files: [(url: URL, gain: Double, required: Bool)] = [], report = VoiceCleanupReport()
         var leases: [VoiceCleanupRenders.Lease] = []
         for entry in project.audioMix {
             let recorded = folder.appendingPathComponent(entry.file)
             let cleanup = project.edits.audio.voiceCleanup
             guard entry.track == .microphone, cleanup.isOn, FileManager.default.fileExists(atPath: recorded.path) else {
-                files.append((recorded, entry.gain))
+                files.append((recorded, entry.gain, false))
                 continue
             }
             let renders = VoiceCleanupRenders.shared, lease = renders.lease(recorded, settings: cleanup)
             do {
                 let cleaned = try await renders.cleaned(recorded, settings: cleanup, keep: true)
-                files.append((cleaned.url, entry.gain))
+                files.append((cleaned.url, entry.gain, true))
                 report = cleaned.report
                 leases.append(lease)
             } catch {

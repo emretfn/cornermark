@@ -15,17 +15,18 @@ final class AudioMixReader {
     private let reader: AVAssetReader
     private let output: AVAssetReaderAudioMixOutput
 
-    /// Nil when none of the files has sound; throws when a cleaned Microphone track among them is missing. `gain` multiplies a file's samples, 1 as recorded. `clips` are the stretches of the source
-    /// kept, back to back, nil for all of it, and `duration` cuts the mix at the output's end.
-    init?(files: [(url: URL, gain: Double)], clips: [Clip]? = nil, duration: Double) async throws {
+    /// Nil when none of the files has sound; throws when a `required` file is missing, and leaves out any other missing one. `gain`
+    /// multiplies a file's samples, 1 as recorded. `clips` are the stretches of the source kept, back to back, nil for all of it, and
+    /// `duration` cuts the mix at the output's end.
+    init?(files: [(url: URL, gain: Double, required: Bool)], clips: [Clip]? = nil, duration: Double) async throws {
         let composition = AVMutableComposition()
         var tracks: [AVAssetTrack] = []
         var levels: [AVMutableAudioMixInputParameters] = []
-        for (file, gain) in files {
+        for (file, gain, required) in files {
             // A recorded track may be missing and the mix goes on without it. A cleaned Microphone track was made for this mix, so
             // without it the video would ship without the voice.
             guard FileManager.default.fileExists(atPath: file.path) else {
-                if file.lastPathComponent.hasPrefix(VoiceCleanupCache.prefix) { throw ExportError.writer("the cleaned microphone sound is missing") }
+                if required { throw ExportError.writer("the cleaned microphone sound is missing") }
                 continue
             }
             let asset = AVURLAsset(url: file)
@@ -97,7 +98,7 @@ public enum AudioMux {
         let asset = AVURLAsset(url: video)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideo }
         let duration = try await asset.load(.duration).seconds
-        guard let mix = try await AudioMixReader(files: audio.map { ($0, 1) }, duration: duration) else { throw ExportError.writer("there is no sound to add") }
+        guard let mix = try await AudioMixReader(files: audio.map { ($0, 1, false) }, duration: duration) else { throw ExportError.writer("there is no sound to add") }
         defer { mix.cancel() }
         let reader = try AVAssetReader(asset: asset)
         let pictures = AVAssetReaderTrackOutput(track: track, outputSettings: nil)

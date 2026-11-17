@@ -344,7 +344,9 @@ final class VideoExporterTests: XCTestCase {
         project.edits.audio.voiceCleanup = VoiceCleanup(isOn: true)
         project.edits.audio.voiceCleanup.levelingOn = false
         let (files, _, leases) = try await VideoExporter.soundFiles(project, in: folder)
-        let mixed = try XCTUnwrap(files.first { $0.url.lastPathComponent.hasPrefix(VoiceCleanupCache.prefix) }?.url, "the export mixes the cleaned copy")
+        let cleaned = try XCTUnwrap(files.first { $0.url.lastPathComponent.hasPrefix(VoiceCleanupCache.prefix) }, "the export mixes the cleaned copy")
+        XCTAssertTrue(cleaned.required, "the mix fails rather than leave the cleaned copy out")
+        let mixed = cleaned.url
 
         var newer = project.edits.audio.voiceCleanup
         newer.lowCutFrequency = 200
@@ -359,9 +361,11 @@ final class VideoExporterTests: XCTestCase {
 
     func testAMissingCleanedMicrophoneFailsTheMixInsteadOfLeavingTheMicrophoneOut() async throws {
         let mic = try makeHummingMicrophone(seconds: 1)
-        let gone = folder.appendingPathComponent(VoiceCleanupCache.prefix + "0000").appendingPathExtension("m4a")
+        let gone = folder.appendingPathComponent("gone.m4a")
+        let withoutIt = try await AudioMixReader(files: [(mic, 1, false), (gone, 1, false)], duration: 1)
+        XCTAssertNotNil(withoutIt, "a missing recorded track is left out")
         do {
-            _ = try await AudioMixReader(files: [(mic, 1), (gone, 1)], duration: 1)
+            _ = try await AudioMixReader(files: [(mic, 1, false), (gone, 1, true)], duration: 1)
             XCTFail("a mix without the cleaned microphone must not be made")
         } catch {
             XCTAssertEqual(error as? CornermarkVideoEditor.ExportError, .writer("the cleaned microphone sound is missing"))
