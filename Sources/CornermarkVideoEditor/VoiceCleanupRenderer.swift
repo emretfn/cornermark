@@ -218,11 +218,12 @@ final class NoiseRemoval: CleanupStep {
     /// The sound waiting to go into the unit, read by its input block. A class of its own, so the engine does not hold the step.
     private final class Feed {
         var samples: [[Float]]
-        var buffer: AVAudioPCMBuffer
+        let buffer: AVAudioPCMBuffer
         var short = false
-        init(format: AVAudioFormat) {
+        init?(format: AVAudioFormat) {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: NoiseRemoval.slice) else { return nil }
             samples = Array(repeating: [], count: Int(format.channelCount))
-            buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: NoiseRemoval.slice)!
+            self.buffer = buffer
         }
     }
 
@@ -239,7 +240,8 @@ final class NoiseRemoval: CleanupStep {
     /// Nil when the unit cannot be made or started for `format`.
     init?(strength: Double, format: AVAudioFormat, unit description: AudioComponentDescription) {
         var find = description
-        guard AudioComponentFindNext(nil, &find) != nil, let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.slice) else { return nil }
+        guard AudioComponentFindNext(nil, &find) != nil, let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.slice),
+              let feed = Feed(format: format) else { return nil }
         let unit = AVAudioUnitEffect(audioComponentDescription: description)
         // The high-quality voice model where the OS has it, the standard one before.
         let voice: Int
@@ -247,7 +249,6 @@ final class NoiseRemoval: CleanupStep {
         AudioUnitSetParameter(unit.audioUnit, kAUSoundIsolationParam_SoundToIsolate, kAudioUnitScope_Global, 0, AudioUnitParameterValue(voice), 0)
         // The unit gives only its answer; strength is mixed here, against the dry sound lined up to it.
         AudioUnitSetParameter(unit.audioUnit, kAUSoundIsolationParam_WetDryMixPercent, kAudioUnitScope_Global, 0, 100, 0)
-        let feed = Feed(format: format)
         do {
             try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: Self.slice)
             engine.attach(unit)
