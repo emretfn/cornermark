@@ -47,6 +47,13 @@ enum TestSound {
         return 2 * (s * s + c * c).squareRoot() / Double(count)
     }
 
+    /// Whether this Mac has Apple's sound isolation unit. Only that decides whether a test can measure Noise removal: a render that
+    /// reports the step unavailable while the unit is here is a failure, not a reason to skip.
+    static var soundIsolationIsHere: Bool {
+        var unit = NoiseRemoval.apple
+        return AudioComponentFindNext(nil, &unit) != nil
+    }
+
     static func decibels(_ ratio: Double) -> Double { 20 * log10(max(ratio, 1e-12)) }
 
     /// The root mean square of `samples` between `from` and `to` seconds: how loud everything there is together.
@@ -96,8 +103,9 @@ final class VoiceCleanupRendererTests: XCTestCase {
         // Fan noise throughout, a voice-like tone in the middle.
         let noise = TestSound.noise(amplitude: 0.05)
         try TestSound.write(input, seconds: 6, channels: [[]]) { c, t in noise(c, t) + (t > 2.5 && t < 3.5 ? Float(0.2 * sin(2 * .pi * 300 * t)) : 0) }
+        try XCTSkipUnless(TestSound.soundIsolationIsHere, "this Mac has no sound isolation unit, so there is nothing to measure")
         let report = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 1), to: output)
-        try XCTSkipIf(report.noiseRemovalUnavailable, "the sound isolation unit cannot run on this Mac, so there is nothing to measure")
+        XCTAssertFalse(report.noiseRemovalUnavailable, "the unit is here, so Noise removal runs")
 
         let before = try TestSound.read(input), after = try TestSound.read(output)
         let change = TestSound.decibels(TestSound.rms(after.channels[0], rate: 48_000, from: 4.5, to: 5.5)
@@ -124,15 +132,16 @@ final class VoiceCleanupRendererTests: XCTestCase {
         let noise = TestSound.noise(amplitude: 0.05)
         // Steady noise with one loud knock at 3 s.
         try TestSound.write(input, seconds: 6, channels: [[]]) { c, t in noise(c, t) + (t >= 3 && t < 3.005 ? Float(0.8 * cos(2 * .pi * 2_000 * t)) : 0) }
+        try XCTSkipUnless(TestSound.soundIsolationIsHere, "this Mac has no sound isolation unit, so there is nothing to measure")
         let half = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 0.5), to: output)
-        try XCTSkipIf(half.noiseRemovalUnavailable, "the sound isolation unit cannot run on this Mac, so there is nothing to measure")
         let full = folder.appendingPathComponent("full.m4a")
-        try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 1), to: full)
+        let all = try VoiceCleanupRenderer.render(input, settings: onlyNoiseRemoval(strength: 1), to: full)
+        XCTAssertEqual([half, all].map(\.noiseRemovalUnavailable), [false, false], "the unit is here, so Noise removal runs")
 
-        let before = try TestSound.read(input).channels[0], halfway = try TestSound.read(output).channels[0], all = try TestSound.read(full).channels[0]
+        let before = try TestSound.read(input).channels[0], halfway = try TestSound.read(output).channels[0], whole = try TestSound.read(full).channels[0]
         func noiseLevel(_ s: [Float]) -> Double { TestSound.rms(s, rate: 48_000, from: 4.5, to: 5.5) }
         XCTAssertLessThan(noiseLevel(halfway), noiseLevel(before) * 0.7, "half strength takes noise out")
-        XCTAssertGreaterThan(noiseLevel(halfway), noiseLevel(all) * 1.5, "but less than full strength")
+        XCTAssertGreaterThan(noiseLevel(halfway), noiseLevel(whole) * 1.5, "but less than full strength")
         let knock = halfway.indices.first { $0 > 2 * 48_000 && abs(halfway[$0]) > 0.25 }.map { Double($0) / 48_000 }
         XCTAssertEqual(knock ?? 0, 3, accuracy: 0.001, "the sound stays on its moment however late the unit answers")
     }

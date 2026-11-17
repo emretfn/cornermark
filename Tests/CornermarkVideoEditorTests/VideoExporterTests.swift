@@ -234,7 +234,7 @@ final class VideoExporterTests: XCTestCase {
         let floor = TestSound.decibels(TestSound.noiseFloor(after.channels[0], rate: after.rate, from: 2.5, to: 3.5)
                                        / TestSound.noiseFloor(before.channels[0], rate: before.rate, from: 2.5, to: 3.5))
         XCTAssertLessThan(hum, -12, "the hum is clearly reduced")
-        if VoiceCleanupRenderer.noiseRemovalAvailable {
+        if TestSound.soundIsolationIsHere {
             XCTAssertLessThan(floor, -6, "the fan noise is clearly reduced")
         } else {
             XCTAssertEqual(floor, 0, accuracy: 1, "without Noise removal on this Mac the fan noise stays, and the export still works")
