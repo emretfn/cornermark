@@ -303,10 +303,16 @@ final class VideoExporterTests: XCTestCase {
         project.edits.audio.voiceCleanup = cleanup
         let out = folder.appendingPathComponent("export.mp4")
         _ = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: out)
-        XCTAssertEqual(try TestSound.read(out).channels, try TestSound.read(today).channels,
-                       "Voice cleanup off mixes exactly the sound a project without it does, sample for sample")
+        // The mix as it was made before Voice cleanup: the recorded files the project lists, at their levels, through the same mixer
+        // and encoder, without going through the Voice cleanup path at all.
+        XCTAssertEqual(project.audioMix.map(\.gain), [1], "the reference mixes every track at 100%")
+        let reference = folder.appendingPathComponent("reference.mp4")
+        try await AudioMux.mux(video: source, audio: project.audioMix.map { folder.appendingPathComponent($0.file) }, to: reference)
+        let expected = try TestSound.read(reference).channels
+        XCTAssertEqual(try TestSound.read(today).channels, expected, "a project saved without Voice cleanup mixes the sound it did before, sample for sample")
+        XCTAssertEqual(try TestSound.read(out).channels, expected, "Voice cleanup off mixes the sound a project did before it, sample for sample")
         let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
-        XCTAssertEqual(Set(files), ["screen.mp4", "mic.m4a", "today.mp4", "export.mp4"], "nothing is cleaned while Voice cleanup is off")
+        XCTAssertEqual(Set(files), ["screen.mp4", "mic.m4a", "today.mp4", "export.mp4", "reference.mp4"], "nothing is cleaned while Voice cleanup is off")
     }
 
     func testAChangedSettingIsNeverServedFromTheOldCleanedTrack() async throws {
