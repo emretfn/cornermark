@@ -227,6 +227,7 @@ final class VideoExporterTests: XCTestCase {
         let report = try await VideoExporter.export(project: project, video: source, settings: ExportSettings(), to: clean)
 
         XCTAssertTrue(report.hasAudio)
+        XCTAssertEqual(report.voiceCleanup.noiseRemovalUnavailable, !TestSound.soundIsolationIsHere, "the export says whether Noise removal ran")
         let before = try TestSound.read(raw), after = try TestSound.read(clean)
         // Where nobody speaks.
         let hum = TestSound.decibels(TestSound.amplitude(of: 50, in: after.channels[0], rate: after.rate, from: 2.5, to: 3.5)

@@ -757,6 +757,12 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
     /// Returns once the zoom target shows the exact frame it asked for.
     public func zoomTargetSettled() async { await inspector.zoomPanel.target.pictureSettled() }
 
+    /// False once an export reported that Noise removal could not run here; the audio panel then greys the step out and says so.
+    public var noiseRemovalAvailable: Bool {
+        get { inspector.audioPanel.noiseRemovalAvailable }
+        set { inspector.audioPanel.noiseRemovalAvailable = newValue }
+    }
+
     // MARK: Undo
 
     public var canUndo: Bool { history.canUndo }
@@ -1017,6 +1023,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         exportJob = nil
         switch result {
         case .success(let report):
+            if report.voiceCleanup.noiseRemovalUnavailable { noiseRemovalAvailable = false }
             state.export = .closed
             refresh()
             setPanelVisible(false)

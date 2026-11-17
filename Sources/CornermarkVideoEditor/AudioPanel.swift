@@ -23,7 +23,7 @@ final class AudioPanel: SettingsPanel {
     private var noiseRemovalStrength: TrackingSlider!
     private var noiseRemovalRow: NSStackView!
     private var noiseRemovalNote: NSTextField!
-    /// False when the renderer reported Noise removal unavailable. The panel also asks the renderer itself each time it shows; when
+    /// False once an export reported Noise removal unavailable. The panel also asks the renderer whether the unit is on this Mac; when
     /// either says no, the row is greyed out and says so, and the other steps still clean.
     var noiseRemovalAvailable = true {
         didSet { showVoiceCleanup(audio.voiceCleanup, hidden: cleanup.isHidden) }
