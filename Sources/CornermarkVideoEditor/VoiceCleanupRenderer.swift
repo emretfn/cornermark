@@ -16,9 +16,11 @@ public enum VoiceCleanupRenderer {
         try render(input, settings: settings, to: output, soundIsolation: NoiseRemoval.apple)
     }
 
-    /// `render`, with Noise removal done by the audio unit `soundIsolation` describes, so a test can name one that is not there.
-    static func render(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription) throws -> VoiceCleanupReport {
-        let steps = try write(input, settings: settings, to: output, soundIsolation: soundIsolation)
+    /// `render`, with Noise removal done by the audio unit `soundIsolation` describes, so a test can name one that is not there, and
+    /// with `noiseRemovalFailsAfter` set, failing once it has cleaned that many of its slices, as a unit that stops part way does.
+    static func render(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription,
+                       noiseRemovalFailsAfter: Int? = nil) throws -> VoiceCleanupReport {
+        let steps = try write(input, settings: settings, to: output, soundIsolation: soundIsolation, failsAfter: noiseRemovalFailsAfter)
         let noiseRemoval = steps.lazy.compactMap { $0 as? NoiseRemoval }.first
         guard settings.runsNoiseRemoval, noiseRemoval?.failed != false else { return VoiceCleanupReport() }
         if noiseRemoval != nil {
@@ -32,12 +34,13 @@ public enum VoiceCleanupRenderer {
 
     /// Cleans `input` into `output` and hands back the steps that ran, so the caller can ask how they went.
     @discardableResult
-    private static func write(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription) throws -> [CleanupStep] {
+    private static func write(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription,
+                              failsAfter: Int? = nil) throws -> [CleanupStep] {
         let source = try AVAudioFile(forReading: input, commonFormat: .pcmFormatFloat32, interleaved: false)
         let format = source.processingFormat
         try? FileManager.default.removeItem(at: output)
         let target = try AVAudioFile(forWriting: output, settings: outputSettings(like: source.fileFormat), commonFormat: .pcmFormatFloat32, interleaved: false)
-        let steps = chain(settings, format: format, soundIsolation: soundIsolation)
+        let steps = chain(settings, format: format, soundIsolation: soundIsolation, failsAfter: failsAfter)
         guard settings.levelingOn else {
             try run(source, through: steps, into: target)
             return steps
@@ -121,10 +124,12 @@ public enum VoiceCleanupRenderer {
     /// The steps that are on and run chunk by chunk, always in this order: Low cut, Noise removal, Noise gate. Leveling, which needs
     /// the whole track first, comes after them in `write`; Track level comes later still, in the mix.
     /// Noise removal at strength 0 is left out, so the sound is exactly as it came in; when its unit cannot be made, it is left out too.
-    static func chain(_ settings: VoiceCleanup, format: AVAudioFormat, soundIsolation: AudioComponentDescription = NoiseRemoval.apple) -> [CleanupStep] {
+    static func chain(_ settings: VoiceCleanup, format: AVAudioFormat, soundIsolation: AudioComponentDescription = NoiseRemoval.apple,
+                      failsAfter: Int? = nil) -> [CleanupStep] {
         var steps: [CleanupStep] = []
         if settings.lowCutOn { steps.append(LowCut(frequency: settings.lowCutFrequency, format: format)) }
-        if settings.runsNoiseRemoval, let step = NoiseRemoval(strength: settings.noiseRemovalStrength, format: format, unit: soundIsolation) { steps.append(step) }
+        if settings.runsNoiseRemoval,
+           let step = NoiseRemoval(strength: settings.noiseRemovalStrength, format: format, unit: soundIsolation, failsAfter: failsAfter) { steps.append(step) }
         if settings.noiseGateOn { steps.append(NoiseGate(threshold: settings.noiseGateThreshold, format: format)) }
         return steps
     }
@@ -255,8 +260,11 @@ final class NoiseRemoval: CleanupStep {
     /// The sound as it came in, `delay` frames late, so it lines up with the unit's answer for the mix.
     private var dry: [[Float]]
 
+    /// Slices the unit may still clean before it stops answering, for a test; nil for as many as the file has.
+    private var slicesLeft: Int?
+
     /// Nil when the unit cannot be made or started for `format`.
-    init?(strength: Double, format: AVAudioFormat, unit description: AudioComponentDescription) {
+    init?(strength: Double, format: AVAudioFormat, unit description: AudioComponentDescription, failsAfter: Int? = nil) {
         var find = description
         guard AudioComponentFindNext(nil, &find) != nil, let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.slice),
               let feed = Feed(format: format) else { return nil }
@@ -292,6 +300,7 @@ final class NoiseRemoval: CleanupStep {
         }
         self.feed = feed
         self.output = output
+        slicesLeft = failsAfter
         self.strength = Float(min(max(strength, 0), 1))
         delay = Int((unit.auAudioUnit.latency * format.sampleRate).rounded())
         dry = Array(repeating: Array(repeating: 0, count: delay), count: Int(format.channelCount))
@@ -310,7 +319,8 @@ final class NoiseRemoval: CleanupStep {
         var done = 0
         while done < n {
             let count = min(Int(Self.slice), n - done)
-            guard (try? engine.renderOffline(AVAudioFrameCount(count), to: output)) == .success, Int(output.frameLength) == count, !feed.short,
+            if let left = slicesLeft { slicesLeft = left - 1 }
+            guard slicesLeft.map({ $0 >= 0 }) ?? true, (try? engine.renderOffline(AVAudioFrameCount(count), to: output)) == .success, Int(output.frameLength) == count, !feed.short,
                   let wet = output.floatChannelData else {
                 failed = true
                 return

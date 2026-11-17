@@ -198,31 +198,12 @@ final class VideoExporterTests: XCTestCase {
         return TestSound.amplitude(of: frequency, in: sound.channels[0], rate: sound.rate, from: from, to: to)
     }
 
-    /// Real speech, said by the Mac's speech synthesizer: a voice Noise removal keeps, as pure tones are not. Samantha at 180 words a
-    /// minute, so every Mac says the same sentence the same way; a Mac without her says it in its own voice.
-    private func speech(_ text: String) throws -> [Float] {
-        let url = folder.appendingPathComponent("speech.caf")
-        defer { try? FileManager.default.removeItem(at: url) }
-        func say(_ voice: [String]) throws -> Bool {
-            let say = Process()
-            say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-            say.arguments = voice + ["-r", "180", "-o", url.path, "--data-format=LEF32@48000", text]
-            say.standardError = FileHandle.nullDevice
-            try say.run()
-            say.waitUntilExit()
-            return say.terminationStatus == 0 && FileManager.default.fileExists(atPath: url.path)
-        }
-        let said = try say(["-v", "Samantha"]) || say([])
-        try XCTSkipUnless(said, "the speech synthesizer could not say the sentence on this Mac, so there is no speech to clean")
-        return try TestSound.read(url).channels[0]
-    }
-
     /// A Microphone track as a room records it: 50 Hz mains hum and steady fan noise throughout, and a short spoken sentence from
     /// 0.4 s that ends before 2.4 s.
     private func makeNoisyMicrophone(seconds: Double) throws -> URL {
         let url = folder.appendingPathComponent("mic.m4a")
         let noise = TestSound.noise(amplitude: 0.03)
-        let voice = try speech("Hello, testing the microphone.").prefix(2 * 48_000)
+        let voice = try TestSound.speech("Hello, testing the microphone.", in: folder).prefix(2 * 48_000)
         let start = Int(0.4 * 48_000)
         try TestSound.write(url, seconds: seconds, channels: [[(50, 0.1)]]) { c, t in
             let i = Int((t * 48_000).rounded()) - start
@@ -383,7 +364,7 @@ final class VideoExporterTests: XCTestCase {
     func testWithVoiceCleanupOnTheExportedMicrophoneSitsAtMinus16LUFSAndTrackLevelStillApplies() async throws {
         var (source, project) = try await makeSource(frames: 60)
         // Quiet speech: Noise removal keeps a voice, where it would take pure tones out.
-        let voice = try speech("Hello, testing the microphone.").prefix(2 * 48_000 - 4_800)
+        let voice = try TestSound.speech("Hello, testing the microphone.", in: folder).prefix(2 * 48_000 - 4_800)
         try TestSound.write(folder.appendingPathComponent("mic.m4a"), seconds: 2, channels: [[]]) { _, t in
             let i = Int((t * 48_000).rounded()) - 4_800
             return voice.indices.contains(i) ? 0.05 * voice[i] : 0
