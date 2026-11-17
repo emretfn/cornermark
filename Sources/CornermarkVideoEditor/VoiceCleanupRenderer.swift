@@ -225,9 +225,12 @@ final class NoiseRemoval: CleanupStep {
     private static let slice: AVAudioFrameCount = 4_096
 
     /// Whether Apple's unit is on this Mac. A file it could not clean says so in its own report and leaves the next file to try.
-    static var available: Bool {
-        var description = apple
-        return AudioComponentFindNext(nil, &description) != nil
+    static var available: Bool { isHere(apple) }
+
+    /// Whether the audio unit `description` names is on this Mac.
+    static func isHere(_ description: AudioComponentDescription) -> Bool {
+        var find = description
+        return AudioComponentFindNext(nil, &find) != nil
     }
 
     /// The sound waiting to go into the unit, read by its input block. A class of its own, so the engine does not hold the step.
@@ -591,18 +594,53 @@ enum VoiceCleanupCache {
     static let version = 6
     static let prefix = "voice-cleanup-"
 
-    /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made.
-    static func file(for microphone: URL, settings: VoiceCleanup) -> URL {
+    /// The settings as far as the sound goes: the master switch and the values of steps that are off do not change it, and Noise
+    /// removal at strength 0 is off.
+    static func sound(of settings: VoiceCleanup) -> VoiceCleanup {
+        let defaults = VoiceCleanup()
         var steps = settings
         steps.isOn = true
+        if !steps.lowCutOn { steps.lowCutFrequency = defaults.lowCutFrequency }
+        if !steps.runsNoiseRemoval {
+            steps.noiseRemovalOn = false
+            steps.noiseRemovalStrength = defaults.noiseRemovalStrength
+        }
+        if !steps.noiseGateOn { steps.noiseGateThreshold = defaults.noiseGateThreshold }
+        return steps
+    }
+
+    /// Where the cleaned copy of `microphone` for `settings` lives, whether or not it has been made. Its name starts with the
+    /// microphone's, so copies of two recorded files in one folder never mix.
+    static func file(for microphone: URL, settings: VoiceCleanup) -> URL {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let attributes = try? FileManager.default.attributesOfItem(atPath: microphone.path)
         let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let key = "\(version)|\(microphone.lastPathComponent)|\(size)|\(modified)|" + String(decoding: (try? encoder.encode(steps)) ?? Data(), as: UTF8.self)
+        let key = "\(version)|\(microphone.lastPathComponent)|\(size)|\(modified)|"
+            + String(decoding: (try? encoder.encode(sound(of: settings))) ?? Data(), as: UTF8.self)
         let digest = SHA256.hash(data: Data(key.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
-        return microphone.deletingLastPathComponent().appendingPathComponent(prefix + digest).appendingPathExtension(microphone.pathExtension)
+        return microphone.deletingLastPathComponent().appendingPathComponent(lead(of: microphone) + digest).appendingPathExtension(microphone.pathExtension)
+    }
+
+    /// The start of the name of every cleaned copy of `microphone`.
+    private static func lead(of microphone: URL) -> String { prefix + microphone.deletingPathExtension().lastPathComponent + "-" }
+
+    /// The settings without Noise removal, whose copy these settings play where Noise removal cannot run.
+    private static func withoutNoiseRemoval(_ settings: VoiceCleanup) -> VoiceCleanup {
+        var without = settings
+        without.noiseRemovalOn = false
+        return without
+    }
+
+    /// The cleaned copy of `microphone` that plays for `settings` now, nil until it is made. Where Noise removal cannot run, that
+    /// is the copy made without it. Preview and export look it up here, so they never wait for a copy that is already there.
+    static func ready(for microphone: URL, settings: VoiceCleanup, soundIsolation: AudioComponentDescription = NoiseRemoval.apple) -> URL? {
+        let fm = FileManager.default, asked = file(for: microphone, settings: settings)
+        if fm.fileExists(atPath: asked.path) { return asked }
+        guard sound(of: settings).runsNoiseRemoval, !NoiseRemoval.isHere(soundIsolation) else { return nil }
+        let without = file(for: microphone, settings: withoutNoiseRemoval(settings))
+        return fm.fileExists(atPath: without.path) ? without : nil
     }
 
     /// The cleaned copy of `microphone` for `settings`, made first unless it is already there, and what its render had to leave out.
@@ -611,21 +649,19 @@ enum VoiceCleanupCache {
                         soundIsolation: AudioComponentDescription = NoiseRemoval.apple) throws -> (url: URL, report: VoiceCleanupReport) {
         let fm = FileManager.default
         let target = file(for: microphone, settings: settings)
-        guard !fm.fileExists(atPath: target.path) else { return (target, VoiceCleanupReport()) }
+        if let ready = ready(for: microphone, settings: settings, soundIsolation: soundIsolation) {
+            return (ready, VoiceCleanupReport(noiseRemovalUnavailable: ready != target))
+        }
         let folder = microphone.deletingLastPathComponent()
         // Made under a hidden name and moved in whole, so a half-written file never carries a settings name.
-        let partial = folder.appendingPathComponent(".\(prefix)\(UUID().uuidString)").appendingPathExtension(microphone.pathExtension)
+        let partial = folder.appendingPathComponent("." + lead(of: microphone) + UUID().uuidString).appendingPathExtension(microphone.pathExtension)
         let report: VoiceCleanupReport
         var made = target
         do {
             report = try VoiceCleanupRenderer.render(microphone, settings: settings, to: partial, soundIsolation: soundIsolation)
             // Sound that skipped Noise removal is what the settings without it make, so it takes their name: these settings are
             // cleaned again, with Noise removal, once the unit runs.
-            if report.noiseRemovalUnavailable {
-                var without = settings
-                without.noiseRemovalOn = false
-                made = file(for: microphone, settings: without)
-            }
+            if report.noiseRemovalUnavailable { made = file(for: microphone, settings: withoutNoiseRemoval(settings)) }
             if fm.fileExists(atPath: made.path) { try fm.removeItem(at: partial) } else { try fm.moveItem(at: partial, to: made) }
         } catch {
             try? fm.removeItem(at: partial)
@@ -634,12 +670,22 @@ enum VoiceCleanupCache {
         return (made, report)
     }
 
-    /// Removes the cleaned copies of `microphone` but the ones in `keeping`.
-    static func prune(beside microphone: URL, keeping: Set<URL>) {
+    /// Removes the cleaned copies of `microphone` but the ones in `keeping`, and with `partials` also the half-written ones: only
+    /// when no render of `microphone` is writing one.
+    static func prune(beside microphone: URL, keeping: Set<URL>, partials: Bool = false) {
         let fm = FileManager.default, folder = microphone.deletingLastPathComponent()
         let kept = Set(keeping.map(\.lastPathComponent))
-        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) && !kept.contains(name) {
+        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where !kept.contains(name) {
+            guard isCopy(name, of: microphone, partial: false) || partials && isCopy(name, of: microphone, partial: true) else { continue }
             try? fm.removeItem(at: folder.appendingPathComponent(name))
         }
+    }
+
+    /// Whether the file named `name` is a cleaned copy of `microphone`, or with `partial` one being written.
+    private static func isCopy(_ name: String, of microphone: URL, partial: Bool) -> Bool {
+        let lead = (partial ? "." : "") + lead(of: microphone), ext = "." + microphone.pathExtension
+        guard name.hasPrefix(lead), name.hasSuffix(ext), name.count >= lead.count + ext.count else { return false }
+        let stem = String(name.dropFirst(lead.count).dropLast(ext.count))
+        return partial ? UUID(uuidString: stem) != nil : stem.count == 16 && stem.allSatisfy(\.isHexDigit)
     }
 }

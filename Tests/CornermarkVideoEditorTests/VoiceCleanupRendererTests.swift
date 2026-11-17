@@ -178,9 +178,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
         try TestSound.write(input, seconds: 3, channels: [[(50, 0.3), (1_000, 0.3)]])
         var settings = onlyLowCut(at: 150)
         settings.noiseRemovalOn = true
-        let missing = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: 0x6E6F_6E65, componentManufacturer: 0x6E6F_6E65,
-                                                componentFlags: 0, componentFlagsMask: 0)
-        let report = try VoiceCleanupRenderer.render(input, settings: settings, to: output, soundIsolation: missing)
+        let report = try VoiceCleanupRenderer.render(input, settings: settings, to: output, soundIsolation: missingUnit)
 
         XCTAssertTrue(report.noiseRemovalUnavailable, "the renderer says Noise removal could not run")
         let before = try TestSound.read(input), after = try TestSound.read(output)
@@ -196,9 +194,7 @@ final class VoiceCleanupRendererTests: XCTestCase {
         let mic = folder.appendingPathComponent("mic.m4a")
         try TestSound.write(mic, seconds: 3, channels: [[]], extra: TestSound.noise(amplitude: 0.05))
         let settings = onlyNoiseRemoval(strength: 1)
-        let missing = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: 0x6E6F_6E65, componentManufacturer: 0x6E6F_6E65,
-                                                componentFlags: 0, componentFlagsMask: 0)
-        let without = try VoiceCleanupCache.prepare(mic, settings: settings, soundIsolation: missing)
+        let without = try VoiceCleanupCache.prepare(mic, settings: settings, soundIsolation: missingUnit)
         XCTAssertTrue(without.report.noiseRemovalUnavailable, "the report says Noise removal could not run")
         let noise = TestSound.rms(try TestSound.read(without.url).channels[0], rate: 48_000, from: 1, to: 2.5)
 
@@ -206,6 +202,55 @@ final class VoiceCleanupRendererTests: XCTestCase {
         XCTAssertFalse(with.report.noiseRemovalUnavailable)
         XCTAssertLessThan(TestSound.rms(try TestSound.read(with.url).channels[0], rate: 48_000, from: 1, to: 2.5), noise / 2,
                           "the same settings, once the unit runs, are cleaned again and not served the track made without it")
+    }
+
+    private let missingUnit = AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: 0x6E6F_6E65,
+                                                        componentManufacturer: 0x6E6F_6E65, componentFlags: 0, componentFlagsMask: 0)
+
+    func testWhereNoiseRemovalCannotRunTheCopyCleanedWithoutItIsReadyForTheSettings() throws {
+        let mic = folder.appendingPathComponent("mic.m4a")
+        try TestSound.write(mic, seconds: 1, channels: [[(50, 0.3), (1_000, 0.3)]])
+        var settings = VoiceCleanup(isOn: true)
+        settings.levelingOn = false
+        XCTAssertNil(VoiceCleanupCache.ready(for: mic, settings: settings, soundIsolation: missingUnit), "nothing is made yet")
+        let made = try VoiceCleanupCache.prepare(mic, settings: settings, soundIsolation: missingUnit)
+
+        XCTAssertEqual(VoiceCleanupCache.ready(for: mic, settings: settings, soundIsolation: missingUnit), made.url,
+                       "the copy made without Noise removal is what these settings play on this Mac")
+        let again = try VoiceCleanupCache.prepare(mic, settings: settings, soundIsolation: missingUnit)
+        XCTAssertEqual(again.url, made.url)
+        XCTAssertTrue(again.report.noiseRemovalUnavailable, "and it still says Noise removal could not run")
+        if TestSound.soundIsolationIsHere {
+            XCTAssertNil(VoiceCleanupCache.ready(for: mic, settings: settings), "where the unit runs, the settings are cleaned again with it")
+        }
+    }
+
+    func testValuesOfStepsThatAreOffDoNotMakeAnotherCleanedCopy() {
+        let mic = folder.appendingPathComponent("mic.m4a")
+        func file(_ change: (inout VoiceCleanup) -> Void) -> URL {
+            var settings = VoiceCleanup(isOn: true)
+            change(&settings)
+            return VoiceCleanupCache.file(for: mic, settings: settings)
+        }
+        XCTAssertEqual(file { $0.lowCutOn = false; $0.lowCutFrequency = 100 }, file { $0.lowCutOn = false; $0.lowCutFrequency = 150 })
+        XCTAssertEqual(file { $0.noiseRemovalOn = false; $0.noiseRemovalStrength = 0.3 }, file { $0.noiseRemovalOn = false })
+        XCTAssertEqual(file { $0.noiseRemovalStrength = 0 }, file { $0.noiseRemovalOn = false }, "Noise removal at 0 changes nothing")
+        XCTAssertEqual(file { $0.noiseGateOn = false; $0.noiseGateThreshold = -30 }, file { $0.noiseGateOn = false })
+        XCTAssertNotEqual(file { $0.lowCutFrequency = 100 }, file { $0.lowCutFrequency = 150 }, "a step that is on still counts")
+    }
+
+    func testARecordedFileThatChangedIsCleanedAgain() throws {
+        let mic = folder.appendingPathComponent("mic.m4a")
+        var settings = VoiceCleanup(isOn: true)
+        settings.levelingOn = false
+        try TestSound.write(mic, seconds: 1, channels: [[(1_000, 0.3)]])
+        let first = try VoiceCleanupCache.prepare(mic, settings: settings).url
+
+        try TestSound.write(mic, seconds: 2, channels: [[(1_000, 0.3)]])
+        XCTAssertNil(VoiceCleanupCache.ready(for: mic, settings: settings), "the copy of the old recording is not the new one's")
+        let second = try VoiceCleanupCache.prepare(mic, settings: settings).url
+        XCTAssertNotEqual(second, first)
+        XCTAssertEqual(try AVAudioFile(forReading: second).length, try AVAudioFile(forReading: mic).length, "it is made from the new recording")
     }
 
     func testLowCutRemovesSoundBelowItsFrequencyAndKeepsTheRest() throws {

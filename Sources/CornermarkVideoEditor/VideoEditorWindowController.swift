@@ -1213,8 +1213,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
         let recorded = folder.appendingPathComponent(name)
         let cleanup = project.edits.audio.voiceCleanup
         guard cleanup.isOn else { return recorded }
-        let cleaned = VoiceCleanupCache.file(for: recorded, settings: cleanup)
-        return FileManager.default.fileExists(atPath: cleaned.path) ? cleaned : recorded
+        return VoiceCleanupCache.ready(for: recorded, settings: cleanup) ?? recorded
     }
 
     /// Keeps the preview's Microphone track on the current Voice cleanup settings. A change asks for the cleaned copy in the background,
@@ -1241,7 +1240,7 @@ public final class VideoEditorWindowController: NSWindowController, NSWindowDele
             playMicrophone(recorded, lease: nil)
             return
         }
-        isPreparingCleanup = !FileManager.default.fileExists(atPath: VoiceCleanupCache.file(for: recorded, settings: wanted).path)
+        isPreparingCleanup = VoiceCleanupCache.ready(for: recorded, settings: wanted) == nil
         let lease = renders.lease(recorded, settings: wanted)
         askedLease = lease
         // Asked even when the copy is there, so a render for older settings still under way is superseded and cannot replace it.

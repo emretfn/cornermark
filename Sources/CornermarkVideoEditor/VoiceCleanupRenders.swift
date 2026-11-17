@@ -62,8 +62,7 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     }
 
     private func job(_ microphone: URL, settings: VoiceCleanup, keep: Bool) -> (task: Task<Cleaned, Error>, id: Int) {
-        var steps = settings
-        steps.isOn = true
+        let steps = VoiceCleanupCache.sound(of: settings)
         lock.lock()
         defer { lock.unlock() }
         // A render that was stopped but has not ended yet serves nobody: the request starts a new one after it.
@@ -135,11 +134,12 @@ final class VoiceCleanupRenders: @unchecked Sendable {
         }
     }
 
-    /// Removes the copies of `microphone` cleaned for other settings, but `made` and the ones held, so the project keeps one.
+    /// Removes the copies of `microphone` cleaned for other settings, but `made` and the ones held, so the project keeps one. Called
+    /// as a render ends, when no other render of `microphone` writes, so half-written copies left by one that never finished go too.
     private func prune(_ microphone: URL, keeping made: URL) {
         lock.withLock {
             latest[microphone] = made
-            VoiceCleanupCache.prune(beside: microphone, keeping: Set(leases.keys).union([made]))
+            VoiceCleanupCache.prune(beside: microphone, keeping: Set(leases.keys).union([made]), partials: true)
         }
     }
 

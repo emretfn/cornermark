@@ -143,6 +143,32 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path))
     }
 
+    func testARenderLeavesTheCleanedCopiesOfAnotherMicrophoneInTheFolder() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a"), other = folder.appendingPathComponent("mic-2.m4a")
+        try TestSound.write(mic, seconds: 1, channels: [[(1_000, 0.3)]])
+        try TestSound.write(other, seconds: 1, channels: [[(1_000, 0.3)]])
+        let renders = VoiceCleanupRenders()
+
+        let theOthers = try await renders.cleaned(other, settings: lowCut(100)).url
+        _ = try await renders.cleaned(mic, settings: lowCut(120))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: theOthers.path), "a render for one microphone removes only its own copies")
+    }
+
+    func testARenderRemovesHalfWrittenCopiesNoRenderIsWriting() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a")
+        try TestSound.write(mic, seconds: 1, channels: [[(1_000, 0.3)]])
+        // Left by a render that never finished, such as when the app quit part way.
+        let leftover = folder.appendingPathComponent(".\(VoiceCleanupCache.prefix)mic-\(UUID().uuidString).m4a")
+        try Data([1, 2, 3]).write(to: leftover)
+
+        let made = try await VoiceCleanupRenders().cleaned(mic, settings: lowCut(100)).url
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: folder.path)), ["mic.m4a", made.lastPathComponent])
+    }
+
     private func makeFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("renders-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
