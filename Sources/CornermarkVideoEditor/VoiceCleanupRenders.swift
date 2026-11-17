@@ -25,6 +25,8 @@ final class VoiceCleanupRenders: @unchecked Sendable {
     private var nextID = 0
     /// How many times each cleaned file is leased.
     private var leases: [URL: Int] = [:]
+    /// The copy of each microphone rendered last, which stays when nobody holds it.
+    private var latest: [URL: URL] = [:]
 
     /// `render` makes the cleaned file and returns where it is; it should stop with `CancellationError` when its task is cancelled.
     init(render: @escaping Render = { try VoiceCleanupCache.prepare($0, settings: $1) }) { self.render = render }
@@ -100,28 +102,34 @@ final class VoiceCleanupRenders: @unchecked Sendable {
 
     /// A hold on the cleaned copy of a microphone for some settings: while it is held, a render for other settings does not remove it.
     struct Lease: Hashable {
+        let microphone: URL
         let file: URL
     }
 
     /// Holds the cleaned copy of `microphone` for `settings`, made or not, until `release`. Taken before the copy is asked for, so no
     /// render can remove it between the time it is made and the time it is opened.
     func lease(_ microphone: URL, settings: VoiceCleanup) -> Lease {
-        let lease = Lease(file: VoiceCleanupCache.file(for: microphone, settings: settings))
+        let lease = Lease(microphone: microphone, file: VoiceCleanupCache.file(for: microphone, settings: settings))
         lock.withLock { leases[lease.file, default: 0] += 1 }
         return lease
     }
 
-    /// Lets the next finished render remove the leased copy, once nobody else holds it.
+    /// Gives the leased copy up. Once nobody holds it, it goes if newer settings were rendered since, and else with the next render.
     func release(_ lease: Lease) {
         lock.withLock {
             guard let count = leases[lease.file] else { return }
             leases[lease.file] = count > 1 ? count - 1 : nil
+            guard count == 1, let made = latest[lease.microphone] else { return }
+            VoiceCleanupCache.prune(beside: lease.microphone, keeping: Set(leases.keys).union([made]))
         }
     }
 
     /// Removes the copies of `microphone` cleaned for other settings, but `made` and the ones held, so the project keeps one.
     private func prune(_ microphone: URL, keeping made: URL) {
-        lock.withLock { VoiceCleanupCache.prune(beside: microphone, keeping: Set(leases.keys).union([made])) }
+        lock.withLock {
+            latest[microphone] = made
+            VoiceCleanupCache.prune(beside: microphone, keeping: Set(leases.keys).union([made]))
+        }
     }
 
     private func finished(_ microphone: URL, id: Int) {

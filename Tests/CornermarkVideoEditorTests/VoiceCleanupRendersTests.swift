@@ -115,9 +115,10 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path))
 
         renders.release(lease)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path), "released, it goes, since newer settings were rendered since")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path), "and the latest stays")
         let latest = try await renders.cleaned(mic, settings: lowCut(140))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path), "released, it goes with the next render")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: newer.path), "a file nobody holds goes too")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newer.path), "a file nobody holds goes with the next render")
         XCTAssertTrue(FileManager.default.fileExists(atPath: latest.path))
     }
 
