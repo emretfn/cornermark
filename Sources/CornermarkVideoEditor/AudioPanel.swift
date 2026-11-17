@@ -21,23 +21,33 @@ final class AudioPanel: SettingsPanel {
     private var cleanupRow: NSStackView!
     /// Whether the cleaned Microphone track for the current settings is being made; the preview plays the previous sound meanwhile.
     var isPreparing = false { didSet { preparing.isHidden = !isPreparing } }
-    private let lowCut = Checkbox(title: tr("Low cut"))
-    private var lowCutFrequency: TrackingSlider!
-    private var lowCutRow: NSStackView!
-    private let noiseRemoval = Checkbox(title: tr("Noise removal"))
-    private var noiseRemovalStrength: TrackingSlider!
-    private var noiseRemovalRow: NSStackView!
+
+    /// One Voice cleanup step's row: its checkbox, and the row with its one setting, if it has one.
+    private struct StepRow {
+        let box: Checkbox
+        let isOn: WritableKeyPath<VoiceCleanup, Bool>
+        let setting: Setting?
+
+        struct Setting {
+            let slider: TrackingSlider
+            let row: NSStackView
+            let value: WritableKeyPath<VoiceCleanup, Double>
+            /// The value the slider shows, as the project keeps it.
+            let round: (Double) -> Double
+            let text: (Double) -> String
+            /// Folds one drag into one undo step.
+            let key: CoalescingKey
+        }
+    }
+    private var steps: [StepRow] = []
+    private var noiseRemovalStep: StepRow { steps[1] }
     private var noiseRemovalNote: NSTextField!
-    /// False once an export reported Noise removal unavailable. The panel also asks the renderer whether the unit is on this Mac; when
+    /// False once a render reported Noise removal unavailable. The panel also asks the renderer whether the unit is on this Mac; when
     /// either says no, the row is greyed out and says so, and the other steps still clean.
     var noiseRemovalAvailable = true {
         didSet { showVoiceCleanup(audio.voiceCleanup, hidden: cleanup.isHidden) }
     }
     private var noiseRemovalRuns: Bool { noiseRemovalAvailable && VoiceCleanupRenderer.noiseRemovalAvailable }
-    private let noiseGate = Checkbox(title: tr("Noise gate"))
-    private var noiseGateThreshold: TrackingSlider!
-    private var noiseGateRow: NSStackView!
-    private let leveling = Checkbox(title: tr("Leveling"))
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -59,7 +69,7 @@ final class AudioPanel: SettingsPanel {
         }
         add(views)
         if let mic = rows[.microphone] { stack.setCustomSpacing(DS.Space.s16, after: mic.levelRow) }
-        stack.setCustomSpacing(DS.Space.s16, after: leveling)
+        if let last = steps.last { stack.setCustomSpacing(DS.Space.s16, after: last.box) }
         setAccessibilityIdentifier("video.audio")
     }
 
@@ -69,41 +79,56 @@ final class AudioPanel: SettingsPanel {
     private func voiceCleanupViews() -> [NSView] {
         cleanup.setAccessibilityIdentifier("video.audio.voiceCleanup")
         cleanup.toolTip = tr("Cleans up the microphone in preview and export. The recorded sound is never changed.")
+        cleanup.target = self
+        cleanup.action = #selector(cleanupToggled)
         preparing.setAccessibilityIdentifier("video.audio.voiceCleanup.preparing")
         preparing.toolTip = tr("Preparing the cleaned microphone sound. The preview plays the previous sound until it is ready.")
         preparing.isHidden = true
         cleanupRow = NSStackView(views: [cleanup, preparing])
         cleanupRow.spacing = DS.Space.s8
         cleanupRow.alignment = .firstBaseline
-        lowCut.setAccessibilityIdentifier("video.audio.voiceCleanup.lowCut")
-        lowCut.toolTip = tr("Removes hum and rumble below the chosen frequency.")
-        noiseRemoval.setAccessibilityIdentifier("video.audio.voiceCleanup.noiseRemoval")
-        noiseRemoval.toolTip = tr("Takes steady background noise, like a fan or a busy street, out from behind your voice.")
-        noiseGate.setAccessibilityIdentifier("video.audio.voiceCleanup.noiseGate")
-        noiseGate.toolTip = tr("Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences.")
-        leveling.setAccessibilityIdentifier("video.audio.voiceCleanup.leveling")
-        leveling.toolTip = tr("Evens out loud and soft speech and brings the microphone to a steady loudness.")
-        for box in [cleanup, lowCut, noiseRemoval, noiseGate, leveling] {
-            box.target = self
-            box.action = #selector(cleanupToggled)
-        }
-        lowCutFrequency = slider(id: "video.audio.voiceCleanup.lowCut.frequency", label: tr("Low cut frequency"), range: VoiceCleanup.lowCutRange,
-                                 action: #selector(lowCutSlid))
-        lowCutFrequency.format = { Self.hertz($0) }
-        lowCutRow = row(tr("Frequency"), [lowCutFrequency])
-        lowCutRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        noiseRemovalStrength = slider(id: "video.audio.voiceCleanup.noiseRemoval.strength", label: tr("Noise removal strength"),
-                                      range: VoiceCleanup.noiseRemovalRange, action: #selector(noiseRemovalSlid))
-        noiseRemovalStrength.format = { Digits.percent($0) }
-        noiseRemovalRow = row(tr("Strength"), [noiseRemovalStrength])
-        noiseRemovalRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
+        steps = [
+            step(tr("Low cut"), id: "lowCut", tip: tr("Removes hum and rumble below the chosen frequency."), isOn: \.lowCutOn,
+                 setting: (tr("Frequency"), tr("Low cut frequency"), VoiceCleanup.lowCutRange, \.lowCutFrequency, "frequency",
+                           { $0.rounded() }, { Self.hertz($0) })),
+            step(tr("Noise removal"), id: "noiseRemoval", tip: tr("Takes steady background noise, like a fan or a busy street, out from behind your voice."),
+                 isOn: \.noiseRemovalOn,
+                 setting: (tr("Strength"), tr("Noise removal strength"), VoiceCleanup.noiseRemovalRange, \.noiseRemovalStrength, "strength",
+                           { ($0 * 100).rounded() / 100 }, { Digits.percent($0) })),
+            step(tr("Noise gate"), id: "noiseGate",
+                 tip: tr("Silences the microphone while its sound stays below the threshold, such as breaths and keystrokes between sentences."),
+                 isOn: \.noiseGateOn,
+                 setting: (tr("Threshold"), tr("Noise gate threshold"), VoiceCleanup.noiseGateRange, \.noiseGateThreshold, "threshold",
+                           { $0.rounded() }, { Self.decibels($0) })),
+            step(tr("Leveling"), id: "leveling", tip: tr("Evens out loud and soft speech and brings the microphone to a steady loudness."),
+                 isOn: \.levelingOn, setting: nil),
+        ]
         noiseRemovalNote = caption(tr("Not available on this Mac"), id: "video.audio.voiceCleanup.noiseRemoval.unavailable")
-        noiseGateThreshold = slider(id: "video.audio.voiceCleanup.noiseGate.threshold", label: tr("Noise gate threshold"), range: VoiceCleanup.noiseGateRange,
-                                    action: #selector(noiseGateSlid))
-        noiseGateThreshold.format = { Self.decibels($0) }
-        noiseGateRow = row(tr("Threshold"), [noiseGateThreshold])
-        noiseGateRow.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
-        return [cleanupRow, lowCut, lowCutRow, noiseRemoval, noiseRemovalRow, noiseRemovalNote, noiseGate, noiseGateRow, leveling]
+        var views: [NSView] = [cleanupRow]
+        for step in steps {
+            views.append(step.box)
+            if let setting = step.setting { views.append(setting.row) }
+            if step.box === noiseRemovalStep.box { views.append(noiseRemovalNote) }
+        }
+        return views
+    }
+
+    /// A step's checkbox `video.audio.voiceCleanup.<id>` and, with `setting`, its one slider `...<id>.<name>` in a row titled `row`.
+    private func step(_ title: String, id: String, tip: String, isOn: WritableKeyPath<VoiceCleanup, Bool>,
+                      setting: (row: String, label: String, range: ClosedRange<Double>, value: WritableKeyPath<VoiceCleanup, Double>, name: String,
+                                round: (Double) -> Double, text: (Double) -> String)?) -> StepRow {
+        let box = Checkbox(title: title)
+        box.setAccessibilityIdentifier("video.audio.voiceCleanup.\(id)")
+        box.toolTip = tip
+        box.target = self
+        box.action = #selector(cleanupToggled)
+        guard let setting else { return StepRow(box: box, isOn: isOn, setting: nil) }
+        let slider = slider(id: "video.audio.voiceCleanup.\(id).\(setting.name)", label: setting.label, range: setting.range, action: #selector(stepSlid(_:)))
+        slider.format = setting.text
+        let row = row(setting.row, [slider])
+        row.widthAnchor.constraint(equalToConstant: Self.inner).isActive = true
+        return StepRow(box: box, isOn: isOn, setting: .init(slider: slider, row: row, value: setting.value, round: setting.round, text: setting.text,
+                                                            key: CoalescingKey("audio.voiceCleanup.\(id)")))
     }
 
     static func hertz(_ value: Double) -> String { tr("{frequency} Hz", ["frequency": Digits.text(Int(value.rounded()))]) }
@@ -128,88 +153,64 @@ final class AudioPanel: SettingsPanel {
 
     /// Step rows stay readable but greyed while the master switch is off, like a section whose switch is off.
     private func showVoiceCleanup(_ settings: VoiceCleanup, hidden: Bool) {
-        for view in [cleanupRow, cleanup, lowCut, lowCutRow, noiseRemoval, noiseRemovalRow, noiseGate, noiseGateRow, leveling] as [NSView] { view.isHidden = hidden }
+        cleanupRow.isHidden = hidden
+        cleanup.isHidden = hidden
         cleanup.state = settings.isOn ? .on : .off
-        lowCut.state = settings.lowCutOn ? .on : .off
-        lowCut.isEnabled = settings.isOn
-        lowCutFrequency.doubleValue = settings.lowCutFrequency
-        lowCutFrequency.setAccessibilityValueDescription(Self.hertz(settings.lowCutFrequency))
-        let frequencyOn = settings.isOn && settings.lowCutOn
-        lowCutFrequency.isEnabled = frequencyOn
-        (lowCutRow.arrangedSubviews.first as? NSTextField)?.textColor = frequencyOn ? DS.Color.textSecondary : DS.Color.textDisabled
         let runs = noiseRemovalRuns
         noiseRemovalNote.isHidden = hidden || runs
-        noiseRemoval.state = settings.noiseRemovalOn && runs ? .on : .off
-        noiseRemoval.isEnabled = settings.isOn && runs
-        noiseRemovalStrength.doubleValue = settings.noiseRemovalStrength
-        noiseRemovalStrength.setAccessibilityValueDescription(Digits.percent(settings.noiseRemovalStrength))
-        let strengthOn = noiseRemoval.isEnabled && settings.noiseRemovalOn
-        noiseRemovalStrength.isEnabled = strengthOn
-        (noiseRemovalRow.arrangedSubviews.first as? NSTextField)?.textColor = strengthOn ? DS.Color.textSecondary : DS.Color.textDisabled
-        noiseGate.state = settings.noiseGateOn ? .on : .off
-        noiseGate.isEnabled = settings.isOn
-        noiseGateThreshold.doubleValue = settings.noiseGateThreshold
-        noiseGateThreshold.setAccessibilityValueDescription(Self.decibels(settings.noiseGateThreshold))
-        let thresholdOn = settings.isOn && settings.noiseGateOn
-        noiseGateThreshold.isEnabled = thresholdOn
-        (noiseGateRow.arrangedSubviews.first as? NSTextField)?.textColor = thresholdOn ? DS.Color.textSecondary : DS.Color.textDisabled
-        leveling.state = settings.levelingOn ? .on : .off
-        leveling.isEnabled = settings.isOn
+        for step in steps {
+            let available = step.box !== noiseRemovalStep.box || runs
+            step.box.isHidden = hidden
+            step.box.state = settings[keyPath: step.isOn] && available ? .on : .off
+            step.box.isEnabled = settings.isOn && available
+            guard let setting = step.setting else { continue }
+            setting.row.isHidden = hidden
+            let value = settings[keyPath: setting.value]
+            setting.slider.doubleValue = value
+            setting.slider.setAccessibilityValueDescription(setting.text(value))
+            let on = step.box.isEnabled && settings[keyPath: step.isOn]
+            setting.slider.isEnabled = on
+            (setting.row.arrangedSubviews.first as? NSTextField)?.textColor = on ? DS.Color.textSecondary : DS.Color.textDisabled
+        }
     }
 
     private func track(of control: NSControl) -> AudioTrack? { control.identifier.flatMap { AudioTrack(rawValue: $0.rawValue) } }
+
+    /// Takes `next` as the panel's sound and passes it on, unless nothing changed.
+    private func commit(_ next: AudioEdits, key: CoalescingKey?) {
+        guard next != audio else { return }
+        audio = next
+        onChange(next, key)
+    }
 
     @objc private func toggled(_ sender: Checkbox) {
         guard let track = track(of: sender) else { return }
         var next = audio
         next[track].isOn = sender.state == .on
-        audio = next
-        onChange(next, nil)
+        commit(next, key: nil)
     }
 
     @objc private func cleanupToggled() {
         var next = audio
         next.voiceCleanup.isOn = cleanup.state == .on
-        next.voiceCleanup.lowCutOn = lowCut.state == .on
         // A greyed-out Noise removal shows off but keeps what the project says, so the project sounds the same on a Mac that has it.
-        if noiseRemovalRuns { next.voiceCleanup.noiseRemovalOn = noiseRemoval.state == .on }
-        next.voiceCleanup.noiseGateOn = noiseGate.state == .on
-        next.voiceCleanup.levelingOn = leveling.state == .on
-        guard next != audio else { return }
-        audio = next
-        onChange(next, nil)
+        for step in steps where step.box !== noiseRemovalStep.box || noiseRemovalRuns {
+            next.voiceCleanup[keyPath: step.isOn] = step.box.state == .on
+        }
+        commit(next, key: nil)
     }
 
-    @objc private func lowCutSlid() {
+    @objc private func stepSlid(_ sender: TrackingSlider) {
+        guard let setting = steps.lazy.compactMap(\.setting).first(where: { $0.slider === sender }) else { return }
         var next = audio
-        next.voiceCleanup.lowCutFrequency = lowCutFrequency.doubleValue.rounded()
-        guard next != audio else { return }
-        audio = next
-        onChange(next, CoalescingKey("audio.voiceCleanup.lowCut"))
-    }
-
-    @objc private func noiseRemovalSlid() {
-        var next = audio
-        next.voiceCleanup.noiseRemovalStrength = (noiseRemovalStrength.doubleValue * 100).rounded() / 100
-        guard next != audio else { return }
-        audio = next
-        onChange(next, CoalescingKey("audio.voiceCleanup.noiseRemoval"))
-    }
-
-    @objc private func noiseGateSlid() {
-        var next = audio
-        next.voiceCleanup.noiseGateThreshold = noiseGateThreshold.doubleValue.rounded()
-        guard next != audio else { return }
-        audio = next
-        onChange(next, CoalescingKey("audio.voiceCleanup.noiseGate"))
+        next.voiceCleanup[keyPath: setting.value] = setting.round(sender.doubleValue)
+        commit(next, key: setting.key)
     }
 
     @objc private func slid(_ sender: TrackingSlider) {
         guard let track = track(of: sender) else { return }
         var next = audio
         next[track].level = (sender.doubleValue * 100).rounded() / 100
-        guard next != audio else { return }
-        audio = next
-        onChange(next, CoalescingKey("audio.\(track.rawValue).level"))
+        commit(next, key: CoalescingKey("audio.\(track.rawValue).level"))
     }
 }
