@@ -160,6 +160,25 @@ func checkVideoAfterRecording() async throws {
     check(player?.player.rate == 0, "and the harness never starts it")
     live.window?.close()
 
+    // The same recording without its microphone has no Voice cleanup to show.
+    let noMicrophone = w.root.appendingPathComponent("no-microphone", isDirectory: true)
+    try FileManager.default.createDirectory(at: noMicrophone, withIntermediateDirectories: true)
+    var withoutMicrophone = original
+    withoutMicrophone.source.microphone = nil
+    for name in [original.source.video, original.source.systemAudio].compactMap({ $0 }) {
+        try FileManager.default.copyItem(at: folder.appendingPathComponent(name), to: noMicrophone.appendingPathComponent(name))
+    }
+    try RecordingProjectFile.write(withoutMicrophone, to: noMicrophone)
+    let unheard = try VideoEditorWindowController.open(folder: noMicrophone)
+    unheard.select(.audio)
+    let cleanupIDs = ["video.audio.voiceCleanup", "video.audio.voiceCleanup.lowCut", "video.audio.voiceCleanup.noiseRemoval",
+                      "video.audio.voiceCleanup.noiseGate", "video.audio.voiceCleanup.leveling"]
+    check(unheard.view(identifier: "video.audio.systemAudio")?.isHidden == false && unheard.view(identifier: "video.audio.microphone")?.isHidden == true
+          && cleanupIDs.allSatisfy { unheard.view(identifier: $0)?.isHidden == true },
+          "a recording without a microphone hides Voice cleanup and keeps its System audio row",
+          detail: cleanupIDs.map { "\($0) hidden \(unheard.view(identifier: $0)?.isHidden.description ?? "missing")" }.joined(separator: ", "))
+    unheard.window?.close()
+
     guard let editor = w.coordinator.openVideoEditor(folder), let window = editor.window else { return check(false, "the project opens in the editor") }
     defer { w.coordinator.closeAllEditors() }
     check(!editor.playsSound, "the coordinator turns sound on only for an editor on screen, so an offscreen run is silent")
