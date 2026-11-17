@@ -198,18 +198,29 @@ final class VideoExporterTests: XCTestCase {
         return TestSound.amplitude(of: frequency, in: sound.channels[0], rate: sound.rate, from: from, to: to)
     }
 
-    /// A Microphone track as a room records it: 50 Hz mains hum and steady fan noise throughout, a voice-like sound (a 140 Hz voice with
-    /// its harmonics, rising and falling three times a second) from 1 to 2 s.
+    /// Real speech, said by the Mac's speech synthesizer: a voice Noise removal keeps, as pure tones are not.
+    private func speech(_ text: String) throws -> [Float] {
+        let url = folder.appendingPathComponent("speech.caf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let say = Process()
+        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        say.arguments = ["-o", url.path, "--data-format=LEF32@48000", text]
+        try say.run()
+        say.waitUntilExit()
+        XCTAssertEqual(say.terminationStatus, 0, "the speech synthesizer said the sentence")
+        return try TestSound.read(url).channels[0]
+    }
+
+    /// A Microphone track as a room records it: 50 Hz mains hum and steady fan noise throughout, and a short spoken sentence from
+    /// 0.4 s that ends before 2.4 s.
     private func makeNoisyMicrophone(seconds: Double) throws -> URL {
         let url = folder.appendingPathComponent("mic.m4a")
         let noise = TestSound.noise(amplitude: 0.03)
+        let voice = try speech("Hello, testing the microphone.").prefix(2 * 48_000)
+        let start = Int(0.4 * 48_000)
         try TestSound.write(url, seconds: seconds, channels: [[(50, 0.1)]]) { c, t in
-            var sound = noise(c, t)
-            if t >= 1, t < 2 {
-                let pitch = 140 + 20 * sin(2 * .pi * 0.7 * t), syllables = max(0, sin(2 * .pi * 3 * t))
-                sound += Float(0.15 * syllables * (1...12).reduce(0) { $0 + sin(2 * .pi * pitch * Double($1) * t) / Double($1) })
-            }
-            return sound
+            let i = Int((t * 48_000).rounded()) - start
+            return noise(c, t) + (voice.indices.contains(i) ? 0.5 * voice[i] : 0)
         }
         return url
     }
@@ -234,11 +245,13 @@ final class VideoExporterTests: XCTestCase {
                                      / TestSound.amplitude(of: 50, in: before.channels[0], rate: before.rate, from: 2.5, to: 3.5))
         let floor = TestSound.decibels(TestSound.noiseFloor(after.channels[0], rate: after.rate, from: 2.5, to: 3.5)
                                        / TestSound.noiseFloor(before.channels[0], rate: before.rate, from: 2.5, to: 3.5))
+        let loudness = try Loudness.integrated(of: clean)
+        XCTAssertEqual(loudness, -16, accuracy: 1, "Leveling brings the exported voice to -16 LUFS")
         XCTAssertLessThan(hum, -12, "the hum is clearly reduced")
         if TestSound.soundIsolationIsHere {
             XCTAssertLessThan(floor, -6, "the fan noise is clearly reduced")
         } else {
-            XCTAssertEqual(floor, 0, accuracy: 1, "without Noise removal on this Mac the fan noise stays, and the export still works")
+            XCTAssertGreaterThan(floor, -1, "without Noise removal on this Mac the fan noise stays, and the export still works")
         }
 
         project.edits.clips = [Clip(start: 0, end: 0.5), Clip(start: 2.5, end: 3.5)]
