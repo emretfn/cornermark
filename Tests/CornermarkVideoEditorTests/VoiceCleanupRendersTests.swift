@@ -122,6 +122,27 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: latest.path))
     }
 
+    func testALeaseAlsoHoldsTheCopyMadeWithoutNoiseRemovalWhenItCouldNotRun() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a")
+        // Stands in for a Mac whose sound isolation unit fails: the copy takes the name of the settings without Noise removal.
+        let renders = VoiceCleanupRenders { microphone, settings in
+            var without = settings
+            without.noiseRemovalOn = false
+            let made = VoiceCleanupCache.file(for: microphone, settings: without)
+            try Data().write(to: made)
+            return (made, VoiceCleanupReport(noiseRemovalUnavailable: true))
+        }
+
+        let lease = renders.lease(mic, settings: lowCut(100))
+        let exported = try await renders.cleaned(mic, settings: lowCut(100), keep: true).url
+        _ = try await renders.cleaned(mic, settings: lowCut(120))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exported.path), "the export still holds the copy it got")
+        renders.release(lease)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path))
+    }
+
     private func makeFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("renders-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
