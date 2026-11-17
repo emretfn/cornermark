@@ -19,10 +19,9 @@ public enum VoiceCleanupRenderer {
 
     /// `render`, with Noise removal done by the audio unit `soundIsolation` describes, so a test can name one that is not there.
     static func render(_ input: URL, settings: VoiceCleanup, to output: URL, soundIsolation: AudioComponentDescription) throws -> VoiceCleanupReport {
-        let wanted = settings.noiseRemovalOn && settings.noiseRemovalStrength > 0
         let steps = try write(input, settings: settings, to: output, soundIsolation: soundIsolation)
         let noiseRemoval = steps.lazy.compactMap { $0 as? NoiseRemoval }.first
-        guard wanted, noiseRemoval?.failed != false else { return VoiceCleanupReport() }
+        guard settings.runsNoiseRemoval, noiseRemoval?.failed != false else { return VoiceCleanupReport() }
         if noiseRemoval != nil {
             // The unit failed part way: the file is cleaned again from the start without it, so no stretch carries half a step.
             var without = settings
@@ -103,8 +102,7 @@ public enum VoiceCleanupRenderer {
     static func chain(_ settings: VoiceCleanup, format: AVAudioFormat, soundIsolation: AudioComponentDescription = NoiseRemoval.apple) -> [CleanupStep] {
         var steps: [CleanupStep] = []
         if settings.lowCutOn { steps.append(LowCut(frequency: settings.lowCutFrequency, format: format)) }
-        if settings.noiseRemovalOn, settings.noiseRemovalStrength > 0,
-           let step = NoiseRemoval(strength: settings.noiseRemovalStrength, format: format, unit: soundIsolation) { steps.append(step) }
+        if settings.runsNoiseRemoval, let step = NoiseRemoval(strength: settings.noiseRemovalStrength, format: format, unit: soundIsolation) { steps.append(step) }
         if settings.noiseGateOn { steps.append(PassThrough()) }
         if settings.levelingOn { steps.append(Leveling(format: format)) }
         return steps

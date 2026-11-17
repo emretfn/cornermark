@@ -21,6 +21,9 @@ public struct VoiceCleanup: Codable, Equatable, Sendable {
     public var noiseGateThreshold: Double { didSet { noiseGateThreshold = Self.clamp(noiseGateThreshold, Self.noiseGateRange) } }
     public var levelingOn: Bool
 
+    /// Noise removal changes the sound: it is on and its strength is above 0. At 0 the sound passes exactly as it came in.
+    public var runsNoiseRemoval: Bool { noiseRemovalOn && noiseRemovalStrength > 0 }
+
     private static func clamp(_ value: Double, _ range: ClosedRange<Double>) -> Double {
         value.isNaN ? range.lowerBound : min(max(value, range.lowerBound), range.upperBound)
     }
