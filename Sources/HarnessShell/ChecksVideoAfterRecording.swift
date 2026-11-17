@@ -303,6 +303,17 @@ func checkVideoAfterRecording() async throws {
         check(noiseBox?.isEnabled == false && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false,
               "on a Mac without the sound isolation unit, Noise removal is greyed out and says it is not available")
     }
+    // As after an export that could not run Noise removal.
+    editor.noiseRemovalAvailable = false
+    check(noiseBox?.isEnabled == false && noiseBox?.state == .off && strengthSlider?.isEnabled == false && unavailableNote?.isHidden == false
+          && editor.state.project.edits.audio.voiceCleanup.noiseRemovalOn,
+          "when Noise removal cannot run, its box and strength are greyed out, a note says it is not available, and the project keeps it on")
+    snapshotEditor(editor, name: "video-after-audio-noise-removal-unavailable")
+    editor.noiseRemovalAvailable = true
+    if VoiceCleanupRenderer.noiseRemovalAvailable {
+        check(noiseBox?.isEnabled == true && noiseBox?.state == .on && strengthSlider?.isEnabled == true && unavailableNote?.isHidden == true,
+              "and it comes back as it was once it can run")
+    }
     act("video.audio.voiceCleanup.leveling") { ($0 as? NSButton)?.performClick(nil) }
     check(!editor.state.project.edits.audio.voiceCleanup.levelingOn && editor.state.project.edits.audio.voiceCleanup.isOn,
           "the Leveling box turns Leveling off and leaves the rest of Voice cleanup on")
