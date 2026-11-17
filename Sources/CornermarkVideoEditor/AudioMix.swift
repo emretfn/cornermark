@@ -15,13 +15,19 @@ final class AudioMixReader {
     private let reader: AVAssetReader
     private let output: AVAssetReaderAudioMixOutput
 
-    /// Nil when none of the files has sound. `gain` multiplies a file's samples, 1 as recorded. `clips` are the stretches of the source
+    /// Nil when none of the files has sound; throws when a cleaned Microphone track among them is missing. `gain` multiplies a file's samples, 1 as recorded. `clips` are the stretches of the source
     /// kept, back to back, nil for all of it, and `duration` cuts the mix at the output's end.
     init?(files: [(url: URL, gain: Double)], clips: [Clip]? = nil, duration: Double) async throws {
         let composition = AVMutableComposition()
         var tracks: [AVAssetTrack] = []
         var levels: [AVMutableAudioMixInputParameters] = []
-        for (file, gain) in files where FileManager.default.fileExists(atPath: file.path) {
+        for (file, gain) in files {
+            // A recorded track may be missing and the mix goes on without it. A cleaned Microphone track was made for this mix, so
+            // without it the video would ship without the voice.
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                if file.lastPathComponent.hasPrefix(VoiceCleanupCache.prefix) { throw ExportError.writer("the cleaned microphone sound is missing") }
+                continue
+            }
             let asset = AVURLAsset(url: file)
             guard let source = try await asset.loadTracks(withMediaType: .audio).first,
                   let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }

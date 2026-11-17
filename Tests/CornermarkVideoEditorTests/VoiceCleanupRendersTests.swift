@@ -2,22 +2,36 @@ import CornermarkCore
 import XCTest
 @testable import CornermarkVideoEditor
 
-/// A render that takes as long as the test wants: it notes which Low cut frequency it started on, then runs until released or cancelled.
+/// A render that takes as long as the test wants: it notes which Low cut frequency it started on, then runs until released or cancelled,
+/// and notes the ones it stopped on.
 private final class HeldRender: @unchecked Sendable {
     private let lock = NSLock()
     private var startedOn: [Double] = []
+    private var stoppedOn: [Double] = []
     private var isReleased = false
 
     var started: [Double] { lock.withLock { startedOn } }
+    var stopped: [Double] { lock.withLock { stoppedOn } }
     func release() { lock.withLock { isReleased = true } }
+
+    /// Releases the render after a while, so a test whose render is never stopped ends with a failed assertion instead of waiting forever.
+    func releaseLater() {
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            release()
+        }
+    }
 
     func render(_ microphone: URL, settings: VoiceCleanup) throws -> URL {
         lock.withLock { startedOn.append(settings.lowCutFrequency) }
         while !lock.withLock({ isReleased }) {
-            try Task.checkCancellation()
+            guard !Task.isCancelled else { break }
             usleep(1_000)
         }
-        try Task.checkCancellation()
+        guard !Task.isCancelled else {
+            lock.withLock { stoppedOn.append(settings.lowCutFrequency) }
+            throw CancellationError()
+        }
         return URL(fileURLWithPath: "/tmp/clean-\(Int(settings.lowCutFrequency)).m4a")
     }
 
@@ -28,7 +42,8 @@ private final class HeldRender: @unchecked Sendable {
 }
 
 final class VoiceCleanupRendersTests: XCTestCase {
-    private let microphone = URL(fileURLWithPath: "/tmp/mic.m4a")
+    /// In a folder that is never made, so the cleaned copies a finished render removes beside it are none.
+    private let microphone = FileManager.default.temporaryDirectory.appendingPathComponent("renders-\(UUID().uuidString)/mic.m4a")
 
     private func lowCut(_ frequency: Double) -> VoiceCleanup {
         var settings = VoiceCleanup(isOn: true)
@@ -86,23 +101,107 @@ final class VoiceCleanupRendersTests: XCTestCase {
         XCTAssertEqual(held.started, [100, 120])
     }
 
-    func testASupersededRenderStopsAndLeavesNoCleanedFile() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("renders-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    func testARenderForNewSettingsLeavesTheCleanedFileAnExportHoldsInPlace() async throws {
+        let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let mic = folder.appendingPathComponent("mic.m4a")
-        try TestSound.write(mic, seconds: 30, channels: [[(50, 0.3), (1_000, 0.3)]])
+        try TestSound.write(mic, seconds: 1, channels: [[(50, 0.3), (1_000, 0.3)]])
         let renders = VoiceCleanupRenders()
 
-        let superseded = renders.request(mic, settings: lowCut(100))
-        // Under way once its half-written file is there.
-        for _ in 0..<5_000 where (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.count == 1 {
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).count, 2, "the render started")
-        superseded.cancel()
+        let lease = renders.lease(mic, settings: lowCut(100))
+        let exported = try await renders.cleaned(mic, settings: lowCut(100), keep: true)
+        let newer = try await renders.cleaned(mic, settings: lowCut(120))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exported.path), "the export still holds it, so the newer render leaves it")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path))
+
+        renders.release(lease)
+        let latest = try await renders.cleaned(mic, settings: lowCut(140))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path), "released, it goes with the next render")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newer.path), "a file nobody holds goes too")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: latest.path))
+    }
+
+    private func makeFolder() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("renders-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    func testANewerRequestStopsTheRenderInFlight() async throws {
+        let held = HeldRender()
+        let renders = VoiceCleanupRenders(render: held.render)
+        let superseded = renders.request(microphone, settings: lowCut(100))
+        try await held.waitUntilStarted(1)
+        _ = renders.request(microphone, settings: lowCut(120))
+        held.releaseLater()
+
         let isStopped = await isCancelled(superseded)
+        XCTAssertTrue(isStopped, "the superseded request ends without a file")
+        XCTAssertEqual(held.stopped, [100], "and its render stops instead of running to the end")
+    }
+
+    func testACancelledRenderLeavesNoHalfWrittenFile() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mic = folder.appendingPathComponent("mic.m4a")
+        try TestSound.write(mic, seconds: 1, channels: [[(50, 0.3), (1_000, 0.3)]])
+        let settings = lowCut(100)
+        // Cancelled before it starts, the render stops at its first chunk, once the file it writes is already there.
+        let render = Task.detached { () throws -> URL in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try VoiceCleanupCache.prepare(mic, settings: settings)
+        }
+        let isStopped = await isCancelled(render)
         XCTAssertTrue(isStopped, "a cancelled render stops instead of finishing")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["mic.m4a"], "and leaves nothing half-written behind")
+    }
+
+    func testTurningCleanupOffStopsThePreviewsRenderButNotAnExports() async throws {
+        let held = HeldRender()
+        let renders = VoiceCleanupRenders(render: held.render)
+        let preview = renders.request(microphone, settings: lowCut(100))
+        try await held.waitUntilStarted(1)
+        renders.cancel(microphone)
+        held.releaseLater()
+        let previewStopped = await isCancelled(preview)
+        XCTAssertTrue(previewStopped, "nobody wants the sound the preview asked for any more")
+
+        let export = renders.request(microphone, settings: lowCut(120), keep: true)
+        try await held.waitUntilStarted(2)
+        renders.cancel(microphone)
+        held.release()
+        let exported = try await export.value
+        XCTAssertEqual(exported.lastPathComponent, "clean-120.m4a", "the export still gets its sound")
+    }
+
+    func testCancellingAnExportStopsTheRenderItWaitsFor() async throws {
+        let held = HeldRender()
+        let renders = VoiceCleanupRenders(render: held.render)
+        let export = Task { try await renders.cleaned(microphone, settings: lowCut(100), keep: true) }
+        try await held.waitUntilStarted(1)
+        export.cancel()
+        held.releaseLater()
+
+        let isStopped = await isCancelled(export)
+        XCTAssertTrue(isStopped, "the cancelled export stops waiting")
+        XCTAssertEqual(held.stopped, [100], "and the render nobody else waits for stops too")
+    }
+
+    func testAPreviewWhoseRenderAnExportSupersededGetsItsSoundByAskingAgain() async throws {
+        let held = HeldRender()
+        let renders = VoiceCleanupRenders(render: held.render)
+        let preview = renders.request(microphone, settings: lowCut(100))
+        try await held.waitUntilStarted(1)
+        let export = renders.request(microphone, settings: lowCut(120), keep: true)
+        let previewStopped = await isCancelled(preview)
+        XCTAssertTrue(previewStopped, "the export's settings win")
+
+        let again = renders.request(microphone, settings: lowCut(100))
+        try await held.waitUntilStarted(2)
+        held.release()
+        let exported = try await export.value, previewed = try await again.value
+        XCTAssertEqual(exported.lastPathComponent, "clean-120.m4a", "the export is not cancelled by the preview asking again")
+        XCTAssertEqual(previewed.lastPathComponent, "clean-100.m4a", "and the preview gets its sound after it")
+        XCTAssertEqual(held.started, [100, 120, 100])
     }
 }

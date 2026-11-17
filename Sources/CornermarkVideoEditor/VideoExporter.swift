@@ -404,7 +404,9 @@ public enum VideoExporter {
         let folder = video.deletingLastPathComponent()
         // A video opened from a file carries its sound in its own file; a recording's video has none, so it adds nothing to the mix.
         // The recording's own tracks come in at the editor's levels, and a track that is off is left out.
-        let tracks = try await soundFiles(project, in: folder)
+        let (tracks, leases) = try await soundFiles(project, in: folder)
+        // The cleaned Microphone track stays until the mix is done with it, whatever the preview renders meanwhile.
+        defer { leases.forEach(VoiceCleanupRenders.shared.release) }
         let mix = try await AudioMixReader(files: [(video, 1)] + tracks, clips: project.timeline.clips, duration: plan.duration)
         defer { mix?.cancel() }
         do {
@@ -425,8 +427,10 @@ public enum VideoExporter {
 
     /// The recording's sound tracks the mix takes, each at its Track level. With Voice cleanup on, the Microphone track is its cleaned
     /// copy, made first if it is not ready, or the one the preview is making when it is under way; the recorded file stays as it is.
-    static func soundFiles(_ project: RecordingProject, in folder: URL) async throws -> [(url: URL, gain: Double)] {
+    /// The cleaned copy comes leased: release the leases once the mix is done.
+    static func soundFiles(_ project: RecordingProject, in folder: URL) async throws -> (files: [(url: URL, gain: Double)], leases: [VoiceCleanupRenders.Lease]) {
         var files: [(url: URL, gain: Double)] = []
+        var leases: [VoiceCleanupRenders.Lease] = []
         for entry in project.audioMix {
             let recorded = folder.appendingPathComponent(entry.file)
             let cleanup = project.edits.audio.voiceCleanup
@@ -434,10 +438,16 @@ public enum VideoExporter {
                 files.append((recorded, entry.gain))
                 continue
             }
-            let cleaned = try await VoiceCleanupRenders.shared.cleaned(recorded, settings: cleanup, keep: true)
-            files.append((cleaned, entry.gain))
+            let renders = VoiceCleanupRenders.shared, lease = renders.lease(recorded, settings: cleanup)
+            do {
+                files.append((try await renders.cleaned(recorded, settings: cleanup, keep: true), entry.gain))
+                leases.append(lease)
+            } catch {
+                (leases + [lease]).forEach(renders.release)
+                throw error
+            }
         }
-        return files
+        return (files, leases)
     }
 
     /// The finished video's frame at `outputTime` as one picture at the export's original size: the same drawing, and the source and

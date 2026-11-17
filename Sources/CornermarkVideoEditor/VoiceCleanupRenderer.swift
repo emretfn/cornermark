@@ -127,8 +127,8 @@ enum VoiceCleanupCache {
         return microphone.deletingLastPathComponent().appendingPathComponent(prefix + digest).appendingPathExtension(microphone.pathExtension)
     }
 
-    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there. Copies cleaned for other settings are
-    /// removed once the new one is in place, so the project keeps one.
+    /// The cleaned copy of `microphone` for `settings`, made first unless it is already there. Copies cleaned for other settings stay:
+    /// `VoiceCleanupRenders` removes the ones nobody holds.
     static func prepare(_ microphone: URL, settings: VoiceCleanup) throws -> URL {
         let fm = FileManager.default
         let target = file(for: microphone, settings: settings)
@@ -143,9 +143,15 @@ enum VoiceCleanupCache {
             try? fm.removeItem(at: partial)
             throw error
         }
-        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) && name != target.lastPathComponent {
+        return target
+    }
+
+    /// Removes the cleaned copies of `microphone` but the ones in `keeping`.
+    static func prune(beside microphone: URL, keeping: Set<URL>) {
+        let fm = FileManager.default, folder = microphone.deletingLastPathComponent()
+        let kept = Set(keeping.map(\.lastPathComponent))
+        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) && !kept.contains(name) {
             try? fm.removeItem(at: folder.appendingPathComponent(name))
         }
-        return target
     }
 }

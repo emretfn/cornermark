@@ -261,6 +261,17 @@ final class VideoExporterTests: XCTestCase {
                        "going back to 60 Hz cleans for 60 Hz again")
     }
 
+    func testAMissingCleanedMicrophoneFailsTheMixInsteadOfLeavingTheMicrophoneOut() async throws {
+        let mic = try makeHummingMicrophone(seconds: 1)
+        let gone = folder.appendingPathComponent(VoiceCleanupCache.prefix + "0000").appendingPathExtension("m4a")
+        do {
+            _ = try await AudioMixReader(files: [(mic, 1), (gone, 1)], duration: 1)
+            XCTFail("a mix without the cleaned microphone must not be made")
+        } catch {
+            XCTAssertEqual(error as? CornermarkVideoEditor.ExportError, .writer("the cleaned microphone sound is missing"))
+        }
+    }
+
     func testCancellingLeavesNoFile() async throws {
         let (source, project) = try await makeSource(frames: 90)
         let out = folder.appendingPathComponent("export.mp4")
